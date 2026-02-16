@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BitFS — 区块链上的去中心化加密文件系统</title>
+<meta name="description" content="一个将 Unix 文件系统语义映射到区块链的去中心化文件系统，默认加密所有数据，并通过原子交换实现无信任的数据交易。">
+<meta name="theme-color" content="#110f0d">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ===================================================================
+   BitFS — Dark Botanical Landing Page
+   =================================================================== */
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --font-sans: "Inter", "Noto Sans SC", -apple-system, sans-serif;
+  --font-serif: "Cormorant Garamond", "Noto Serif SC", Georgia, serif;
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+
+  --b-bg: #110f0d;
+  --b-bg2: #1a1714;
+  --b-bg3: #231f1b;
+  --b-border: #2e2924;
+  --b-gold: #c9956b;
+  --b-gold-light: #dbb08a;
+  --b-gold-dark: #a07548;
+  --b-text: #d4cdc4;
+  --b-text-dim: #8a8078;
+  --b-text-bright: #f0ebe5;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  color: var(--b-text-dim);
+  background: var(--b-bg);
+  line-height: 1.8;
+  overflow-x: hidden;
+}
+
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+
+/* ── Utilities ── */
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--b-text-dim);
+  margin-bottom: 20px;
+}
+
+.gold-divider {
+  height: 1px;
+  background: linear-gradient(90deg, var(--b-gold), transparent 60%);
+  border: none;
+  margin: 0;
+}
+
+.serif-italic {
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+
+.gold { color: var(--b-gold); }
+.gold-light { color: var(--b-gold-light); }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 32px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+  text-decoration: none;
+  line-height: 1;
+}
+
+.btn-primary {
+  background: var(--b-gold);
+  color: var(--b-bg);
+}
+.btn-primary:hover {
+  background: var(--b-gold-light);
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--b-border);
+  color: var(--b-gold);
+}
+.btn-secondary:hover {
+  border-color: var(--b-gold-dark);
+  background: rgba(201, 149, 107, 0.05);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: none;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--b-gold);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  padding: 8px 0;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+.btn-ghost:hover {
+  color: var(--b-gold-light);
+}
+
+/* ── Scroll Animation ── */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+.reveal-delay-4 { transition-delay: 0.4s; }
+.reveal-delay-5 { transition-delay: 0.5s; }
+
+
+/* ===================================================================
+   1. NAVIGATION
+   =================================================================== */
+.nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: #110f0de0;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(46, 41, 36, 0.5);
+}
+
+.nav-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 32px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nav-wordmark {
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.nav-wordmark .wm-bit {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  color: var(--b-text-bright);
+}
+.nav-wordmark .wm-fs {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-style: italic;
+  color: var(--b-gold);
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.nav-links a {
+  font-size: 13px;
+  color: var(--b-text-dim);
+  transition: color 0.3s ease;
+  font-weight: 400;
+}
+.nav-links a:hover {
+  color: var(--b-text-bright);
+}
+
+.nav-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+}
+.nav-hamburger span {
+  display: block;
+  width: 20px;
+  height: 1.5px;
+  background: var(--b-text-dim);
+  margin: 5px 0;
+  transition: all 0.3s ease;
+}
+
+/* Mobile nav overlay */
+.nav-mobile {
+  display: none;
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #110f0df5;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 999;
+  padding: 40px 32px;
+  flex-direction: column;
+  gap: 24px;
+}
+.nav-mobile.open {
+  display: flex;
+}
+.nav-mobile a {
+  font-size: 18px;
+  color: var(--b-text-dim);
+  transition: color 0.3s ease;
+  padding: 8px 0;
+}
+.nav-mobile a:hover {
+  color: var(--b-text-bright);
+}
+
+
+/* ===================================================================
+   2. HERO SECTION
+   =================================================================== */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 32px 100px;
+  overflow: hidden;
+}
+
+/* Bokeh background effects */
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -20%;
+  left: -10%;
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(201, 149, 107, 0.07) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  bottom: -30%;
+  right: -15%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(160, 117, 72, 0.05) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hero-bokeh-1 {
+  position: absolute;
+  top: 15%;
+  right: 20%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(219, 176, 138, 0.04) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hero-bokeh-2 {
+  position: absolute;
+  bottom: 20%;
+  left: 10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(201, 149, 107, 0.03) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 1;
+  max-width: 780px;
+  text-align: center;
+}
+
+.hero-overline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--b-text-dim);
+  margin-bottom: 32px;
+}
+
+.hero-headline {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-style: italic;
+  font-size: clamp(42px, 6vw, 72px);
+  line-height: 1.15;
+  color: var(--b-text-bright);
+  margin-bottom: 28px;
+  letter-spacing: -0.01em;
+}
+.hero-headline .gold-em {
+  color: var(--b-gold);
+}
+
+.hero-subtitle {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  font-size: clamp(15px, 1.8vw, 18px);
+  line-height: 1.8;
+  color: var(--b-text-dim);
+  max-width: 620px;
+  margin: 0 auto 48px;
+}
+
+.hero-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+
+/* ===================================================================
+   3. WHAT IS BITFS — OVERVIEW
+   =================================================================== */
+.overview {
+  position: relative;
+  padding: 100px 0;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 40px;
+  margin-top: 48px;
+}
+
+.overview-card {
+  padding: 36px 32px;
+  border: 1px solid var(--b-border);
+  border-radius: 8px;
+  background: var(--b-bg2);
+  position: relative;
+  transition: border-color 0.4s ease;
+}
+.overview-card:hover {
+  border-color: var(--b-gold-dark);
+}
+
+.overview-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--b-gold-dark), transparent 80%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.overview-card:hover::before {
+  opacity: 1;
+}
+
+.overview-card-symbol {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--b-gold);
+  margin-bottom: 20px;
+  letter-spacing: 0.1em;
+}
+
+.overview-card h3 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 17px;
+  color: var(--b-text);
+  margin-bottom: 12px;
+}
+
+.overview-card p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--b-text-dim);
+}
+
+
+/* ===================================================================
+   4. ARCHITECTURE
+   =================================================================== */
+.architecture {
+  position: relative;
+  padding: 100px 0 120px;
+}
+
+.architecture::before {
+  content: "";
+  position: absolute;
+  top: 10%;
+  right: -20%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(201, 149, 107, 0.04) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.arch-header {
+  max-width: 560px;
+  margin-bottom: 56px;
+}
+
+.arch-header h2 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: clamp(24px, 3vw, 32px);
+  color: var(--b-text);
+  margin-bottom: 16px;
+  line-height: 1.3;
+}
+
+.arch-header p {
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.arch-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 800px;
+  position: relative;
+}
+
+.arch-layer {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--b-border);
+  border-radius: 8px;
+  background: var(--b-bg2);
+  overflow: hidden;
+  transition: border-color 0.4s ease;
+}
+.arch-layer:hover {
+  border-color: var(--b-gold-dark);
+}
+
+.arch-layer-badge {
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: var(--b-bg3);
+  border-right: 1px solid var(--b-border);
+}
+
+.arch-layer-badge span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--b-gold);
+  white-space: nowrap;
+}
+
+.arch-layer-content {
+  padding: 24px 28px;
+  flex: 1;
+}
+
+.arch-layer-content h4 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--b-text-bright);
+  margin-bottom: 6px;
+}
+
+.arch-layer-content p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--b-text-dim);
+}
+
+/* Connection lines between layers */
+.arch-connector {
+  width: 1px;
+  height: 20px;
+  background: linear-gradient(180deg, var(--b-gold-dark), var(--b-border));
+  margin-left: 60px;
+}
+
+
+/* ===================================================================
+   5. KEY FEATURES
+   =================================================================== */
+.features {
+  position: relative;
+  padding: 100px 0 80px;
+}
+
+.features::before {
+  content: "";
+  position: absolute;
+  top: 30%;
+  left: -15%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(201, 149, 107, 0.04) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.features-header {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto 72px;
+}
+
+.features-header h2 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: clamp(24px, 3vw, 32px);
+  color: var(--b-text);
+  margin-bottom: 16px;
+  line-height: 1.3;
+}
+
+.feature-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: center;
+  margin-bottom: 80px;
+}
+.feature-row.reverse {
+  direction: rtl;
+}
+.feature-row.reverse > * {
+  direction: ltr;
+}
+
+.feature-text .section-label {
+  margin-bottom: 14px;
+}
+
+.feature-text h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-style: italic;
+  font-size: clamp(22px, 2.5vw, 30px);
+  color: var(--b-text-bright);
+  margin-bottom: 16px;
+  line-height: 1.3;
+}
+
+.feature-text p {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--b-text-dim);
+}
+
+.feature-visual {
+  border: 1px solid var(--b-border);
+  border-radius: 8px;
+  background: var(--b-bg2);
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-visual::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--b-gold-dark), transparent 60%);
+}
+
+.feature-visual-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--b-gold);
+  margin-bottom: 16px;
+}
+
+.feature-visual code,
+.feature-visual pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--b-gold-light);
+  line-height: 1.8;
+}
+
+.feature-visual .code-comment {
+  color: var(--b-text-dim);
+}
+
+.feature-visual .code-cmd {
+  color: var(--b-text-bright);
+}
+
+.feature-visual .code-flag {
+  color: var(--b-gold);
+}
+
+/* Feature visual — flow diagram style */
+.flow-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.flow-step-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--b-gold);
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--b-gold-dark);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.flow-step-text {
+  font-size: 13px;
+  color: var(--b-text);
+}
+.flow-connector-v {
+  width: 1px;
+  height: 8px;
+  background: var(--b-gold-dark);
+  margin-left: 12px;
+}
+
+/* Paymail visual */
+.paymail-demo {
+  text-align: center;
+}
+.paymail-arrow {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--b-text-dim);
+  margin: 12px 0;
+}
+.paymail-addr {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 20px;
+  color: var(--b-gold);
+  margin: 8px 0;
+}
+.paymail-hash {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--b-text-dim);
+  word-break: break-all;
+}
+
+/* BIP32 visual */
+.key-tree {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 2;
+  color: var(--b-text-dim);
+}
+.key-tree .key-highlight {
+  color: var(--b-gold-light);
+}
+.key-tree .key-dim {
+  color: var(--b-text-dim);
+  opacity: 0.5;
+}
+
+
+/* ===================================================================
+   6. CLI DEMO
+   =================================================================== */
+.cli-demo {
+  position: relative;
+  padding: 100px 0;
+}
+
+.cli-demo::after {
+  content: "";
+  position: absolute;
+  bottom: -10%;
+  left: 20%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(201, 149, 107, 0.04) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.cli-header {
+  text-align: center;
+  max-width: 500px;
+  margin: 0 auto 48px;
+}
+
+.cli-header h2 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: clamp(24px, 3vw, 32px);
+  color: var(--b-text);
+  margin-bottom: 12px;
+  line-height: 1.3;
+}
+
+.cli-window {
+  max-width: 720px;
+  margin: 0 auto;
+  border: 1px solid var(--b-border);
+  border-radius: 10px;
+  background: var(--b-bg2);
+  overflow: hidden;
+  position: relative;
+}
+
+.cli-window::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--b-gold-dark), transparent 50%);
+}
+
+.cli-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 20px;
+  background: var(--b-bg3);
+  border-bottom: 1px solid var(--b-border);
+}
+
+.cli-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--b-border);
+}
+.cli-dot:nth-child(1) { background: #5c3d2e; }
+.cli-dot:nth-child(2) { background: #5c4f2e; }
+.cli-dot:nth-child(3) { background: #3d5c2e; }
+
+.cli-titlebar-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--b-text-dim);
+  margin-left: 8px;
+}
+
+.cli-body {
+  padding: 28px 28px 32px;
+}
+
+.cli-body pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cli-body .c-comment {
+  color: var(--b-text-dim);
+}
+.cli-body .c-prompt {
+  color: var(--b-gold);
+}
+.cli-body .c-cmd {
+  color: var(--b-text-bright);
+}
+.cli-body .c-flag {
+  color: var(--b-gold-light);
+}
+.cli-body .c-path {
+  color: var(--b-text);
+}
+.cli-body .c-output {
+  color: var(--b-text-dim);
+  opacity: 0.7;
+}
+
+
+/* ===================================================================
+   7. WHITEPAPER CTA
+   =================================================================== */
+.whitepaper-cta {
+  position: relative;
+  padding: 120px 0;
+  text-align: center;
+  overflow: hidden;
+}
+
+.whitepaper-cta::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 800px;
+  height: 600px;
+  background: radial-gradient(ellipse, rgba(201, 149, 107, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.cta-content {
+  position: relative;
+  z-index: 1;
+}
+
+.cta-content h2 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-style: italic;
+  font-size: clamp(30px, 4vw, 44px);
+  color: var(--b-text-bright);
+  margin-bottom: 20px;
+  line-height: 1.2;
+}
+
+.cta-content p {
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--b-text-dim);
+  max-width: 500px;
+  margin: 0 auto 40px;
+}
+
+.cta-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+
+/* ===================================================================
+   8. ECOSYSTEM
+   =================================================================== */
+.ecosystem {
+  position: relative;
+  padding: 100px 0;
+}
+
+.ecosystem-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: center;
+}
+
+.ecosystem-text h2 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: clamp(24px, 3vw, 32px);
+  color: var(--b-text);
+  margin-bottom: 20px;
+  line-height: 1.3;
+}
+
+.ecosystem-text .highlight-line {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: clamp(18px, 2.2vw, 22px);
+  color: var(--b-gold);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.ecosystem-text p {
+  font-size: 15px;
+  line-height: 1.8;
+  margin-bottom: 28px;
+}
+
+.ecosystem-visual {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.eco-card {
+  border: 1px solid var(--b-border);
+  border-radius: 8px;
+  padding: 28px;
+  background: var(--b-bg2);
+  transition: border-color 0.4s ease;
+  position: relative;
+}
+.eco-card:hover {
+  border-color: var(--b-gold-dark);
+}
+
+.eco-card-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--b-gold);
+  margin-bottom: 8px;
+}
+
+.eco-card h4 {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--b-text-bright);
+  margin-bottom: 6px;
+}
+
+.eco-card p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--b-text-dim);
+}
+
+.eco-card .eco-url {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--b-gold-dark);
+  margin-top: 8px;
+  display: inline-block;
+}
+
+
+/* ===================================================================
+   9. FOOTER
+   =================================================================== */
+.footer {
+  padding: 48px 0;
+  border-top: 1px solid var(--b-border);
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.footer-wordmark {
+  font-size: 18px;
+  line-height: 1;
+}
+.footer-wordmark .wm-bit {
+  font-family: var(--font-sans);
+  font-weight: 300;
+  color: var(--b-text-bright);
+}
+.footer-wordmark .wm-fs {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-style: italic;
+  color: var(--b-gold);
+}
+
+.footer-copy {
+  font-size: 12px;
+  color: var(--b-text-dim);
+}
+
+.footer-links {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.footer-links a {
+  font-size: 13px;
+  color: var(--b-text-dim);
+  transition: color 0.3s ease;
+}
+.footer-links a:hover {
+  color: var(--b-text-bright);
+}
+
+
+/* ===================================================================
+   RESPONSIVE
+   =================================================================== */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .nav-hamburger { display: block; }
+
+  .hero { padding: 100px 24px 80px; min-height: 90vh; }
+  .hero-headline { margin-bottom: 24px; }
+  .hero-subtitle { margin-bottom: 36px; }
+
+  .container { padding: 0 24px; }
+
+  .overview-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .feature-row,
+  .feature-row.reverse {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    direction: ltr;
+  }
+
+  .arch-layer-badge {
+    min-width: 80px;
+    padding: 16px 12px;
+  }
+  .arch-layer-badge span {
+    font-size: 10px;
+  }
+  .arch-layer-content {
+    padding: 16px 20px;
+  }
+
+  .ecosystem-inner {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+
+  .footer-inner {
+    flex-direction: column;
+    text-align: center;
+    gap: 16px;
+  }
+  .footer-left {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+  .hero-buttons .btn {
+    width: 100%;
+  }
+
+  .cli-body {
+    padding: 20px 16px 24px;
+  }
+  .cli-body pre {
+    font-size: 11px;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     1. NAVIGATION
+     ================================================================ -->
+<nav class="nav" role="navigation" aria-label="Main navigation">
+  <div class="nav-inner">
+    <a href="/" class="nav-wordmark" aria-label="BitFS home">
+      <span class="wm-bit">Bit</span><span class="wm-fs">FS</span>
+    </a>
+    <div class="nav-links">
+      <a href="whitepaper/">白皮书</a>
+      <a href="https://github.com/nicklaus4/bitfs" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="nav-hamburger" aria-label="Toggle menu" onclick="toggleMobileNav()">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
+</nav>
+
+<div class="nav-mobile" id="navMobile">
+  <a href="whitepaper/" onclick="closeMobileNav()">白皮书</a>
+  <a href="https://github.com/nicklaus4/bitfs" target="_blank" rel="noopener" onclick="closeMobileNav()">GitHub</a>
+</div>
+
+
+<!-- ================================================================
+     2. HERO SECTION
+     ================================================================ -->
+<section class="hero">
+  <div class="hero-bokeh-1"></div>
+  <div class="hero-bokeh-2"></div>
+  <div class="hero-content">
+    <p class="hero-overline reveal">第一章 &mdash; 范式革命</p>
+    <h1 class="hero-headline reveal reveal-delay-1">
+      你的密钥，<span class="gold-em">你的数据。</span><br>
+      无需中间人。
+    </h1>
+    <p class="hero-subtitle reveal reveal-delay-2">
+      一个将 Unix 文件系统语义映射到区块链的去中心化文件系统，默认加密所有数据，并通过原子交换实现无信任的数据交易。
+    </p>
+    <div class="hero-buttons reveal reveal-delay-3">
+      <a href="whitepaper/" class="btn btn-primary">阅读白皮书</a>
+      <a href="https://github.com/nicklaus4/bitfs" class="btn btn-secondary" target="_blank" rel="noopener">查看源码</a>
+    </div>
+  </div>
+</section>
+
+<div class="container"><hr class="gold-divider"></div>
+
+
+<!-- ================================================================
+     3. WHAT IS BITFS — OVERVIEW
+     ================================================================ -->
+<section class="overview">
+  <div class="container">
+    <p class="section-label reveal">第二章 &mdash; 什么是 BitFS</p>
+    <div class="overview-grid">
+      <div class="overview-card reveal reveal-delay-1">
+        <div class="overview-card-symbol">/&mdash;</div>
+        <h3>Metanet DAG</h3>
+        <p>区块链上的 Unix 文件系统 &mdash; inode、目录、符号链接，全部作为原生交易实现。</p>
+      </div>
+      <div class="overview-card reveal reveal-delay-2">
+        <div class="overview-card-symbol">&#x2234;</div>
+        <h3>Method 42 加密</h3>
+        <p>所有文件默认加密，基于确定性 ECDH 算法。无需繁琐的密钥管理。</p>
+      </div>
+      <div class="overview-card reveal reveal-delay-3">
+        <div class="overview-card-symbol">&#x22A2;</div>
+        <h3>SPV 模式</h3>
+        <p>本地交易 + Merkle 证明。永远不需要直接查询区块链。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><hr class="gold-divider"></div>
+
+
+<!-- ================================================================
+     4. ARCHITECTURE
+     ================================================================ -->
+<section class="architecture">
+  <div class="container">
+    <div class="arch-header reveal">
+      <p class="section-label">第三章 &mdash; 系统架构</p>
+      <h2>三层架构，一个文件系统</h2>
+      <p>BitFS 将关注点分离到不同层次 &mdash; 所有权存储在链上，逻辑在本地运行，分发通过激励网络扩展。</p>
+    </div>
+
+    <div class="arch-layers">
+      <div class="arch-layer reveal reveal-delay-1">
+        <div class="arch-layer-badge">
+          <span>Layer 3</span>
+        </div>
+        <div class="arch-layer-content">
+          <h4>Metanet Chain</h4>
+          <p>去中心化 CDN。一条 BSV 同构链，通过全球节点网络激励数据检索。独立产品，详见 metanet.org。</p>
+        </div>
+      </div>
+
+      <div class="arch-connector"></div>
+
+      <div class="arch-layer reveal reveal-delay-2">
+        <div class="arch-layer-badge">
+          <span>Layer 2</span>
+        </div>
+        <div class="arch-layer-content">
+          <h4>BitFS 守护进程</h4>
+          <p>本地优先的控制平面。管理加密、交易构建、SPV 验证以及 Unix 文件系统抽象层。你的密钥永远不会离开你的设备。</p>
+        </div>
+      </div>
+
+      <div class="arch-connector"></div>
+
+      <div class="arch-layer reveal reveal-delay-3">
+        <div class="arch-layer-badge">
+          <span>Layer 1</span>
+        </div>
+        <div class="arch-layer-content">
+          <h4>BSV 区块链</h4>
+          <p>不可变的所有权层。存储 Metanet DAG 交易、支付通道和 HTLC 原子交换合约。为静态数据提供无限扩展能力。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><hr class="gold-divider"></div>
+
+
+<!-- ================================================================
+     5. KEY FEATURES
+     ================================================================ -->
+<section class="features">
+  <div class="container">
+    <div class="features-header reveal">
+      <p class="section-label">第四章 &mdash; 核心特性</p>
+      <h2>为数据主权而生</h2>
+    </div>
+
+    <!-- Feature 1: HTLC Atomic Swap -->
+    <div class="feature-row reveal">
+      <div class="feature-text">
+        <p class="section-label">01</p>
+        <h3>HTLC 原子交换</h3>
+        <p>无信任的买卖交易。哈希时间锁合约确保公平交换，无需中间人。如果任何一方未能履约，资金将自动退回。</p>
+      </div>
+      <div class="feature-visual">
+        <div class="feature-visual-label">Swap Protocol</div>
+        <div class="flow-steps">
+          <div class="flow-step">
+            <span class="flow-step-num">1</span>
+            <span class="flow-step-text">卖方发布包含文件哈希的 HTLC</span>
+          </div>
+          <div class="flow-connector-v"></div>
+          <div class="flow-step">
+            <span class="flow-step-num">2</span>
+            <span class="flow-step-text">买方将付款锁定到哈希锁</span>
+          </div>
+          <div class="flow-connector-v"></div>
+          <div class="flow-step">
+            <span class="flow-step-num">3</span>
+            <span class="flow-step-text">卖方揭示原像，领取付款</span>
+          </div>
+          <div class="flow-connector-v"></div>
+          <div class="flow-step">
+            <span class="flow-step-num">4</span>
+            <span class="flow-step-text">买方使用原像解密文件</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature 2: Unix CLI -->
+    <div class="feature-row reverse reveal">
+      <div class="feature-text">
+        <p class="section-label">02</p>
+        <h3>Unix 命令行</h3>
+        <p><code style="font-family: var(--font-mono); color: var(--b-gold-light); font-size: 14px;">ls</code>、
+           <code style="font-family: var(--font-mono); color: var(--b-gold-light); font-size: 14px;">cat</code>、
+           <code style="font-family: var(--font-mono); color: var(--b-gold-light); font-size: 14px;">put</code>、
+           <code style="font-family: var(--font-mono); color: var(--b-gold-light); font-size: 14px;">get</code>
+           &mdash; 用熟悉的命令操作革命性的文件系统。Agent 优先设计意味着每个操作都可脚本化。</p>
+      </div>
+      <div class="feature-visual">
+        <div class="feature-visual-label">Terminal</div>
+        <pre><span class="code-comment"># Navigate like any Unix system</span>
+<span class="code-cmd">$ bitfs</span> <span class="code-flag">ls -la</span> <span class="c-path">/shared/docs/</span>
+<span class="code-comment"># Pipe, redirect, compose</span>
+<span class="code-cmd">$ bitfs</span> <span class="code-flag">cat</span> <span class="c-path">/notes/draft.md</span> <span class="code-comment">| wc -l</span>
+<span class="code-comment"># Upload with encryption</span>
+<span class="code-cmd">$ bitfs</span> <span class="code-flag">put --encrypt</span> <span class="c-path">./file.pdf</span></pre>
+      </div>
+    </div>
+
+    <!-- Feature 3: Paymail Integration -->
+    <div class="feature-row reveal">
+      <div class="feature-text">
+        <p class="section-label">03</p>
+        <h3>Paymail 集成</h3>
+        <p>人类可读的地址。向 <code style="font-family: var(--font-mono); color: var(--b-gold-light); font-size: 14px;">user@bitfs.org</code> 发送文件，而不是使用晦涩的加密哈希。基于 Paymail 协议实现无缝身份解析。</p>
+      </div>
+      <div class="feature-visual">
+        <div class="feature-visual-label">Address Resolution</div>
+        <div class="paymail-demo">
+          <div class="paymail-hash">02a1b3c4d5e6f7...8a9b0c1d2e3f4</div>
+          <div class="paymail-arrow">becomes</div>
+          <div class="paymail-addr">alice@bitfs.org</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature 4: BIP32 Access Control -->
+    <div class="feature-row reverse reveal">
+      <div class="feature-text">
+        <p class="section-label">04</p>
+        <h3>BIP32 访问控制</h3>
+        <p>分层密钥派生实现细粒度的文件权限管理。共享目录访问权限而不暴露父密钥。通过轮换单个派生路径即可撤销权限。</p>
+      </div>
+      <div class="feature-visual">
+        <div class="feature-visual-label">Key Hierarchy</div>
+        <div class="key-tree">
+<span class="key-highlight">m</span> <span class="key-dim">&mdash; master key</span>
+<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/0'</span> <span class="key-dim">&mdash; identity</span>
+<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/1'</span> <span class="key-dim">&mdash; filesystem root</span>
+<span class="key-dim"> &boxv;   &boxvr;&mdash;</span> <span class="key-highlight">m/1'/0</span> <span class="key-dim">&mdash; /home/</span>
+<span class="key-dim"> &boxv;   &boxvr;&mdash;</span> <span class="key-highlight">m/1'/1</span> <span class="key-dim">&mdash; /shared/</span>
+<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/2'</span> <span class="key-dim">&mdash; payment</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<div class="container"><hr class="gold-divider"></div>
+
+
+<!-- ================================================================
+     6. CLI DEMO
+     ================================================================ -->
+<section class="cli-demo">
+  <div class="container">
+    <div class="cli-header reveal">
+      <p class="section-label">第五章 &mdash; 实战演示</p>
+      <h2>实战演示</h2>
+    </div>
+
+    <div class="cli-window reveal reveal-delay-1">
+      <div class="cli-titlebar">
+        <span class="cli-dot"></span>
+        <span class="cli-dot"></span>
+        <span class="cli-dot"></span>
+        <span class="cli-titlebar-text">bitfs &mdash; terminal</span>
+      </div>
+      <div class="cli-body">
+        <pre><span class="c-comment"># Upload and encrypt a file</span>
+<span class="c-prompt">$</span> <span class="c-cmd">bitfs put</span> <span class="c-flag">--encrypt</span> <span class="c-path">./report.pdf /shared/docs/</span>
+<span class="c-output">  encrypted &rarr; tx:a3f8...c2d1  [2 inputs, 3 outputs]</span>
+
+<span class="c-comment"># List with Merkle proofs</span>
+<span class="c-prompt">$</span> <span class="c-cmd">bitfs ls</span> <span class="c-flag">-l --spv</span> <span class="c-path">/shared/docs/</span>
+<span class="c-output">  -rw-r--  42.3K  report.pdf  [spv: verified]</span>
+<span class="c-output">  -rw-r--  1.8K   notes.md    [spv: verified]</span>
+
+<span class="c-comment"># Trustless sale via HTLC</span>
+<span class="c-prompt">$</span> <span class="c-cmd">bitfs sell</span> <span class="c-flag">--htlc</span> <span class="c-path">/shared/docs/report.pdf</span> <span class="c-flag">--price</span> <span class="c-path">0.001BSV</span>
+<span class="c-output">  htlc published &rarr; hash:7b2e...f194  expires: 144 blocks</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><hr class="gold-divider"></div>
+
+
+<!-- ================================================================
+     7. WHITEPAPER CTA
+     ================================================================ -->
+<section class="whitepaper-cta">
+  <div class="container">
+    <div class="cta-content reveal">
+      <p class="section-label">第六章 &mdash; 深入了解</p>
+      <h2>阅读白皮书</h2>
+      <p>深入了解完整技术设计 &mdash; 从 Metanet DAG 构建到 Method 42 加密、HTLC 协议，以及 Metanet Chain 激励模型。</p>
+      <div class="cta-buttons">
+        <a href="whitepaper/" class="btn btn-primary">下载白皮书</a>
+        <a href="whitepaper/" class="btn-ghost">提供中英文版本</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="container"><hr class="gold-divider"></div>
+
+
+<!-- ================================================================
+     8. ECOSYSTEM
+     ================================================================ -->
+<section class="ecosystem">
+  <div class="container">
+    <div class="ecosystem-inner">
+      <div class="ecosystem-text reveal">
+        <p class="section-label">第七章 &mdash; 生态系统</p>
+        <h2>两个产品，一个愿景</h2>
+        <p class="highlight-line">BitFS 存储你的文件。<br>Metanet 将它们传递到全世界。</p>
+        <p>可以把 BitFS 理解为文件系统，Metanet 理解为分发网络。两者共同构成完整的去中心化存储与检索技术栈 &mdash; 类似于 IPFS 与 Filecoin 的互补关系，但构建在比特币之上。</p>
+        <a href="https://metanet.org" class="btn btn-secondary" target="_blank" rel="noopener">访问 metanet.org</a>
+      </div>
+      <div class="ecosystem-visual reveal reveal-delay-2">
+        <div class="eco-card">
+          <div class="eco-card-label">文件系统</div>
+          <h4>BitFS</h4>
+          <p>去中心化加密文件系统。Unix 命令行、Method 42 加密、HTLC 原子交换。你的密钥，你的数据。</p>
+          <span class="eco-url">bitfs.org</span>
+        </div>
+        <div class="eco-card">
+          <div class="eco-card-label">分发网络</div>
+          <h4>Metanet</h4>
+          <p>由 Metanet Chain 驱动的去中心化 CDN。激励检索、全球节点网络、MNT 代币经济。</p>
+          <span class="eco-url">metanet.org</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ================================================================
+     9. FOOTER
+     ================================================================ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="footer-wordmark">
+          <span class="wm-bit">Bit</span><span class="wm-fs">FS</span>
+        </span>
+        <span class="footer-copy">&copy; 2026 BitFS</span>
+      </div>
+      <div class="footer-links">
+        <a href="whitepaper/">白皮书</a>
+        <a href="https://github.com/nicklaus4/bitfs" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://metanet.org" target="_blank" rel="noopener">metanet.org</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+<!-- ================================================================
+     JAVASCRIPT — Scroll Animations + Mobile Nav
+     ================================================================ -->
+<script>
+(function () {
+  "use strict";
+
+  // ── IntersectionObserver for .reveal elements ──
+  var revealElements = document.querySelectorAll(".reveal");
+
+  if ("IntersectionObserver" in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("visible");
+          observer.unobserve(entry.target);
+        }
+      });
+    }, {
+      threshold: 0.12,
+      rootMargin: "0px 0px -40px 0px"
+    });
+
+    revealElements.forEach(function (el) {
+      observer.observe(el);
+    });
+  } else {
+    // Fallback: show all immediately
+    revealElements.forEach(function (el) {
+      el.classList.add("visible");
+    });
+  }
+
+  // ── Mobile Navigation ──
+  window.toggleMobileNav = function () {
+    var nav = document.getElementById("navMobile");
+    var btn = document.querySelector(".nav-hamburger");
+    var isOpen = nav.classList.toggle("open");
+    btn.setAttribute("aria-expanded", isOpen);
+    document.body.style.overflow = isOpen ? "hidden" : "";
+  };
+
+  window.closeMobileNav = function () {
+    var nav = document.getElementById("navMobile");
+    nav.classList.remove("open");
+    document.body.style.overflow = "";
+  };
+
+  // Close mobile nav on resize to desktop
+  var mq = window.matchMedia("(min-width: 769px)");
+  mq.addEventListener("change", function (e) {
+    if (e.matches) {
+      closeMobileNav();
+    }
+  });
+})();
+</script>
+</body>
+</html>

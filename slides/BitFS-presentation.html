@@ -1,0 +1,1391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BitFS - 在比特币之上，重建互联网</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,400;0,500;0,600;1,400;1,500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ========== RESET & BASE ========== */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0f0f0f;
+  --text-primary: #e8e4df;
+  --text-secondary: #9a9590;
+  --accent-warm: #d4a574;
+  --accent-pink: #e8b4b8;
+  --accent-gold: #c9b896;
+  --font-display: 'Cormorant', serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+}
+
+html {
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: clamp(14px, 0.833vw, 32px);
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 300;
+  background: var(--bg);
+  overflow-x: hidden;
+  height: 100%;
+}
+
+/* ========== NOISE OVERLAY ========== */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.5;
+}
+
+/* ========== SLIDE BASE ========== */
+.slide {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  scroll-snap-align: start;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: clamp(40px, 6vh, 80px) max(40px, 5vw);
+}
+
+/* ========== GRADIENT ORBS ========== */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 0;
+}
+.orb-warm { background: radial-gradient(circle, var(--accent-warm), transparent 70%); }
+.orb-pink { background: radial-gradient(circle, var(--accent-pink), transparent 70%); }
+.orb-gold { background: radial-gradient(circle, var(--accent-gold), transparent 70%); }
+
+/* ========== VERTICAL ACCENT LINES ========== */
+.vline {
+  position: absolute;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, var(--accent-warm) 30%, var(--accent-warm) 70%, transparent);
+  opacity: 0.2;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ========== TYPOGRAPHY ========== */
+.slide-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.8rem, 5.5vw, 5.5rem);
+  color: var(--text-primary);
+  margin-bottom: clamp(8px, 1.5vh, 20px);
+  position: relative;
+  z-index: 1;
+}
+.slide-subtitle {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(1.6rem, 3vw, 2.6rem);
+  color: var(--accent-warm);
+  margin-bottom: clamp(16px, 3vh, 40px);
+  position: relative;
+  z-index: 1;
+}
+.part-label {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: clamp(0.9rem, 1.5vw, 1.3rem);
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--accent-gold);
+  margin-bottom: clamp(10px, 2vh, 28px);
+  position: relative;
+  z-index: 1;
+}
+
+/* ========== CONTENT CONTAINERS ========== */
+.content-area {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 70vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.columns {
+  display: flex;
+  gap: clamp(12px, 2vw, 32px);
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.col {
+  flex: 1;
+  min-width: clamp(140px, 15vw, 20vw);
+  max-width: 22vw;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  padding: clamp(12px, 2vh, 24px) clamp(10px, 1.5vw, 20px);
+  text-align: center;
+}
+.col-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.6rem, 2.8vw, 2.4rem);
+  color: var(--text-primary);
+  margin-bottom: clamp(6px, 1vh, 14px);
+}
+.col-desc {
+  font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: clamp(6px, 1vh, 14px);
+}
+.col-flaw {
+  font-size: clamp(1rem, 1.6vw, 1.4rem);
+  color: var(--accent-pink);
+  font-style: italic;
+}
+.conclusion {
+  margin-top: clamp(14px, 2.5vh, 32px);
+  font-size: clamp(1.2rem, 2vw, 1.7rem);
+  color: var(--accent-warm);
+  text-align: center;
+  font-style: italic;
+  position: relative;
+  z-index: 1;
+}
+
+/* ========== CARD GRID ========== */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(clamp(120px, 18vw, 200px), 1fr));
+  gap: clamp(8px, 1.5vw, 20px);
+  width: 100%;
+  max-width: 60vw;
+}
+.card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: clamp(10px, 1.8vh, 22px) clamp(10px, 1.2vw, 18px);
+  text-align: center;
+  transition: border-color 0.3s;
+}
+.card:hover { border-color: rgba(212,165,116,0.3); }
+.card-icon {
+  font-size: clamp(2rem, 3.5vw, 3rem);
+  margin-bottom: clamp(6px, 0.8vh, 12px);
+}
+.card-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.3rem, 2.2vw, 1.9rem);
+  color: var(--text-primary);
+  margin-bottom: clamp(4px, 0.6vh, 10px);
+}
+.card-text {
+  font-size: clamp(1rem, 1.5vw, 1.3rem);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* ========== FLOW / STEPS ========== */
+.flow-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.5vw, 24px);
+  flex-wrap: wrap;
+  width: 100%;
+}
+.flow-step {
+  text-align: center;
+  flex: 0 1 auto;
+}
+.flow-step-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  color: var(--text-primary);
+}
+.flow-step-desc {
+  font-size: clamp(1rem, 1.5vw, 1.3rem);
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.flow-arrow {
+  font-size: clamp(1.6rem, 3vw, 2.8rem);
+  color: var(--accent-warm);
+  flex-shrink: 0;
+}
+
+/* ========== SPLIT SCREEN ========== */
+.split {
+  display: flex;
+  gap: clamp(16px, 3vw, 48px);
+  width: 100%;
+  max-width: 60vw;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.split-half {
+  flex: 1;
+  min-width: clamp(180px, 20vw, 25vw);
+  max-width: 28vw;
+  text-align: center;
+}
+.split-half h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.6rem, 2.8vw, 2.2rem);
+  color: var(--accent-gold);
+  margin-bottom: clamp(8px, 1.5vh, 20px);
+}
+.split-half p {
+  font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ========== ICEBERG ========== */
+.iceberg { width: 100%; max-width: 40vw; text-align: center; }
+.iceberg-above {
+  background: linear-gradient(135deg, rgba(212,165,116,0.1), rgba(232,180,184,0.08));
+  border: 1px solid rgba(212,165,116,0.2);
+  border-radius: 12px 12px 0 0;
+  padding: clamp(12px, 2vh, 24px) clamp(10px, 2vw, 24px);
+  margin-bottom: 2px;
+}
+.iceberg-below {
+  background: linear-gradient(180deg, rgba(15,15,15,0.8), rgba(201,184,150,0.06));
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 0 0 12px 12px;
+  padding: clamp(16px, 3vh, 36px) clamp(10px, 2vw, 24px);
+}
+.iceberg-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  color: var(--text-primary);
+  margin-bottom: clamp(6px, 0.8vh, 12px);
+}
+.iceberg-items {
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ========== LAYERS ========== */
+.layer-stack { width: 100%; max-width: 55vw; }
+.layer {
+  padding: clamp(12px, 2vh, 22px) clamp(14px, 2vw, 28px);
+  border: 1px solid rgba(255,255,255,0.06);
+  text-align: center;
+}
+.layer:first-child { border-radius: 12px 12px 0 0; }
+.layer:last-child { border-radius: 0 0 12px 12px; }
+.layer-top { background: rgba(212,165,116,0.08); border-color: rgba(212,165,116,0.15); }
+.layer-mid { background: rgba(232,180,184,0.06); border-color: rgba(232,180,184,0.1); }
+.layer-bot { background: rgba(201,184,150,0.05); border-color: rgba(201,184,150,0.1); }
+.layer-name {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.4rem, 2.2vw, 1.9rem);
+  color: var(--accent-warm);
+  margin-bottom: clamp(4px, 0.6vh, 10px);
+}
+.layer-desc {
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+  color: var(--text-secondary);
+}
+
+/* ========== PROVENANCE / COMPARE ROWS ========== */
+.compare-block { width: 100%; max-width: 55vw; }
+.compare-row {
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 1vw, 14px);
+  padding: clamp(10px, 1.5vh, 18px) clamp(10px, 1.5vw, 20px);
+  border-radius: 10px;
+  margin-bottom: clamp(6px, 1vh, 12px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.compare-row.old { background: rgba(255,255,255,0.03); }
+.compare-row.new { background: rgba(212,165,116,0.06); border: 1px solid rgba(212,165,116,0.12); }
+.compare-badge {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  letter-spacing: 0.1em;
+  padding: 6px 16px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.compare-row.old .compare-badge { background: rgba(255,255,255,0.06); color: var(--text-secondary); }
+.compare-row.new .compare-badge { background: rgba(212,165,116,0.15); color: var(--accent-warm); }
+.compare-chain {
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 1vw, 16px);
+  font-size: clamp(1.1rem, 1.6vw, 1.4rem);
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.compare-chain .arr { color: var(--accent-warm); }
+.compare-verdict {
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  font-style: italic;
+  flex-shrink: 0;
+}
+.compare-row.old .compare-verdict { color: var(--accent-pink); }
+.compare-row.new .compare-verdict { color: var(--accent-gold); }
+
+/* ========== KEY INSIGHT BOX ========== */
+.insight-box {
+  margin-top: clamp(14px, 2.5vh, 32px);
+  padding: clamp(14px, 2vh, 24px) clamp(20px, 3vw, 40px);
+  border-left: 3px solid var(--accent-warm);
+  background: rgba(212,165,116,0.04);
+  border-radius: 0 10px 10px 0;
+  font-size: clamp(1.2rem, 2vw, 1.7rem);
+  color: var(--accent-gold);
+  font-style: italic;
+  position: relative;
+  z-index: 1;
+  max-width: 60vw;
+  width: 100%;
+  text-align: center;
+}
+
+/* ========== HIGHLIGHT TEXT ========== */
+.highlight { color: var(--accent-warm); }
+.highlight-pink { color: var(--accent-pink); }
+.highlight-gold { color: var(--accent-gold); }
+
+/* ========== TITLE SLIDE SPECIFICS ========== */
+.title-main {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(5rem, 12vw, 10rem);
+  letter-spacing: 0.05em;
+  color: var(--text-primary);
+  position: relative;
+  z-index: 1;
+}
+.title-sub {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(1.6rem, 3.5vw, 2.8rem);
+  color: var(--accent-warm);
+  margin-top: clamp(10px, 1.5vh, 20px);
+  position: relative;
+  z-index: 1;
+}
+.title-tag {
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: clamp(1.1rem, 1.8vw, 1.5rem);
+  color: var(--text-secondary);
+  margin-top: clamp(8px, 1vh, 16px);
+  position: relative;
+  z-index: 1;
+}
+
+/* ========== FINAL SLIDE ========== */
+.final-lines {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+.final-line {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.8rem, 4vw, 3.2rem);
+  color: var(--text-primary);
+  margin-bottom: clamp(16px, 3vh, 40px);
+  line-height: 1.5;
+}
+.final-line:nth-child(2) { color: var(--accent-warm); }
+.final-line:last-child { color: var(--accent-gold); }
+.final-footer {
+  margin-top: clamp(24px, 5vh, 56px);
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  color: var(--text-secondary);
+  opacity: 0.5;
+  position: relative;
+  z-index: 1;
+}
+
+/* ========== BALL ROOM METAPHOR ========== */
+.ball-room {
+  width: clamp(180px, 22vw, 30vw);
+  height: clamp(120px, 14vw, 18vw);
+  border: 1px solid rgba(212,165,116,0.25);
+  border-radius: 12px;
+  position: relative;
+  background: rgba(212,165,116,0.03);
+  margin: clamp(8px, 1.5vh, 16px) auto;
+}
+.ball {
+  width: clamp(16px, 2.5vw, 28px);
+  height: clamp(16px, 2.5vw, 28px);
+  border-radius: 50%;
+  background: var(--accent-warm);
+  position: absolute;
+  top: 50%;
+  left: 30%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 20px rgba(212,165,116,0.4);
+}
+.ball-path {
+  position: absolute;
+  top: 15%; left: 15%;
+  width: 70%; height: 70%;
+  border: 1px dashed rgba(212,165,116,0.15);
+  border-radius: 50%;
+}
+.ball-label {
+  font-size: clamp(1rem, 1.5vw, 1.3rem);
+  color: var(--text-secondary);
+  text-align: center;
+  margin-top: clamp(6px, 1vh, 12px);
+}
+
+/* ========== TOKEN CROSSED OUT ========== */
+.crossed-out {
+  position: relative;
+  opacity: 0.4;
+}
+.crossed-out::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: -5%;
+  width: 110%; height: 2px;
+  background: var(--accent-pink);
+  transform: rotate(-8deg);
+}
+.token-divider {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  color: var(--accent-warm);
+  text-align: center;
+  padding: clamp(10px, 1.5vh, 20px) 0;
+  position: relative;
+  z-index: 1;
+}
+
+/* ========== CDN FLOW ========== */
+.cdn-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.5vw, 20px);
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 55vw;
+}
+.cdn-node {
+  padding: clamp(14px, 2vh, 24px) clamp(16px, 2vw, 30px);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  text-align: center;
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+  color: var(--text-secondary);
+  min-width: clamp(120px, 10vw, 14vw);
+}
+.cdn-node.active {
+  border-color: rgba(212,165,116,0.3);
+  background: rgba(212,165,116,0.06);
+  color: var(--text-primary);
+}
+
+/* ========== NUMBERED FLOW ========== */
+.num-flow {
+  display: flex;
+  gap: clamp(6px, 1vw, 16px);
+  width: 100%;
+  max-width: 65vw;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.num-step {
+  flex: 1;
+  min-width: clamp(100px, 10vw, 12vw);
+  max-width: 13vw;
+  text-align: center;
+  padding: clamp(10px, 1.5vh, 18px) clamp(6px, 1vw, 14px);
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 10px;
+  position: relative;
+}
+.num-step-num {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  color: var(--accent-warm);
+  opacity: 0.5;
+  margin-bottom: clamp(4px, 0.6vh, 10px);
+}
+.num-step-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.3rem, 2vw, 1.7rem);
+  color: var(--text-primary);
+  margin-bottom: clamp(4px, 0.5vh, 8px);
+}
+.num-step-desc {
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  color: var(--text-secondary);
+}
+
+/* ========== PROGRESS BAR ========== */
+.progress-bar {
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent-warm), var(--accent-pink), var(--accent-gold));
+  z-index: 10000;
+  transition: width 0.3s ease;
+}
+
+/* ========== NAV DOTS ========== */
+.nav-dots {
+  position: fixed;
+  right: clamp(10px, 1.5vw, 20px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10000;
+}
+.nav-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  cursor: pointer;
+  transition: all 0.3s;
+  border: none;
+  padding: 0;
+}
+.nav-dot.active {
+  background: var(--accent-warm);
+  box-shadow: 0 0 8px rgba(212,165,116,0.5);
+  transform: scale(1.4);
+}
+
+/* ========== REVEAL ANIMATIONS ========== */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.slide.visible .reveal {
+  opacity: 1;
+  transform: translateY(0);
+}
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.1s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.2s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.35s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.5s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.65s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.8s; }
+.slide.visible .reveal:nth-child(7) { transition-delay: 0.95s; }
+
+/* stagger children inside a reveal container */
+.slide.visible .stagger > * {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: fadeUp 0.6s ease forwards;
+}
+.slide.visible .stagger > *:nth-child(1) { animation-delay: 0.15s; }
+.slide.visible .stagger > *:nth-child(2) { animation-delay: 0.3s; }
+.slide.visible .stagger > *:nth-child(3) { animation-delay: 0.45s; }
+.slide.visible .stagger > *:nth-child(4) { animation-delay: 0.6s; }
+.slide.visible .stagger > *:nth-child(5) { animation-delay: 0.75s; }
+.slide.visible .stagger > *:nth-child(6) { animation-delay: 0.9s; }
+
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========== REDUCED MOTION ========== */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .slide.visible .stagger > * { opacity: 1; transform: none; animation: none; }
+  .orb { animation: none !important; }
+}
+
+/* ========== HEIGHT BREAKPOINTS (for non-4K screens) ========== */
+@media (max-height: 700px) {
+  .slide-title { font-size: clamp(1.6rem, 4vw, 2.8rem); }
+  .slide-subtitle { font-size: clamp(1rem, 2vw, 1.6rem); }
+  .col-title { font-size: clamp(1.1rem, 2vw, 1.6rem); }
+  .col-desc, .col-flaw { font-size: clamp(0.85rem, 1.3vw, 1.1rem); }
+  .card-label { font-size: clamp(1rem, 1.6vw, 1.3rem); }
+  .card-text { font-size: clamp(0.8rem, 1.2vw, 1rem); }
+  .title-main { font-size: clamp(3rem, 8vw, 6rem); }
+}
+
+/* ========== SMALL WIDTH ========== */
+@media (max-width: 600px) {
+  .nav-dots { display: none; }
+  .columns { flex-direction: column; align-items: center; }
+  .col { max-width: 100%; }
+  .split { flex-direction: column; align-items: center; }
+  .split-half { max-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- Progress Bar -->
+<div class="progress-bar" id="progressBar"></div>
+<!-- Nav Dots -->
+<div class="nav-dots" id="navDots"></div>
+
+<!-- ==================== SLIDE 1: TITLE ==================== -->
+<div class="slide" data-part="1">
+  <div class="orb orb-warm" style="width:500px;height:500px;top:-10%;left:-10%;opacity:0.18;"></div>
+  <div class="orb orb-pink" style="width:400px;height:400px;bottom:-5%;right:-8%;opacity:0.12;"></div>
+  <div class="orb orb-gold" style="width:350px;height:350px;top:30%;right:20%;opacity:0.08;"></div>
+  <div class="vline" style="height:40%;top:5%;left:12%;"></div>
+  <div class="part-label reveal">PART 01 &mdash; &#33539;&#24335;&#38761;&#21629;</div>
+  <div class="title-main reveal">BitFS</div>
+  <div class="title-sub reveal">&#22312;&#27604;&#29305;&#24065;&#20043;&#19978;&#65292;&#37325;&#24314;&#20114;&#32852;&#32593;</div>
+  <div class="title-tag reveal">&#20174; Web3.0 &#21040;&#25968;&#23383;&#19990;&#30028;&#36164;&#20135; (DWA)</div>
+</div>
+
+<!-- ==================== SLIDE 2 ==================== -->
+<div class="slide" data-part="1">
+  <div class="orb orb-pink" style="width:300px;height:300px;top:-8%;right:5%;opacity:0.1;"></div>
+  <div class="vline" style="height:50%;bottom:5%;right:15%;"></div>
+  <div class="slide-title reveal">&#26087;&#19990;&#30028;&#30340;&#32593;&#32476;</div>
+  <div class="slide-subtitle reveal">HTTP&#12289;BitTorrent &#19982; IPFS &#30340;&#30828;&#20260;</div>
+  <div class="content-area reveal">
+    <div class="columns stagger">
+      <div class="col">
+        <div class="col-title">HTTP</div>
+        <div class="col-desc">&#36229;&#25991;&#26412;&#20256;&#36755;</div>
+        <div class="col-flaw">&#33268;&#21629;&#32570;&#38519;&#65306;&#27809;&#26377;&#20215;&#20540;&#23618;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">BitTorrent</div>
+        <div class="col-desc">&#28857;&#23545;&#28857;&#20998;&#21457;</div>
+        <div class="col-flaw">&#33268;&#21629;&#32570;&#38519;&#65306;&#27809;&#26377;&#32463;&#27982;&#28608;&#21169;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">IPFS</div>
+        <div class="col-desc">&#20869;&#23481;&#23547;&#22336;</div>
+        <div class="col-flaw">&#33268;&#21629;&#32570;&#38519;&#65306;&#28608;&#21169;&#38169;&#37197;&#65288;&#37325;&#23384;&#36731;&#21462;&#65289;</div>
+      </div>
+    </div>
+    <div class="conclusion reveal">&#29616;&#26377;&#20307;&#31995;&#26080;&#27861;&#25903;&#25745;&#30495;&#27491;&#30340;&#20215;&#20540;&#20114;&#32852;&#32593;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 3 ==================== -->
+<div class="slide" data-part="1">
+  <div class="orb orb-warm" style="width:350px;height:350px;bottom:-10%;left:5%;opacity:0.12;"></div>
+  <div class="slide-title reveal">Agent &#32463;&#27982;&#30340;&#23835;&#36215;</div>
+  <div class="slide-subtitle reveal">&#24403;&#26426;&#22120;&#25104;&#20026;&#23458;&#25143;</div>
+  <div class="content-area reveal">
+    <div class="columns stagger">
+      <div class="col">
+        <div class="col-title" style="color:var(--text-secondary);">&#26087;</div>
+        <div class="col-desc">&#39564;&#35777;&#30721;&#20043;&#22681;</div>
+        <div class="col-flaw">&#38450;&#33539;&#26426;&#22120;&#27969;&#37327;</div>
+      </div>
+      <div class="col" style="border-color:rgba(212,165,116,0.2);">
+        <div class="col-title highlight">&#36716;&#21464;</div>
+        <div class="col-desc">&#22681;&#20307;&#23849;&#22604;</div>
+        <div class="col-flaw" style="color:var(--accent-warm);">Stripe &middot; Cloudflare &#25317;&#25265;&#26426;&#22120;&#23458;&#25143;</div>
+      </div>
+      <div class="col">
+        <div class="col-title highlight-gold">&#26032;</div>
+        <div class="col-desc">&#24494;&#25903;&#20184;&#20351;&#28982;</div>
+        <div class="col-flaw" style="color:var(--accent-gold);">&#26426;&#22120;&#27969;&#37327;&#20174;&#12300;&#25104;&#26412;&#12301;&#21464;&#20026;&#12300;&#23458;&#25143;&#12301;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 4 ==================== -->
+<div class="slide" data-part="1">
+  <div class="orb orb-gold" style="width:400px;height:400px;top:5%;left:-5%;opacity:0.1;"></div>
+  <div class="vline" style="height:35%;top:10%;left:8%;"></div>
+  <div class="slide-title reveal">&#24605;&#24819;&#30340;&#28779;&#33457;</div>
+  <div class="slide-subtitle reveal">&#20174;&#30333;&#30382;&#20070;&#21040; BitFS &#30340;&#24605;&#24819;&#35889;&#31995;</div>
+  <div class="content-area reveal">
+    <div class="flow-row stagger">
+      <div class="flow-step">
+        <div class="flow-step-label">&#27604;&#29305;&#24065;&#30333;&#30382;&#20070;</div>
+        <div class="flow-step-desc">&#20215;&#20540;&#36134;&#26412;</div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step">
+        <div class="flow-step-label">&#12298;&#19981;&#21487;&#21464;&#25968;&#25454;&#23384;&#20648;&#12299;</div>
+        <div class="flow-step-desc">&#25968;&#25454;&#23384;&#20648;&#34013;&#22270;</div>
+      </div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="flow-step">
+        <div class="flow-step-label highlight">BitFS</div>
+        <div class="flow-step-desc">&#38142;&#19978;&#25805;&#20316;&#31995;&#32479;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 5 ==================== -->
+<div class="slide" data-part="2">
+  <div class="orb orb-pink" style="width:350px;height:350px;top:10%;right:-5%;opacity:0.1;"></div>
+  <div class="vline" style="height:45%;bottom:8%;left:10%;"></div>
+  <div class="part-label reveal">PART 02 &mdash; &#25216;&#26415;&#22522;&#30707;</div>
+  <div class="slide-title reveal">&#25152;&#26377;&#26435;&#20043;&#38053;</div>
+  <div class="slide-subtitle reveal">&#38750;&#23545;&#31216;&#21152;&#23494;</div>
+  <div class="content-area reveal">
+    <div class="split stagger">
+      <div class="split-half">
+        <h3>&#31614;&#21517; / &#39564;&#35777;</h3>
+        <p>&#31169;&#38053;&#31614;&#21517;&#65292;&#20844;&#38053;&#39564;&#35777;</p>
+        <p style="margin-top:6px;color:var(--accent-gold);font-style:italic;">&#30830;&#26435;</p>
+      </div>
+      <div class="split-half">
+        <h3>&#21152;&#23494; / &#35299;&#23494;</h3>
+        <p>&#20844;&#38053;&#21152;&#23494;&#65292;&#31169;&#38053;&#35299;&#23494;</p>
+        <p style="margin-top:6px;color:var(--accent-pink);font-style:italic;">&#38544;&#31169;</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 6 ==================== -->
+<div class="slide" data-part="2">
+  <div class="orb orb-warm" style="width:300px;height:300px;bottom:5%;left:10%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#23494;&#30721;&#23398;&#30340;&#39764;&#27861;</div>
+  <div class="slide-subtitle reveal">&#26925;&#22278;&#26354;&#32447; &middot; &#25151;&#38388;&#24377;&#29699;&#27604;&#21947;</div>
+  <div class="content-area reveal">
+    <div class="ball-room">
+      <div class="ball-path"></div>
+      <div class="ball"></div>
+    </div>
+    <div class="flow-row" style="margin-top:clamp(8px,1.5vh,16px);">
+      <div class="ball-label">&#36386;&#29699;&#27425;&#25968; = <span class="highlight">&#31169;&#38053;</span>&#65288;&#31192;&#23494;&#65289;</div>
+      <div style="width:24px;"></div>
+      <div class="ball-label">&#26368;&#32456;&#20301;&#32622; = <span class="highlight-gold">&#20844;&#38053;</span>&#65288;&#20844;&#24320;&#65289;</div>
+    </div>
+    <div class="insight-box reveal">&#26131;&#20110;&#27491;&#21521;&#35745;&#31639;&#65292;&#26080;&#27861;&#36870;&#21521;&#25512;&#23548;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 7 ==================== -->
+<div class="slide" data-part="2">
+  <div class="orb orb-gold" style="width:380px;height:380px;top:-5%;right:10%;opacity:0.12;"></div>
+  <div class="vline" style="height:50%;top:10%;right:12%;"></div>
+  <div class="slide-title reveal">&#27704;&#24658;&#30340;&#20445;&#35777;</div>
+  <div class="slide-subtitle reveal">&#24037;&#20316;&#37327;&#35777;&#26126; = &#25968;&#23383;&#27700;&#27877;</div>
+  <div class="content-area reveal">
+    <div class="flow-row stagger" style="margin-bottom:clamp(10px,2vh,20px);">
+      <div class="cdn-node active">&#29289;&#29702;&#19990;&#30028;&#30340;<br>&#33021;&#37327;&#25104;&#26412;</div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="cdn-node" style="border-color:rgba(201,184,150,0.3);color:var(--accent-gold);">POW &#36716;&#21270;</div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="cdn-node active">&#25968;&#23383;&#19990;&#30028;&#30340;<br>&#19981;&#21487;&#31713;&#25913;&#24615;</div>
+    </div>
+    <div class="insight-box reveal">&#29289;&#29702;&#19990;&#30028;&#30340;&#33021;&#37327;&#25104;&#26412; &rarr; &#25968;&#23383;&#19990;&#30028;&#30340;&#19981;&#21487;&#31713;&#25913;&#24615;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 8 ==================== -->
+<div class="slide" data-part="2">
+  <div class="orb orb-pink" style="width:300px;height:300px;top:20%;left:-5%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#25968;&#25454;&#30340;&#23481;&#22120;</div>
+  <div class="slide-subtitle reveal">&#21487;&#32534;&#31243;&#30340;&#27604;&#29305;&#24065;&#20132;&#26131;</div>
+  <div class="content-area reveal">
+    <div class="columns stagger">
+      <div class="col">
+        <div class="col-title">Input</div>
+        <div class="col-desc">&#28040;&#32791;&#26087;&#31215;&#26408;<br>&#35777;&#26126;&#26435;&#38480;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">Output</div>
+        <div class="col-desc">&#21019;&#36896;&#26032;&#31215;&#26408;</div>
+      </div>
+      <div class="col" style="border-color:rgba(212,165,116,0.25);">
+        <div class="col-title highlight">OP_RETURN</div>
+        <div class="col-desc">&#22312;&#31215;&#26408;&#19978;&#21051;&#19979;<br><span class="highlight">&#20803;&#25968;&#25454;</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 9 ==================== -->
+<div class="slide" data-part="3">
+  <div class="orb orb-warm" style="width:400px;height:400px;top:-8%;left:10%;opacity:0.12;"></div>
+  <div class="orb orb-gold" style="width:250px;height:250px;bottom:10%;right:5%;opacity:0.08;"></div>
+  <div class="vline" style="height:40%;top:8%;left:6%;"></div>
+  <div class="part-label reveal">PART 03 &mdash; BitFS &#31995;&#32479;</div>
+  <div class="slide-title reveal">&#20132;&#26131;&#21363;&#33410;&#28857;</div>
+  <div class="slide-subtitle reveal">BitFS &#30340;&#38142;&#19978;&#25991;&#20214;&#31995;&#32479;</div>
+  <div class="content-area reveal">
+    <div class="columns stagger">
+      <div class="col">
+        <div class="col-title">&#19968;&#20010;&#20132;&#26131;</div>
+        <div class="col-desc">= &#19968;&#20010;&#25991;&#20214;&#33410;&#28857;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">&#33457;&#36153; UTXO</div>
+        <div class="col-desc">= &#21019;&#24314;&#30446;&#24405;&#20851;&#31995;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">&#26032;&#20132;&#26131;</div>
+        <div class="col-desc">= &#26032;&#29256;&#26412;</div>
+      </div>
+    </div>
+    <div class="insight-box reveal">&#19981;&#26159;&#25968;&#25454;&#24211;&#65292;&#26159;&#27963;&#22312;&#21306;&#22359;&#38142;&#19978;&#30340;&#25991;&#20214;&#31995;&#32479;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 10 ==================== -->
+<div class="slide" data-part="3">
+  <div class="orb orb-pink" style="width:320px;height:320px;bottom:-5%;left:-5%;opacity:0.1;"></div>
+  <div class="slide-title reveal">Method 42</div>
+  <div class="slide-subtitle reveal">BitFS &#30340;&#21152;&#23494;&#24341;&#25806;</div>
+  <div class="content-area reveal">
+    <div class="flow-row stagger">
+      <div class="cdn-node">&#20869;&#23481;&#25351;&#32441;<br><span style="font-size:0.8em;color:var(--accent-warm);">&#25991;&#20214;&#21704;&#24076;</span></div>
+      <div class="flow-arrow">+</div>
+      <div class="cdn-node">&#29992;&#25143;&#36523;&#20221;<br><span style="font-size:0.8em;color:var(--accent-gold);">HD&#38065;&#21253;&#23494;&#38053;</span></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="cdn-node active" style="border-color:rgba(212,165,116,0.4);">Method 42 KDF<br><span style="font-size:0.8em;">&#23494;&#38053;&#27966;&#29983;</span></div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="cdn-node" style="border-color:rgba(201,184,150,0.3);color:var(--accent-gold);">&#21152;&#23494;&#23494;&#38053;</div>
+    </div>
+    <div class="insight-box reveal">&#23494;&#38053;&#19982;&#36523;&#20221;&#21644;&#20869;&#23481;&#28145;&#24230;&#32465;&#23450;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 11 ==================== -->
+<div class="slide" data-part="3">
+  <div class="orb orb-warm" style="width:450px;height:450px;top:-10%;right:-10%;opacity:0.15;"></div>
+  <div class="orb orb-pink" style="width:300px;height:300px;bottom:-5%;left:10%;opacity:0.08;"></div>
+  <div class="slide-title reveal">BitFS</div>
+  <div class="slide-subtitle reveal">&#26032;&#19990;&#30028;&#30340;&#25805;&#20316;&#31995;&#32479;</div>
+  <div class="content-area reveal">
+    <div class="iceberg">
+      <div class="iceberg-above">
+        <div class="iceberg-label">CLI &middot; GUI &middot; API</div>
+        <div class="iceberg-items">&#31616;&#27905;&#12289;&#21451;&#22909;&#12289;&#26131;&#29992;</div>
+      </div>
+      <div class="iceberg-below">
+        <div class="iceberg-label">&#24222;&#22823;&#30340;&#22522;&#24231;</div>
+        <div class="iceberg-items">&#38142;&#19978;&#25991;&#20214;&#32467;&#26500; &middot; Method 42 &middot; POW &middot; &#27604;&#29305;&#24065;&#33050;&#26412;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 12 ==================== -->
+<div class="slide" data-part="3">
+  <div class="orb orb-gold" style="width:350px;height:350px;top:5%;left:-8%;opacity:0.1;"></div>
+  <div class="vline" style="height:45%;bottom:5%;right:10%;"></div>
+  <div class="slide-title reveal">BitFS &#31995;&#32479;&#24635;&#26550;&#26500;</div>
+  <div class="slide-subtitle reveal">&#19977;&#23618;&#26550;&#26500;</div>
+  <div class="content-area reveal">
+    <div class="layer-stack stagger">
+      <div class="layer layer-top">
+        <div class="layer-name">&#29992;&#25143;&#30028;&#38754;&#23618;</div>
+        <div class="layer-desc">CLI (b*, bitfs) &middot; GUI &middot; API</div>
+      </div>
+      <div class="layer layer-mid">
+        <div class="layer-name">&#26680;&#24515;&#24341;&#25806;</div>
+        <div class="layer-desc">&#25991;&#20214;&#31649;&#29702; &middot; &#29256;&#26412;&#25511;&#21046; &middot; &#21152;&#23494; &middot; ACL</div>
+      </div>
+      <div class="layer layer-bot">
+        <div class="layer-name">&#21306;&#22359;&#38142;&#23618;</div>
+        <div class="layer-desc">&#20132;&#26131;&#26500;&#24314; &middot; UTXO&#31649;&#29702; &middot; &#23494;&#38053;&#27966;&#29983;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 13 ==================== -->
+<div class="slide" data-part="3">
+  <div class="orb orb-pink" style="width:280px;height:280px;top:15%;right:8%;opacity:0.1;"></div>
+  <div class="slide-title reveal">BitFS &#24037;&#20855;&#31665;</div>
+  <div class="slide-subtitle reveal">&#20004;&#22823;&#21629;&#20196;&#34892;&#24037;&#20855; + HD&#38065;&#21253;</div>
+  <div class="content-area reveal">
+    <div class="split stagger">
+      <div class="split-half">
+        <h3>CLI &#24037;&#20855;</h3>
+        <p><span class="highlight">b*</span>&#65288;&#35775;&#23458;&#24037;&#20855;&#65289;<br>&#35835;&#21462;&#20844;&#24320;&#25968;&#25454;</p>
+        <div style="height:clamp(6px,1vh,12px);"></div>
+        <p><span class="highlight">bitfs</span>&#65288;&#25152;&#26377;&#32773;&#24037;&#20855;&#65289;<br>&#31649;&#29702;&#31169;&#26377;&#36164;&#20135;</p>
+      </div>
+      <div class="split-half">
+        <h3>HD &#38065;&#21253;</h3>
+        <p>&#19968;&#20010;&#21161;&#35760;&#35789;<br>&#31649;&#29702;&#25152;&#26377;&#36164;&#20135;&#21644;&#36523;&#20221;</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 14 ==================== -->
+<div class="slide" data-part="4">
+  <div class="orb orb-warm" style="width:400px;height:400px;bottom:-8%;right:-5%;opacity:0.12;"></div>
+  <div class="vline" style="height:40%;top:8%;left:10%;"></div>
+  <div class="part-label reveal">PART 04 &mdash; &#26680;&#24515;&#21151;&#33021;&#19982;&#21830;&#19994;&#27169;&#24335;</div>
+  <div class="slide-title reveal">&#26680;&#24515;&#21151;&#33021;</div>
+  <div class="slide-subtitle reveal">&#20116;&#27493;&#24037;&#20316;&#27969;</div>
+  <div class="content-area reveal">
+    <div class="num-flow stagger">
+      <div class="num-step">
+        <div class="num-step-num">01</div>
+        <div class="num-step-title">&#21019;&#24314;</div>
+        <div class="num-step-desc">&#20889;&#20837;&#38142;&#19978;</div>
+      </div>
+      <div class="num-step">
+        <div class="num-step-num">02</div>
+        <div class="num-step-title">&#29256;&#26412;</div>
+        <div class="num-step-desc">&#19981;&#21487;&#21464;&#21382;&#21490;</div>
+      </div>
+      <div class="num-step">
+        <div class="num-step-num">03</div>
+        <div class="num-step-title">&#21327;&#20316;</div>
+        <div class="num-step-desc">ACL &#26435;&#38480;&#25511;&#21046;</div>
+      </div>
+      <div class="num-step">
+        <div class="num-step-num">04</div>
+        <div class="num-step-title">&#21629;&#21517;</div>
+        <div class="num-step-desc">DNSLink &#20154;&#31867;&#21487;&#35835;</div>
+      </div>
+      <div class="num-step">
+        <div class="num-step-num">05</div>
+        <div class="num-step-title">&#21457;&#24067;</div>
+        <div class="num-step-desc">&#20840;&#29699;&#21487;&#36798;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 15 ==================== -->
+<div class="slide" data-part="4">
+  <div class="orb orb-gold" style="width:350px;height:350px;top:5%;left:5%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#20215;&#20540;&#24341;&#25806;</div>
+  <div class="slide-subtitle reveal">&#25968;&#25454;&#36135;&#24065;&#21270;</div>
+  <div class="content-area reveal">
+    <div class="split stagger">
+      <div class="split-half" style="background:rgba(255,255,255,0.02);border-radius:12px;padding:clamp(14px,2vh,24px) clamp(12px,1.5vw,20px);">
+        <h3>&#30452;&#25509;&#38144;&#21806;</h3>
+        <p>HTLC &#21407;&#23376;&#20132;&#25442;</p>
+        <p style="margin-top:8px;color:var(--accent-warm);font-style:italic;">&#20687;&#33258;&#21160;&#21806;&#36135;&#26426;&#19968;&#26679;&#31616;&#21333;</p>
+      </div>
+      <div class="split-half" style="background:rgba(255,255,255,0.02);border-radius:12px;padding:clamp(14px,2vh,24px) clamp(12px,1.5vw,20px);">
+        <h3>&#25910;&#30410;&#26435;&#32929;&#20221;</h3>
+        <p>ISO &#21457;&#34892;</p>
+        <p style="margin-top:8px;color:var(--accent-gold);font-style:italic;">&#20026;&#27599;&#20010;&#20316;&#21697;&#24320;&#35774;&#24494;&#22411;&#19978;&#24066;&#20844;&#21496;</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 16 ==================== -->
+<div class="slide" data-part="5">
+  <div class="orb orb-pink" style="width:380px;height:380px;top:-5%;right:-5%;opacity:0.12;"></div>
+  <div class="vline" style="height:50%;bottom:5%;left:8%;"></div>
+  <div class="part-label reveal">PART 05 &mdash; Token &#32463;&#27982;</div>
+  <div class="slide-title reveal">Token &ne; &#25237;&#26426;</div>
+  <div class="slide-subtitle reveal">&#20215;&#20540;&#20973;&#35777;&#30340;&#22238;&#24402;</div>
+  <div class="content-area">
+    <div style="display:flex;gap:clamp(12px,2vw,32px);align-items:center;flex-wrap:wrap;justify-content:center;">
+      <div class="reveal crossed-out" style="padding:clamp(8px,1vh,14px) clamp(10px,1.5vw,18px);background:rgba(255,255,255,0.02);border-radius:10px;">
+        <div style="font-size:clamp(0.8rem,1.2vw,1rem);color:var(--text-secondary);">ICO &#28779;&#31661;</div>
+        <div style="font-size:clamp(0.7rem,1vw,0.85rem);color:var(--text-secondary);">Pump &amp; Dump</div>
+      </div>
+      <div class="reveal" style="display:flex;flex-direction:column;align-items:center;">
+        <div class="token-divider">Token = &#25968;&#23383;&#21270;&#30340;&#26435;&#21033;&#20973;&#35777;</div>
+      </div>
+      <div class="reveal card-grid" style="max-width:500px;">
+        <div class="card"><div class="card-icon">&#127915;</div><div class="card-label">&#38376;&#31080;</div><div class="card-text">&#20837;&#22330;&#26435;</div></div>
+        <div class="card"><div class="card-icon">&#128202;</div><div class="card-label">&#32929;&#26435;</div><div class="card-text">&#25152;&#26377;&#26435;</div></div>
+        <div class="card"><div class="card-icon">&#127873;</div><div class="card-label">&#20248;&#24800;&#21048;</div><div class="card-text">&#20817;&#25442;&#26435;</div></div>
+        <div class="card"><div class="card-icon">&#129706;</div><div class="card-label">&#20250;&#21592;</div><div class="card-text">&#20934;&#20837;&#26435;</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 17 ==================== -->
+<div class="slide" data-part="5">
+  <div class="orb orb-warm" style="width:320px;height:320px;bottom:5%;right:8%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#28335;&#28304;&#20043;&#38142;</div>
+  <div class="slide-subtitle reveal">&#20174;&#20154;&#32905;&#35777;&#26126;&#21040;&#38142;&#19978;&#19981;&#21487;&#31713;&#25913;</div>
+  <div class="content-area reveal">
+    <div class="compare-block stagger">
+      <div class="compare-row old">
+        <div class="compare-badge">&#26087;&#26041;&#24335;</div>
+        <div class="compare-chain">
+          <span>&#20154;+&#30011;+&#29031;&#29255;</span>
+          <span class="arr">&rarr;</span>
+          <span>&#36716;&#35753;+&#29031;&#29255;</span>
+          <span class="arr">&rarr;</span>
+          <span>&#20877;&#36716;&#35753;...</span>
+        </div>
+        <div class="compare-verdict">&#33030;&#24369; &middot; &#21487;&#20266;&#36896; &middot; &#26131;&#26029;&#35010;</div>
+      </div>
+      <div class="compare-row new">
+        <div class="compare-badge">&#38142;&#19978;&#26041;&#24335;</div>
+        <div class="compare-chain">
+          <span>Block</span>
+          <span class="arr">&rarr;</span>
+          <span>Block</span>
+          <span class="arr">&rarr;</span>
+          <span>Block + &#26102;&#38388;&#25139;</span>
+        </div>
+        <div class="compare-verdict">&#33258;&#21160; &middot; &#19981;&#21487;&#31713;&#25913; &middot; &#27704;&#20037;&#21487;&#26597;</div>
+      </div>
+    </div>
+    <div class="insight-box reveal">NFT &#30340;&#30495;&#27491;&#20215;&#20540; = &#19981;&#21487;&#20266;&#36896;&#30340;&#28335;&#28304;&#38142;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 18 ==================== -->
+<div class="slide" data-part="5">
+  <div class="orb orb-gold" style="width:350px;height:350px;top:10%;left:-5%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#19975;&#29289;&#30342;&#21487; Token</div>
+  <div class="slide-subtitle reveal">Tokenized Protocol &#26631;&#20934;</div>
+  <div class="content-area reveal">
+    <div class="card-grid stagger" style="grid-template-columns:repeat(3, 1fr);max-width:700px;">
+      <div class="card"><div class="card-label">SHC</div><div class="card-text">&#32929;&#26435;</div></div>
+      <div class="card"><div class="card-label">TIC</div><div class="card-text">&#38376;&#31080;</div></div>
+      <div class="card"><div class="card-label">LOY</div><div class="card-text">&#31215;&#20998;</div></div>
+      <div class="card"><div class="card-label">COU</div><div class="card-text">&#20248;&#24800;&#21048;</div></div>
+      <div class="card"><div class="card-label">MEM</div><div class="card-text">&#20250;&#21592;</div></div>
+      <div class="card"><div class="card-label">CCY</div><div class="card-text">&#36135;&#24065;</div></div>
+    </div>
+    <div class="insight-box reveal">&#25259;&#33832;&#31215;&#20998;&#26696;&#20363;&#65306;&#23567;&#24215;&#32769;&#26495;&#20063;&#33021;&#21019;&#24314;&#38142;&#19978;&#31215;&#20998;&#31995;&#32479;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 19 ==================== -->
+<div class="slide" data-part="6">
+  <div class="orb orb-warm" style="width:420px;height:420px;top:-8%;left:-8%;opacity:0.14;"></div>
+  <div class="orb orb-pink" style="width:250px;height:250px;bottom:10%;right:10%;opacity:0.08;"></div>
+  <div class="vline" style="height:45%;top:5%;right:8%;"></div>
+  <div class="part-label reveal">PART 06 &mdash; &#24212;&#29992;&#29983;&#24577;</div>
+  <div class="slide-title reveal">&#32593;&#32476;&#30340;&#22823;&#21160;&#33033;</div>
+  <div class="slide-subtitle reveal">&#21435;&#20013;&#24515;&#21270; CDN</div>
+  <div class="content-area reveal">
+    <div class="cdn-flow stagger">
+      <div class="cdn-node active">&#28909;&#38376;&#25991;&#20214;<br>&#65288;&#28304;&#65289;</div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="cdn-node">CDN &#33410;&#28857;<br>&#25289;&#21462;&#21103;&#26412;</div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="cdn-node">&#29992;&#25143;&#23601;&#36817;<br>&#35775;&#38382;</div>
+      <div class="flow-arrow">&rarr;</div>
+      <div class="cdn-node active">&#36153;&#29992;&#22238;&#27969;<br>&#21019;&#20316;&#32773;</div>
+    </div>
+    <div class="insight-box reveal">&#28608;&#21169;&#26816;&#32034;&#65292;&#32780;&#38750;&#28608;&#21169;&#23384;&#20648;</div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 20 ==================== -->
+<div class="slide" data-part="6">
+  <div class="orb orb-gold" style="width:350px;height:350px;top:20%;right:-5%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#26080;&#38480;&#21487;&#33021;</div>
+  <div class="slide-subtitle reveal">&#24403;&#25968;&#25454;&#12289;&#36523;&#20221;&#21644;&#25903;&#20184;&#21407;&#29983;&#34701;&#21512;</div>
+  <div class="content-area reveal">
+    <div class="card-grid stagger" style="grid-template-columns:repeat(3, 1fr);max-width:800px;">
+      <div class="card"><div class="card-label">&#21435;&#20013;&#24515;&#21270;&#23384;&#20648;</div><div class="card-text">&#25968;&#25454;&#27704;&#23384;</div></div>
+      <div class="card"><div class="card-label">&#24494;&#25903;&#20184;</div><div class="card-text">&#26426;&#22120;&#32463;&#27982;</div></div>
+      <div class="card"><div class="card-label">&#25968;&#23383;&#36523;&#20221;</div><div class="card-text">&#33258;&#20027;&#25484;&#25511;</div></div>
+      <div class="card"><div class="card-label">&#26234;&#33021;&#21512;&#32422;</div><div class="card-text">&#33258;&#21160;&#25191;&#34892;</div></div>
+      <div class="card"><div class="card-label">&#20379;&#24212;&#38142;</div><div class="card-text">&#36879;&#26126;&#28335;&#28304;</div></div>
+      <div class="card"><div class="card-label">IoT &#32593;&#32476;</div><div class="card-text">&#35774;&#22791;&#21327;&#20316;</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 21 ==================== -->
+<div class="slide" data-part="6">
+  <div class="orb orb-pink" style="width:300px;height:300px;bottom:-5%;left:5%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#20026;&#24320;&#21457;&#32773;</div>
+  <div class="slide-subtitle reveal">&#26500;&#24314;&#26032;&#19990;&#30028;&#30340;&#22522;&#30784;&#35774;&#26045;</div>
+  <div class="content-area reveal">
+    <div class="columns stagger">
+      <div class="col">
+        <div class="col-title">&#21435;&#20013;&#24515;&#21270; Git</div>
+        <div class="col-desc">&#20195;&#30721;&#27704;&#23384;&#38142;&#19978;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">&#38142;&#19978; App Store</div>
+        <div class="col-desc">&#26080;&#23457;&#26597;&#20998;&#21457;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">Skill &#24066;&#22330;</div>
+        <div class="col-desc">&#23433;&#20840;&#30340;&#33021;&#21147;&#20132;&#26131;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 22 ==================== -->
+<div class="slide" data-part="6">
+  <div class="orb orb-warm" style="width:350px;height:350px;top:10%;right:10%;opacity:0.1;"></div>
+  <div class="vline" style="height:35%;bottom:8%;left:12%;"></div>
+  <div class="slide-title reveal">&#20026;&#21019;&#20316;&#32773;</div>
+  <div class="slide-subtitle reveal">&#20869;&#23481;&#21363;&#36164;&#20135;&#65292;&#30452;&#36830;&#31881;&#19997;</div>
+  <div class="content-area reveal">
+    <div class="columns stagger">
+      <div class="col">
+        <div class="col-title">&#38142;&#19978;&#31508;&#35760; &middot; &#21338;&#23458;</div>
+        <div class="col-desc">&#20869;&#23481;&#21363;&#36164;&#20135;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">&#26080;&#25277;&#25104;&#12300;&#23567;&#23494;&#22280;&#12301;</div>
+        <div class="col-desc">&#30452;&#36830;&#31881;&#19997;</div>
+      </div>
+      <div class="col">
+        <div class="col-title">&#30693;&#35782;&#20184;&#36153;</div>
+        <div class="col-desc">&#19968;&#38190;&#21464;&#29616;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 23 ==================== -->
+<div class="slide" data-part="6">
+  <div class="orb orb-gold" style="width:300px;height:300px;top:-5%;left:10%;opacity:0.1;"></div>
+  <div class="slide-title reveal">&#20026;&#33402;&#26415;&#23478;</div>
+  <div class="slide-subtitle reveal">&#21019;&#20316;&#21363;&#25237;&#36164;&#65292;&#31881;&#19997;&#21363;&#32929;&#19996;</div>
+  <div class="content-area reveal">
+    <div class="split stagger">
+      <div class="split-half" style="background:rgba(255,255,255,0.02);border-radius:12px;padding:clamp(16px,2.5vh,28px) clamp(14px,2vw,24px);">
+        <h3>&#27468;&#26354;&#21363;&#32929;&#31080;</h3>
+        <p>&#31881;&#19997;&#25237;&#36164;&#38899;&#20048;</p>
+      </div>
+      <div class="split-half" style="background:rgba(255,255,255,0.02);border-radius:12px;padding:clamp(16px,2.5vh,28px) clamp(14px,2vw,24px);">
+        <h3>&#28857;&#36190;&#21363;&#25171;&#36175;</h3>
+        <p>&#30701;&#35270;&#39057;&#24494;&#25903;&#20184;</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 24 ==================== -->
+<div class="slide" data-part="6">
+  <div class="orb orb-pink" style="width:380px;height:380px;bottom:-8%;right:-5%;opacity:0.12;"></div>
+  <div class="orb orb-warm" style="width:250px;height:250px;top:10%;left:5%;opacity:0.08;"></div>
+  <div class="slide-title reveal">&#20026;&#26032;&#32463;&#27982;&#20307;</div>
+  <div class="slide-subtitle reveal">&#25968;&#25454;&#12289;&#24102;&#23485;&#12289;AI &#30340;&#26032;&#24066;&#22330;</div>
+  <div class="content-area reveal">
+    <div class="card-grid stagger" style="grid-template-columns:repeat(2, 1fr);max-width:700px;">
+      <div class="card">
+        <div class="card-label">&#25968;&#25454;&#20132;&#26131;&#25152;</div>
+        <div class="card-text">&#25968;&#25454;&#21363;&#21830;&#21697;</div>
+      </div>
+      <div class="card">
+        <div class="card-label">CDN &#24102;&#23485;&#24066;&#22330;</div>
+        <div class="card-text">&#38386;&#32622;&#24102;&#23485;&#21464;&#29616;</div>
+      </div>
+      <div class="card">
+        <div class="card-label">&#33258;&#20027;&#25237;&#36164; Agent</div>
+        <div class="card-text">AI &#33258;&#20027;&#32463;&#27982;&#20307;</div>
+      </div>
+      <div class="card">
+        <div class="card-label">AI &#39564;&#25910;&#38646;&#24037;</div>
+        <div class="card-text">&#26234;&#33021;&#20219;&#21153;&#24066;&#22330;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SLIDE 25: FINALE ==================== -->
+<div class="slide" data-part="7">
+  <div class="orb orb-warm" style="width:500px;height:500px;top:-15%;left:-10%;opacity:0.18;"></div>
+  <div class="orb orb-pink" style="width:400px;height:400px;bottom:-10%;right:-8%;opacity:0.14;"></div>
+  <div class="orb orb-gold" style="width:300px;height:300px;top:40%;right:25%;opacity:0.08;"></div>
+  <div class="vline" style="height:60%;top:5%;left:8%;"></div>
+  <div class="vline" style="height:50%;bottom:5%;right:10%;"></div>
+  <div class="part-label reveal">PART 07 &mdash; &#24635;&#32467;</div>
+  <div class="final-lines">
+    <div class="final-line reveal">&#36825;&#19981;&#21482;&#26159;&#19968;&#20010;&#20135;&#21697;&#65292;&#36825;&#26159;&#19968;&#20010;&#26032;&#19990;&#30028;&#30340;&#24320;&#31471;&#12290;</div>
+    <div class="final-line reveal">&#25968;&#25454;&#21363;&#36164;&#20135;&#65292;&#32593;&#32476;&#21363;&#24066;&#22330;&#12290;</div>
+    <div class="final-line reveal">&#27426;&#36814;&#26469;&#21040;&#20215;&#20540;&#20114;&#32852;&#32593;&#12290;</div>
+  </div>
+  <div class="final-footer reveal">BitFS &middot; &#24314;&#31435;&#22312;&#27604;&#29305;&#24065;&#20043;&#19978;&#30340;&#20114;&#32852;&#32593;</div>
+</div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+class SlidePresentation {
+  constructor() {
+    this.slides = document.querySelectorAll('.slide');
+    this.currentIndex = 0;
+    this.isScrolling = false;
+    this.touchStartY = 0;
+    this.touchStartX = 0;
+    this.init();
+  }
+
+  init() {
+    this.createNavDots();
+    this.setupIntersectionObserver();
+    this.setupKeyboard();
+    this.setupTouch();
+    this.setupScroll();
+    this.updateProgress();
+  }
+
+  createNavDots() {
+    const container = document.getElementById('navDots');
+    this.slides.forEach((_, i) => {
+      const dot = document.createElement('button');
+      dot.className = 'nav-dot' + (i === 0 ? ' active' : '');
+      dot.setAttribute('aria-label', 'Slide ' + (i + 1));
+      dot.addEventListener('click', () => this.goTo(i));
+      container.appendChild(dot);
+    });
+    this.dots = container.querySelectorAll('.nav-dot');
+  }
+
+  setupIntersectionObserver() {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          const idx = Array.from(this.slides).indexOf(entry.target);
+          if (idx !== -1) {
+            this.currentIndex = idx;
+            this.updateDots();
+            this.updateProgress();
+          }
+        }
+      });
+    }, { threshold: 0.5 });
+
+    this.slides.forEach(slide => observer.observe(slide));
+  }
+
+  setupKeyboard() {
+    document.addEventListener('keydown', (e) => {
+      switch(e.key) {
+        case 'ArrowDown':
+        case 'ArrowRight':
+        case ' ':
+        case 'PageDown':
+          e.preventDefault();
+          this.next();
+          break;
+        case 'ArrowUp':
+        case 'ArrowLeft':
+        case 'PageUp':
+          e.preventDefault();
+          this.prev();
+          break;
+        case 'Home':
+          e.preventDefault();
+          this.goTo(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          this.goTo(this.slides.length - 1);
+          break;
+      }
+    });
+  }
+
+  setupTouch() {
+    document.addEventListener('touchstart', (e) => {
+      this.touchStartY = e.changedTouches[0].screenY;
+      this.touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      const dy = this.touchStartY - e.changedTouches[0].screenY;
+      const dx = this.touchStartX - e.changedTouches[0].screenX;
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 50) {
+        if (dy > 0) this.next();
+        else this.prev();
+      }
+    }, { passive: true });
+  }
+
+  setupScroll() {
+    let scrollTimeout;
+    document.addEventListener('scroll', () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        this.updateProgress();
+      }, 50);
+    }, { passive: true });
+  }
+
+  next() {
+    if (this.currentIndex < this.slides.length - 1) {
+      this.goTo(this.currentIndex + 1);
+    }
+  }
+
+  prev() {
+    if (this.currentIndex > 0) {
+      this.goTo(this.currentIndex - 1);
+    }
+  }
+
+  goTo(index) {
+    if (index >= 0 && index < this.slides.length) {
+      this.slides[index].scrollIntoView({ behavior: 'smooth' });
+      this.currentIndex = index;
+      this.updateDots();
+      this.updateProgress();
+    }
+  }
+
+  updateDots() {
+    this.dots.forEach((dot, i) => {
+      dot.classList.toggle('active', i === this.currentIndex);
+    });
+  }
+
+  updateProgress() {
+    const pct = ((this.currentIndex + 1) / this.slides.length) * 100;
+    document.getElementById('progressBar').style.width = pct + '%';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  new SlidePresentation();
+});
+</script>
+
+</body>
+</html>

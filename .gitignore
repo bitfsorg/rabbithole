@@ -1,0 +1,7 @@
+.DS_Store
+.obsidian/
+.playwright-mcp/
+.claude/
+node_modules/
+*.out
+.sisyphus/

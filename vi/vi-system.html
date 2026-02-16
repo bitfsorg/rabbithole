@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BitFS / Metanet — Visual Identity System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;700;900&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════
+   VI SYSTEM TOKENS
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* ── Shared Foundation ── */
+  --font-sans: "Inter", "Noto Sans SC", -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+  --font-serif: "Cormorant Garamond", "Noto Serif SC", Georgia, serif;
+
+  /* ── BitFS: Dark Botanical ── */
+  --b-bg:        #110f0d;
+  --b-bg2:       #1a1714;
+  --b-bg3:       #231f1b;
+  --b-border:    #2e2924;
+  --b-text:      #d4cdc4;
+  --b-text-dim:  #8a8078;
+  --b-text-bright: #f0ebe5;
+  --b-gold:      #c9956b;
+  --b-gold-light:#dbb08a;
+  --b-gold-dark: #a07548;
+  --b-gold-glow: #c9956b12;
+
+  /* ── Metanet: Bold Signal ── */
+  --m-bg:        #1e1e1e;
+  --m-bg2:       #2a2a2a;
+  --m-bg3:       #333333;
+  --m-border:    #404040;
+  --m-text:      #d4d4d4;
+  --m-text-dim:  #888888;
+  --m-text-bright: #ffffff;
+  --m-amber:     #e8983e;
+  --m-amber-light:#f0ad5e;
+  --m-amber-dark:#c47a28;
+  --m-amber-glow:#e8983e15;
+  --m-red:       #d44030;
+}
+
+/* ═══════════════════════════════════════════════
+   GLOBAL STYLES
+   ═══════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-sans);
+  background: #0a0a0a;
+  color: #ccc;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page { max-width: 1200px; margin: 0 auto; padding: 64px 32px; }
+
+/* Section chrome */
+.vi-section { margin-bottom: 80px; }
+.vi-section-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #555;
+  margin-bottom: 12px;
+}
+.vi-section-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #eee;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+}
+.vi-section-desc {
+  font-size: 15px;
+  color: #777;
+  margin-bottom: 40px;
+  max-width: 640px;
+}
+
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, #333, transparent);
+  margin: 80px 0;
+}
+
+/* Two-column product layout */
+.dual { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.dual > .col-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+.col-label.bitfs { color: var(--b-gold); border-bottom: 1px solid var(--b-border); }
+.col-label.metanet { color: var(--m-amber); border-bottom: 1px solid var(--m-border); }
+
+/* ═══════════════════════════════════════════════
+   01 · COLOR PALETTES
+   ═══════════════════════════════════════════════ */
+
+.palette-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 24px; }
+.swatch {
+  width: 100px; border-radius: 10px; overflow: hidden;
+  background: #1a1a1a; border: 1px solid #2a2a2a;
+}
+.swatch-color { height: 56px; }
+.swatch-info { padding: 8px 10px; }
+.swatch-name { font-size: 11px; font-weight: 600; color: #ddd; }
+.swatch-hex { font-size: 10px; font-family: var(--font-mono); color: #777; }
+.swatch.large { width: 140px; }
+.swatch.large .swatch-color { height: 72px; }
+
+/* ═══════════════════════════════════════════════
+   02 · LOGO SYSTEM
+   ═══════════════════════════════════════════════ */
+
+.logo-showcase {
+  display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 32px;
+}
+.logo-card {
+  flex: 1; min-width: 280px; padding: 56px 40px; border-radius: 16px;
+  text-align: center; position: relative; overflow: hidden;
+}
+
+/* BitFS logo card */
+.logo-card.bitfs-dark {
+  background: radial-gradient(ellipse at 70% 30%, #2a221a 0%, var(--b-bg) 70%);
+  border: 1px solid var(--b-border);
+}
+.logo-card.bitfs-dark::before {
+  content: ''; position: absolute; top: 20%; right: 10%;
+  width: 200px; height: 200px; border-radius: 50%;
+  background: var(--b-gold); filter: blur(100px); opacity: 0.06;
+}
+.logo-card.bitfs-dark::after {
+  content: ''; position: absolute; bottom: 10%; left: 5%;
+  width: 160px; height: 160px; border-radius: 50%;
+  background: var(--b-gold-dark); filter: blur(80px); opacity: 0.04;
+}
+.logo-card.bitfs-light {
+  background: #f5f0e8;
+  border: 1px solid #e0d8cc;
+}
+
+/* Metanet logo card */
+.logo-card.metanet-dark {
+  background: var(--m-bg);
+  border: 1px solid var(--m-border);
+}
+.logo-card.metanet-light {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+}
+
+/* BitFS wordmark */
+.wm-bitfs {
+  font-size: 52px; font-weight: 400; letter-spacing: -0.02em;
+  position: relative; z-index: 1;
+}
+.wm-bitfs .bit { font-family: var(--font-sans); font-weight: 300; }
+.wm-bitfs .fs { font-family: var(--font-serif); font-style: italic; font-weight: 600; }
+.wm-bitfs.on-dark .bit { color: var(--b-text); }
+.wm-bitfs.on-dark .fs { color: var(--b-gold); }
+.wm-bitfs.on-light .bit { color: #2a2420; }
+.wm-bitfs.on-light .fs { color: #8a6844; }
+
+/* Metanet wordmark */
+.wm-metanet {
+  font-family: var(--font-sans);
+  font-size: 52px; font-weight: 900; letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+.wm-metanet.on-dark { color: var(--m-text-bright); }
+.wm-metanet.on-dark .accent { color: var(--m-amber); }
+.wm-metanet.on-light { color: #1e1e1e; }
+.wm-metanet.on-light .accent { color: var(--m-amber-dark); }
+
+.logo-tagline {
+  font-size: 12px; margin-top: 12px; position: relative; z-index: 1;
+}
+.logo-tagline.bitfs { font-family: var(--font-serif); font-style: italic; color: var(--b-text-dim); }
+.logo-tagline.metanet { font-family: var(--font-mono); font-size: 11px; color: var(--m-text-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+
+.logo-variant-label {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #666; margin-top: 20px;
+}
+
+/* ═══════════════════════════════════════════════
+   03 · TYPOGRAPHY
+   ═══════════════════════════════════════════════ */
+
+.type-panel {
+  padding: 32px; border-radius: 14px; margin-bottom: 16px;
+}
+.type-panel.bitfs {
+  background: var(--b-bg2);
+  border: 1px solid var(--b-border);
+}
+.type-panel.metanet {
+  background: var(--m-bg2);
+  border: 1px solid var(--m-border);
+}
+.type-spec {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; margin-bottom: 10px;
+}
+.type-spec.bitfs { color: var(--b-gold-dark); }
+.type-spec.metanet { color: var(--m-amber-dark); }
+
+/* BitFS typography */
+.bt-h1 {
+  font-family: var(--font-serif); font-size: 44px; font-weight: 600;
+  font-style: italic; color: var(--b-text-bright); letter-spacing: -0.02em; line-height: 1.15;
+}
+.bt-h2 {
+  font-family: var(--font-sans); font-size: 22px; font-weight: 500;
+  color: var(--b-text); letter-spacing: -0.01em;
+}
+.bt-body {
+  font-family: var(--font-sans); font-size: 15px; font-weight: 300;
+  color: var(--b-text-dim); line-height: 1.8;
+}
+.bt-accent {
+  font-family: var(--font-serif); font-style: italic;
+  color: var(--b-gold);
+}
+.bt-code {
+  font-family: var(--font-mono); font-size: 13px; color: var(--b-gold-light);
+}
+
+/* Metanet typography */
+.mt-h1 {
+  font-family: var(--font-sans); font-size: 44px; font-weight: 900;
+  color: var(--m-text-bright); letter-spacing: -0.04em; line-height: 1.1;
+  text-transform: uppercase;
+}
+.mt-h2 {
+  font-family: var(--font-sans); font-size: 22px; font-weight: 700;
+  color: var(--m-text); letter-spacing: -0.02em;
+}
+.mt-body {
+  font-family: var(--font-sans); font-size: 15px; font-weight: 400;
+  color: var(--m-text-dim); line-height: 1.7;
+}
+.mt-accent { color: var(--m-amber); font-weight: 700; }
+.mt-code {
+  font-family: var(--font-mono); font-size: 13px; color: var(--m-amber-light);
+}
+
+/* ═══════════════════════════════════════════════
+   04 · BUTTONS & UI ELEMENTS
+   ═══════════════════════════════════════════════ */
+
+.ui-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-bottom: 24px; }
+
+/* BitFS buttons — refined, thin borders */
+.btn-b-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 28px; border-radius: 6px;
+  font-family: var(--font-sans); font-size: 14px; font-weight: 500;
+  background: var(--b-gold); color: var(--b-bg); border: none; cursor: pointer;
+  transition: all 0.3s;
+}
+.btn-b-secondary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 28px; border-radius: 6px;
+  font-family: var(--font-sans); font-size: 14px; font-weight: 500;
+  background: transparent; color: var(--b-gold); border: 1px solid var(--b-border); cursor: pointer;
+}
+.btn-b-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 28px;
+  font-family: var(--font-serif); font-style: italic; font-size: 14px;
+  background: none; color: var(--b-gold); border: none; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 4px;
+}
+
+/* Metanet buttons — bold, high contrast */
+.btn-m-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 32px; border-radius: 10px;
+  font-family: var(--font-sans); font-size: 14px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  background: var(--m-amber); color: #000; border: none; cursor: pointer;
+}
+.btn-m-secondary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 32px; border-radius: 10px;
+  font-family: var(--font-sans); font-size: 14px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  background: transparent; color: var(--m-amber); border: 2px solid var(--m-amber); cursor: pointer;
+}
+.btn-m-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 32px;
+  font-family: var(--font-sans); font-size: 14px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  background: none; color: var(--m-amber); border: none; cursor: pointer;
+}
+
+/* Tags / badges */
+.tag-b {
+  display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 11px;
+  font-family: var(--font-mono); background: var(--b-gold-glow); color: var(--b-gold);
+  border: 1px solid var(--b-border);
+}
+.tag-m {
+  display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 11px;
+  font-family: var(--font-mono); font-weight: 600; text-transform: uppercase;
+  background: var(--m-amber-glow); color: var(--m-amber); border: 1px solid var(--m-border);
+}
+
+/* Divider accents */
+.line-b { height: 1px; background: linear-gradient(90deg, var(--b-gold), transparent 60%); }
+.line-m { height: 3px; width: 48px; background: var(--m-red); border-radius: 2px; }
+
+/* ═══════════════════════════════════════════════
+   05 · CARD COMPONENTS
+   ═══════════════════════════════════════════════ */
+
+.card-b {
+  padding: 32px; border-radius: 12px;
+  background: var(--b-bg2); border: 1px solid var(--b-border);
+}
+.card-b-title {
+  font-family: var(--font-serif); font-size: 20px; font-weight: 600;
+  font-style: italic; color: var(--b-text-bright); margin-bottom: 8px;
+}
+.card-b-text { font-size: 14px; color: var(--b-text-dim); line-height: 1.7; font-weight: 300; }
+
+.card-m {
+  padding: 32px; border-radius: 16px;
+  background: var(--m-bg3); border: 1px solid var(--m-border);
+}
+.card-m-num {
+  font-family: var(--font-sans); font-size: 56px; font-weight: 900;
+  color: var(--m-amber); opacity: 0.2; letter-spacing: -0.05em; line-height: 1;
+}
+.card-m-title {
+  font-family: var(--font-sans); font-size: 20px; font-weight: 800;
+  color: var(--m-text-bright); margin-bottom: 8px;
+}
+.card-m-text { font-size: 14px; color: var(--m-text-dim); line-height: 1.7; }
+
+/* ═══════════════════════════════════════════════
+   06 · WEBSITE HERO MOCKUPS
+   ═══════════════════════════════════════════════ */
+
+.hero-mock {
+  border-radius: 16px; overflow: hidden; margin-bottom: 24px;
+  position: relative;
+}
+
+/* BitFS hero */
+.hero-bitfs {
+  background: radial-gradient(ellipse at 75% 25%, #2a221a, var(--b-bg) 65%);
+  border: 1px solid var(--b-border);
+  padding: 80px 64px;
+}
+.hero-bitfs::before {
+  content: ''; position: absolute; top: 15%; right: 8%;
+  width: 300px; height: 300px; border-radius: 50%;
+  background: var(--b-gold); filter: blur(120px); opacity: 0.06;
+}
+.hero-bitfs::after {
+  content: ''; position: absolute; bottom: 5%; left: 3%;
+  width: 200px; height: 200px; border-radius: 50%;
+  background: var(--b-gold-dark); filter: blur(100px); opacity: 0.04;
+}
+.hero-bitfs .hero-overline {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--b-text-dim); margin-bottom: 24px;
+  position: relative; z-index: 1;
+}
+.hero-bitfs .hero-heading {
+  font-family: var(--font-serif); font-size: 52px; font-weight: 600;
+  font-style: italic; color: var(--b-text-bright); letter-spacing: -0.02em;
+  line-height: 1.15; margin-bottom: 20px; max-width: 600px;
+  position: relative; z-index: 1;
+}
+.hero-bitfs .hero-heading em { color: var(--b-gold); font-style: italic; }
+.hero-bitfs .hero-sub {
+  font-size: 16px; color: var(--b-text-dim); font-weight: 300;
+  max-width: 480px; line-height: 1.7; margin-bottom: 36px;
+  position: relative; z-index: 1;
+}
+
+/* Metanet hero */
+.hero-metanet {
+  background: var(--m-bg);
+  border: 1px solid var(--m-border);
+  padding: 80px 64px;
+  position: relative;
+}
+.hero-metanet::before {
+  content: '01'; position: absolute; top: 32px; left: 48px;
+  font-family: var(--font-sans); font-size: 96px; font-weight: 900;
+  color: var(--m-text-bright); opacity: 0.04; letter-spacing: -0.05em;
+}
+.hero-metanet .hero-nav {
+  display: flex; gap: 32px; justify-content: flex-end; margin-bottom: 48px;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--m-text-dim);
+}
+.hero-metanet .hero-nav span:first-child { color: var(--m-text-bright); }
+.hero-metanet .hero-content { display: flex; gap: 48px; align-items: flex-end; }
+.hero-metanet .hero-left { flex: 1; }
+.hero-metanet .hero-right {
+  flex: 0 0 360px; background: var(--m-amber); border-radius: 20px;
+  padding: 48px 36px; color: #000;
+}
+.hero-metanet .hero-overline {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--m-text-dim); margin-bottom: 16px;
+}
+.hero-metanet .hero-heading {
+  font-family: var(--font-sans); font-size: 48px; font-weight: 900;
+  color: var(--m-text-bright); letter-spacing: -0.04em;
+  line-height: 1.1; text-transform: uppercase; margin-bottom: 16px;
+}
+.hero-metanet .hero-sub {
+  font-size: 15px; color: var(--m-text-dim); max-width: 400px;
+  line-height: 1.7; margin-bottom: 36px;
+}
+.hero-metanet .hero-section-line {
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--m-text-dim);
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.hero-metanet .hero-section-line .red-bar { width: 40px; height: 3px; background: var(--m-red); border-radius: 2px; }
+.hero-right-title {
+  font-family: "Noto Sans SC", var(--font-sans); font-size: 36px; font-weight: 900;
+  line-height: 1.2; margin-bottom: 20px;
+}
+.hero-right-text {
+  font-family: "Noto Sans SC", var(--font-sans); font-size: 15px;
+  line-height: 1.8; opacity: 0.8;
+}
+
+/* ═══════════════════════════════════════════════
+   07 · WHITEPAPER COVERS
+   ═══════════════════════════════════════════════ */
+
+.cover-row { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.cover {
+  aspect-ratio: 0.707; border-radius: 12px; padding: 56px 40px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  position: relative; overflow: hidden;
+}
+/* BitFS cover */
+.cover.bitfs {
+  background: radial-gradient(ellipse at 80% 20%, #2a221a, var(--b-bg) 60%);
+  border: 1px solid var(--b-border);
+}
+.cover.bitfs::before {
+  content: ''; position: absolute; top: 10%; right: 5%;
+  width: 250px; height: 250px; border-radius: 50%;
+  background: var(--b-gold); filter: blur(100px); opacity: 0.06;
+}
+.cover.bitfs::after {
+  content: ''; position: absolute; bottom: 8%; left: 8%;
+  width: 180px; height: 180px; border-radius: 50%;
+  background: var(--b-gold-dark); filter: blur(80px); opacity: 0.04;
+}
+.cover.bitfs .cover-brand {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--b-text-dim); margin-bottom: 48px;
+  position: relative; z-index: 1;
+}
+.cover.bitfs .cover-wordmark {
+  font-size: 64px; margin-bottom: 16px; position: relative; z-index: 1;
+}
+.cover.bitfs .cover-divider {
+  width: 48px; height: 1px; background: var(--b-gold); margin-bottom: 20px;
+  position: relative; z-index: 1;
+}
+.cover.bitfs .cover-title {
+  font-family: var(--font-serif); font-style: italic; font-size: 20px;
+  font-weight: 500; color: var(--b-text); line-height: 1.5;
+  position: relative; z-index: 1;
+}
+.cover.bitfs .cover-subtitle {
+  font-size: 13px; color: var(--b-text-dim); font-weight: 300;
+  margin-top: 12px; position: relative; z-index: 1; line-height: 1.6;
+}
+.cover.bitfs .cover-bottom {
+  position: relative; z-index: 1;
+}
+.cover.bitfs .cover-line {
+  height: 1px; background: linear-gradient(90deg, var(--b-gold), transparent 50%);
+  margin-bottom: 16px;
+}
+.cover.bitfs .cover-meta {
+  font-family: var(--font-mono); font-size: 10px; color: var(--b-text-dim);
+  letter-spacing: 0.1em;
+}
+
+/* Metanet cover */
+.cover.metanet {
+  background: var(--m-bg);
+  border: 1px solid var(--m-border);
+}
+.cover.metanet .cover-brand {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--m-text-dim);
+}
+.cover.metanet .cover-num {
+  font-family: var(--font-sans); font-size: 120px; font-weight: 900;
+  color: var(--m-text-bright); opacity: 0.04; letter-spacing: -0.05em;
+  line-height: 1; position: absolute; top: 24px; right: 32px;
+}
+.cover.metanet .cover-wordmark {
+  font-size: 56px; margin-bottom: 24px; margin-top: auto;
+}
+.cover.metanet .cover-section-line {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 20px;
+}
+.cover.metanet .cover-title {
+  font-family: var(--font-sans); font-size: 20px; font-weight: 800;
+  color: var(--m-text-bright); line-height: 1.3;
+}
+.cover.metanet .cover-subtitle {
+  font-size: 13px; color: var(--m-text-dim); margin-top: 12px; line-height: 1.6;
+}
+.cover.metanet .cover-bottom {}
+.cover.metanet .cover-line {
+  height: 3px; width: 48px; background: var(--m-red); border-radius: 2px;
+  margin-bottom: 16px;
+}
+.cover.metanet .cover-meta {
+  font-family: var(--font-mono); font-size: 10px; color: var(--m-text-dim);
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+
+/* ═══════════════════════════════════════════════
+   08 · FAVICONS & SOCIAL AVATARS
+   ═══════════════════════════════════════════════ */
+
+.icon-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: end; }
+.icon-box { text-align: center; }
+.icon-box .size-label { font-family: var(--font-mono); font-size: 10px; color: #555; margin-top: 8px; }
+
+.favicon {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 12px; overflow: hidden;
+}
+.favicon.b-32 { width: 32px; height: 32px; background: var(--b-bg2); border: 1px solid var(--b-border); }
+.favicon.b-64 { width: 64px; height: 64px; background: var(--b-bg2); border: 1px solid var(--b-border); }
+.favicon.b-128 { width: 128px; height: 128px; background: radial-gradient(circle at 60% 40%, #2a221a, var(--b-bg)); border: 1px solid var(--b-border); }
+.favicon.m-32 { width: 32px; height: 32px; background: var(--m-bg2); border: 1px solid var(--m-border); border-radius: 8px; }
+.favicon.m-64 { width: 64px; height: 64px; background: var(--m-bg2); border: 1px solid var(--m-border); border-radius: 12px; }
+.favicon.m-128 { width: 128px; height: 128px; background: var(--m-bg); border: 1px solid var(--m-border); border-radius: 16px; }
+
+.fav-text-b { font-weight: 300; color: var(--b-text); }
+.fav-text-b em { font-family: var(--font-serif); font-style: italic; font-weight: 600; color: var(--b-gold); }
+.fav-text-b.s32 { font-size: 14px; }
+.fav-text-b.s64 { font-size: 28px; }
+.fav-text-b.s128 { font-size: 52px; letter-spacing: -0.02em; }
+
+.fav-text-m { font-family: var(--font-sans); font-weight: 900; color: var(--m-text-bright); text-transform: uppercase; }
+.fav-text-m .accent { color: var(--m-amber); }
+.fav-text-m.s32 { font-size: 16px; letter-spacing: -0.04em; }
+.fav-text-m.s64 { font-size: 32px; letter-spacing: -0.04em; }
+.fav-text-m.s128 { font-size: 64px; letter-spacing: -0.05em; }
+
+/* Social avatar (circle) */
+.avatar {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; overflow: hidden;
+}
+.avatar.b { width: 120px; height: 120px; background: radial-gradient(circle at 55% 40%, #2a221a, var(--b-bg)); border: 1px solid var(--b-border); }
+.avatar.m { width: 120px; height: 120px; background: var(--m-bg); border: 1px solid var(--m-border); }
+
+/* ═══════════════════════════════════════════════
+   09 · CODE BLOCKS
+   ═══════════════════════════════════════════════ */
+
+.code-block {
+  padding: 24px 28px; border-radius: 10px;
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.8;
+  overflow-x: auto;
+}
+.code-block.bitfs {
+  background: #0d0b09; border: 1px solid var(--b-border); color: var(--b-text-dim);
+}
+.code-block.bitfs .cmd { color: var(--b-gold-light); }
+.code-block.bitfs .flag { color: var(--b-text-dim); }
+.code-block.bitfs .path { color: var(--b-text); }
+.code-block.bitfs .comment { color: #5a5045; font-style: italic; }
+.code-block.bitfs .prompt { color: var(--b-gold-dark); }
+
+.code-block.metanet {
+  background: #141414; border: 1px solid var(--m-border); color: var(--m-text-dim);
+}
+.code-block.metanet .cmd { color: var(--m-amber-light); }
+.code-block.metanet .flag { color: var(--m-text-dim); }
+.code-block.metanet .path { color: var(--m-text); }
+.code-block.metanet .comment { color: #555; }
+.code-block.metanet .prompt { color: var(--m-amber-dark); }
+
+/* ═══════════════════════════════════════════════
+   10 · NAVIGATION BAR MOCKUPS
+   ═══════════════════════════════════════════════ */
+
+.nav-mock {
+  border-radius: 12px; overflow: hidden; margin-bottom: 16px;
+}
+.nav-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 56px; padding: 0 28px;
+}
+.nav-mock.bitfs {
+  background: #110f0de0; border: 1px solid var(--b-border);
+  backdrop-filter: blur(12px);
+}
+.nav-mock.metanet {
+  background: #1e1e1ee0; border: 1px solid var(--m-border);
+  backdrop-filter: blur(12px);
+}
+.nav-links {
+  display: flex; gap: 28px; font-size: 13px;
+}
+.nav-mock.bitfs .nav-links a {
+  color: var(--b-text-dim); text-decoration: none; font-weight: 400;
+  transition: color 0.2s;
+}
+.nav-mock.metanet .nav-links a {
+  color: var(--m-text-dim); text-decoration: none; font-weight: 600;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.nav-wm { font-size: 22px; }
+
+/* ═══════════════════════════════════════════════
+   UTILITY
+   ═══════════════════════════════════════════════ */
+.mt-16 { margin-top: 16px; }
+.mt-32 { margin-top: 32px; }
+.mb-12 { margin-bottom: 12px; }
+.mb-24 { margin-bottom: 24px; }
+.mb-40 { margin-bottom: 40px; }
+.gap-16 { gap: 16px; }
+.flex { display: flex; }
+.flex-wrap { flex-wrap: wrap; }
+.items-center { align-items: center; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ════════ HEADER ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">Visual Identity System v1.0</div>
+    <div class="vi-section-title">BitFS &amp; Metanet</div>
+    <div class="vi-section-desc">
+      Two products, one ecosystem. BitFS uses <em>Dark Botanical</em> — refined, warm, serif accents.
+      Metanet uses <em>Bold Signal</em> — powerful, high-contrast, geometric.
+      Shared foundation: dark backgrounds, monospace labels, technical credibility.
+    </div>
+  </div>
+
+  <!-- ════════ 01 COLORS ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">01 &middot; Color System</div>
+    <div class="dual">
+      <div>
+        <div class="col-label bitfs">BitFS &middot; Dark Botanical</div>
+        <div class="palette-grid">
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-bg)"></div><div class="swatch-info"><div class="swatch-name">Background</div><div class="swatch-hex">#110f0d</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-bg2)"></div><div class="swatch-info"><div class="swatch-name">Surface</div><div class="swatch-hex">#1a1714</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-bg3)"></div><div class="swatch-info"><div class="swatch-name">Elevated</div><div class="swatch-hex">#231f1b</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-border)"></div><div class="swatch-info"><div class="swatch-name">Border</div><div class="swatch-hex">#2e2924</div></div></div>
+        </div>
+        <div class="palette-grid">
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-gold)"></div><div class="swatch-info"><div class="swatch-name">Gold Primary</div><div class="swatch-hex">#c9956b</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-gold-light)"></div><div class="swatch-info"><div class="swatch-name">Gold Light</div><div class="swatch-hex">#dbb08a</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-gold-dark)"></div><div class="swatch-info"><div class="swatch-name">Gold Dark</div><div class="swatch-hex">#a07548</div></div></div>
+        </div>
+        <div class="palette-grid">
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-text-bright)"></div><div class="swatch-info"><div class="swatch-name">Text Bright</div><div class="swatch-hex">#f0ebe5</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-text)"></div><div class="swatch-info"><div class="swatch-name">Text</div><div class="swatch-hex">#d4cdc4</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--b-text-dim)"></div><div class="swatch-info"><div class="swatch-name">Text Dim</div><div class="swatch-hex">#8a8078</div></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="col-label metanet">Metanet &middot; Bold Signal</div>
+        <div class="palette-grid">
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-bg)"></div><div class="swatch-info"><div class="swatch-name">Background</div><div class="swatch-hex">#1e1e1e</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-bg2)"></div><div class="swatch-info"><div class="swatch-name">Surface</div><div class="swatch-hex">#2a2a2a</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-bg3)"></div><div class="swatch-info"><div class="swatch-name">Elevated</div><div class="swatch-hex">#333333</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-border)"></div><div class="swatch-info"><div class="swatch-name">Border</div><div class="swatch-hex">#404040</div></div></div>
+        </div>
+        <div class="palette-grid">
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-amber)"></div><div class="swatch-info"><div class="swatch-name">Amber Primary</div><div class="swatch-hex">#e8983e</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-amber-light)"></div><div class="swatch-info"><div class="swatch-name">Amber Light</div><div class="swatch-hex">#f0ad5e</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-amber-dark)"></div><div class="swatch-info"><div class="swatch-name">Amber Dark</div><div class="swatch-hex">#c47a28</div></div></div>
+        </div>
+        <div class="palette-grid">
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-red)"></div><div class="swatch-info"><div class="swatch-name">Signal Red</div><div class="swatch-hex">#d44030</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-text-bright)"></div><div class="swatch-info"><div class="swatch-name">Text Bright</div><div class="swatch-hex">#ffffff</div></div></div>
+          <div class="swatch large"><div class="swatch-color" style="background:var(--m-text-dim)"></div><div class="swatch-info"><div class="swatch-name">Text Dim</div><div class="swatch-hex">#888888</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 02 LOGO ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">02 &middot; Logo System</div>
+    <div class="vi-section-desc">BitFS: light sans "Bit" + gold serif italic "FS". Metanet: full-weight uppercase with amber accent on "META".</div>
+
+    <div class="logo-showcase">
+      <div class="logo-card bitfs-dark">
+        <div class="wm-bitfs on-dark"><span class="bit">Bit</span><span class="fs">FS</span></div>
+        <div class="logo-tagline bitfs">Peer-to-Peer Encrypted File System</div>
+        <div class="logo-variant-label">Primary &middot; Dark</div>
+      </div>
+      <div class="logo-card metanet-dark">
+        <div class="wm-metanet on-dark"><span class="accent">META</span>NET</div>
+        <div class="logo-tagline metanet">Decentralized CDN</div>
+        <div class="logo-variant-label">Primary &middot; Dark</div>
+      </div>
+    </div>
+    <div class="logo-showcase">
+      <div class="logo-card bitfs-light">
+        <div class="wm-bitfs on-light"><span class="bit">Bit</span><span class="fs">FS</span></div>
+        <div class="logo-tagline bitfs" style="color:#8a7a68">Peer-to-Peer Encrypted File System</div>
+        <div class="logo-variant-label">Light variant</div>
+      </div>
+      <div class="logo-card metanet-light">
+        <div class="wm-metanet on-light"><span class="accent">META</span>NET</div>
+        <div class="logo-tagline metanet" style="color:#888">Decentralized CDN</div>
+        <div class="logo-variant-label">Light variant</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 03 TYPOGRAPHY ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">03 &middot; Typography</div>
+    <div class="dual">
+      <div>
+        <div class="col-label bitfs">BitFS Typography</div>
+        <div class="type-panel bitfs mb-12">
+          <div class="type-spec bitfs">H1 / Cormorant Garamond 44px SemiBold Italic</div>
+          <div class="bt-h1">Your keys, <em class="bt-accent">your data</em></div>
+        </div>
+        <div class="type-panel bitfs mb-12">
+          <div class="type-spec bitfs">H2 / Inter 22px Medium</div>
+          <div class="bt-h2">Method 42 deterministic encryption</div>
+        </div>
+        <div class="type-panel bitfs mb-12">
+          <div class="type-spec bitfs">Body / Inter 15px Light</div>
+          <div class="bt-body">Each file is encrypted using ECDH key agreement between the owner's key and a deterministic per-file key derived from the path.</div>
+        </div>
+        <div class="type-panel bitfs">
+          <div class="type-spec bitfs">Code / JetBrains Mono 13px</div>
+          <div class="bt-code">$ bitfs put --encrypt ./doc.pdf /vault/</div>
+        </div>
+      </div>
+      <div>
+        <div class="col-label metanet">Metanet Typography</div>
+        <div class="type-panel metanet mb-12">
+          <div class="type-spec metanet">H1 / Inter 44px Black Uppercase</div>
+          <div class="mt-h1">Power the <span class="mt-accent">web</span></div>
+        </div>
+        <div class="type-panel metanet mb-12">
+          <div class="type-spec metanet">H2 / Inter 22px Bold</div>
+          <div class="mt-h2">Retrieval-incentivized content delivery</div>
+        </div>
+        <div class="type-panel metanet mb-12">
+          <div class="type-spec metanet">Body / Inter 15px Regular</div>
+          <div class="mt-body">Node operators cache and serve popular content for profit. No centralized coordination required.</div>
+        </div>
+        <div class="type-panel metanet">
+          <div class="type-spec metanet">Code / JetBrains Mono 13px</div>
+          <div class="mt-code">$ metanet node start --stake 1000</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 04 UI ELEMENTS ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">04 &middot; UI Components</div>
+    <div class="dual">
+      <div>
+        <div class="col-label bitfs">BitFS Components</div>
+        <div class="mb-24">
+          <div style="font-size:12px;color:#666;margin-bottom:8px">Buttons</div>
+          <div class="ui-row">
+            <button class="btn-b-primary">Read Whitepaper</button>
+            <button class="btn-b-secondary">GitHub</button>
+            <button class="btn-b-ghost">Learn more</button>
+          </div>
+        </div>
+        <div class="mb-24">
+          <div style="font-size:12px;color:#666;margin-bottom:8px">Tags &amp; Dividers</div>
+          <div class="ui-row">
+            <span class="tag-b">v1.0</span>
+            <span class="tag-b">SPV Mode</span>
+            <span class="tag-b">Method 42</span>
+          </div>
+          <div class="line-b mt-16" style="max-width:200px"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:#666;margin-bottom:8px">Card</div>
+          <div class="card-b">
+            <div class="card-b-title">Metanet DAG</div>
+            <div class="card-b-text">Blockchain-based DAG implementing Unix filesystem with inode=P_node, dirent=ChildEntry, and full soft/hard link support.</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="col-label metanet">Metanet Components</div>
+        <div class="mb-24">
+          <div style="font-size:12px;color:#666;margin-bottom:8px">Buttons</div>
+          <div class="ui-row">
+            <button class="btn-m-primary">Read Whitepaper</button>
+            <button class="btn-m-secondary">GitHub</button>
+            <button class="btn-m-ghost">Learn More &rarr;</button>
+          </div>
+        </div>
+        <div class="mb-24">
+          <div style="font-size:12px;color:#666;margin-bottom:8px">Tags &amp; Dividers</div>
+          <div class="ui-row">
+            <span class="tag-m">v1.0</span>
+            <span class="tag-m">CDN</span>
+            <span class="tag-m">MNT Token</span>
+          </div>
+          <div class="line-m mt-16"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;color:#666;margin-bottom:8px">Card</div>
+          <div class="card-m">
+            <div class="card-m-num">01</div>
+            <div class="card-m-title">Metanet Chain</div>
+            <div class="card-m-text">BSV-homomorphic sidechain with identical transaction format. Dual payment channels for BSV and MNT currencies.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 05 NAV BARS ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">05 &middot; Navigation Bars</div>
+    <div class="nav-mock bitfs mb-24">
+      <div class="nav-inner">
+        <div class="nav-wm wm-bitfs on-dark" style="font-size:22px"><span class="bit">Bit</span><span class="fs">FS</span></div>
+        <div class="nav-links">
+          <a href="#">Whitepaper</a>
+          <a href="#">Documentation</a>
+          <a href="#">GitHub</a>
+        </div>
+      </div>
+    </div>
+    <div class="nav-mock metanet">
+      <div class="nav-inner">
+        <div class="nav-wm wm-metanet on-dark" style="font-size:20px"><span class="accent">META</span>NET</div>
+        <div class="nav-links">
+          <a href="#">Whitepaper</a>
+          <a href="#">Node Docs</a>
+          <a href="#">GitHub</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 06 HERO SECTIONS ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">06 &middot; Website Hero Sections</div>
+
+    <div class="hero-mock hero-bitfs mb-40">
+      <div class="hero-overline">Part 01 &mdash; Paradigm Shift</div>
+      <div class="hero-heading">Your keys, <em>your data.</em><br>No middleman.</div>
+      <div class="hero-sub">A decentralized file system that maps Unix semantics onto blockchain, encrypts everything by default, and enables trustless data commerce.</div>
+      <div class="ui-row">
+        <button class="btn-b-primary">Read Whitepaper</button>
+        <button class="btn-b-secondary">View on GitHub</button>
+      </div>
+    </div>
+
+    <div class="hero-mock hero-metanet">
+      <div class="hero-nav">
+        <span>Paradigm</span> <span>Protocol</span> <span>Architecture</span> <span>Token</span> <span>Roadmap</span>
+      </div>
+      <div class="hero-content">
+        <div class="hero-left">
+          <div class="hero-overline">Retrieval-Incentivized CDN</div>
+          <div class="hero-heading">Cache.<br>Earn.<br><span style="color:var(--m-amber)">Deliver.</span></div>
+          <div class="hero-sub">Node operators profit from serving popular content. A self-organizing delivery network powered by market incentives.</div>
+          <div class="hero-section-line"><span class="red-bar"></span>Part 01 &mdash; Paradigm Shift</div>
+        </div>
+        <div class="hero-right">
+          <div class="hero-right-title">Paradigm Shift</div>
+          <div class="hero-right-text">Not a new blockchain.<br>Built on top of Bitcoin —<br>a new internet infrastructure.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 07 WHITEPAPER COVERS ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">07 &middot; Whitepaper Covers</div>
+    <div class="cover-row">
+      <div class="cover bitfs">
+        <div>
+          <div class="cover-brand">BitFS Whitepaper</div>
+        </div>
+        <div>
+          <div class="cover-wordmark wm-bitfs on-dark" style="font-size:64px"><span class="bit">Bit</span><span class="fs">FS</span></div>
+          <div class="cover-divider"></div>
+          <div class="cover-title">A Peer-to-Peer Encrypted<br>File System on Blockchain</div>
+          <div class="cover-subtitle">Unix filesystem semantics &middot; Method 42 encryption &middot; Trustless data commerce</div>
+        </div>
+        <div class="cover-bottom">
+          <div class="cover-line"></div>
+          <div class="cover-meta">v1.0 &middot; 2026 &middot; bitfs.org</div>
+        </div>
+      </div>
+      <div class="cover metanet">
+        <div>
+          <div class="cover-brand">Metanet Network Whitepaper</div>
+          <div class="cover-num">MN</div>
+        </div>
+        <div>
+          <div class="cover-wordmark wm-metanet on-dark" style="font-size:48px"><span class="accent">META</span>NET</div>
+          <div class="cover-section-line">
+            <div class="line-m"></div>
+          </div>
+          <div class="cover-title">A Retrieval-Incentivized<br>Decentralized CDN</div>
+          <div class="cover-subtitle">BSV-homomorphic sidechain &middot; Dual payment channels &middot; Self-organizing content delivery</div>
+        </div>
+        <div class="cover-bottom">
+          <div class="cover-line"></div>
+          <div class="cover-meta">v1.0 &middot; 2026 &middot; metanet.org</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 08 FAVICONS & AVATARS ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">08 &middot; Favicons &amp; Social Avatars</div>
+    <div class="dual">
+      <div>
+        <div class="col-label bitfs">BitFS Icons</div>
+        <div class="icon-row mb-40">
+          <div class="icon-box">
+            <div class="favicon b-32"><span class="fav-text-b s32"><em>F</em></span></div>
+            <div class="size-label">32px</div>
+          </div>
+          <div class="icon-box">
+            <div class="favicon b-64"><span class="fav-text-b s64"><em>F</em></span></div>
+            <div class="size-label">64px</div>
+          </div>
+          <div class="icon-box">
+            <div class="favicon b-128"><span class="fav-text-b s128">B<em>F</em></span></div>
+            <div class="size-label">128px</div>
+          </div>
+          <div class="icon-box">
+            <div class="avatar b"><span class="fav-text-b s64">B<em>F</em></span></div>
+            <div class="size-label">Social Avatar</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="col-label metanet">Metanet Icons</div>
+        <div class="icon-row mb-40">
+          <div class="icon-box">
+            <div class="favicon m-32"><span class="fav-text-m s32"><span class="accent">M</span></span></div>
+            <div class="size-label">32px</div>
+          </div>
+          <div class="icon-box">
+            <div class="favicon m-64"><span class="fav-text-m s64"><span class="accent">M</span></span></div>
+            <div class="size-label">64px</div>
+          </div>
+          <div class="icon-box">
+            <div class="favicon m-128"><span class="fav-text-m s128"><span class="accent">M</span>N</span></div>
+            <div class="size-label">128px</div>
+          </div>
+          <div class="icon-box">
+            <div class="avatar m"><span class="fav-text-m s64"><span class="accent">M</span>N</span></div>
+            <div class="size-label">Social Avatar</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 09 CODE BLOCKS ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">09 &middot; Terminal / Code Styling</div>
+    <div class="dual">
+      <div>
+        <div class="col-label bitfs">BitFS Terminal</div>
+        <div class="code-block bitfs">
+<span class="comment"># Upload and encrypt a file</span>
+<span class="prompt">$</span> <span class="cmd">bitfs put</span> <span class="flag">--encrypt</span> <span class="path">./report.pdf</span> <span class="path">/shared/docs/</span>
+
+<span class="comment"># List files with Merkle proofs</span>
+<span class="prompt">$</span> <span class="cmd">bitfs ls</span> <span class="flag">-l --spv</span> <span class="path">/shared/docs/</span>
+
+<span class="comment"># Atomic swap: sell access</span>
+<span class="prompt">$</span> <span class="cmd">bitfs sell</span> <span class="flag">--htlc</span> <span class="path">/shared/docs/report.pdf</span>
+        </div>
+      </div>
+      <div>
+        <div class="col-label metanet">Metanet Terminal</div>
+        <div class="code-block metanet">
+<span class="comment"># Start a Metanet node</span>
+<span class="prompt">$</span> <span class="cmd">metanet node start</span> <span class="flag">--stake 1000</span>
+
+<span class="comment"># Check node earnings</span>
+<span class="prompt">$</span> <span class="cmd">metanet earnings</span> <span class="flag">--period 7d</span>
+
+<span class="comment"># View cached content stats</span>
+<span class="prompt">$</span> <span class="cmd">metanet cache stats</span> <span class="flag">--top 20</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ════════ 10 DESIGN TOKENS SUMMARY ════════ -->
+  <div class="vi-section">
+    <div class="vi-section-label">10 &middot; Design Token Reference</div>
+    <div class="vi-section-desc">CSS custom properties for implementation. Copy these into your project.</div>
+    <div class="code-block" style="background:#111;border:1px solid #333;color:#aaa">
+<span style="color:#666">/* ── Shared Foundation ── */</span>
+<span style="color:#dbb08a">--font-sans</span>: "Inter", "Noto Sans SC", -apple-system, sans-serif;
+<span style="color:#dbb08a">--font-serif</span>: "Cormorant Garamond", "Noto Serif SC", Georgia, serif;
+<span style="color:#dbb08a">--font-mono</span>: "JetBrains Mono", "SF Mono", monospace;
+
+<span style="color:#666">/* ── BitFS: Dark Botanical ── */</span>
+<span style="color:#c9956b">--b-bg</span>: #110f0d;  <span style="color:#c9956b">--b-bg2</span>: #1a1714;  <span style="color:#c9956b">--b-bg3</span>: #231f1b;
+<span style="color:#c9956b">--b-border</span>: #2e2924;
+<span style="color:#c9956b">--b-gold</span>: #c9956b;  <span style="color:#c9956b">--b-gold-light</span>: #dbb08a;  <span style="color:#c9956b">--b-gold-dark</span>: #a07548;
+<span style="color:#c9956b">--b-text</span>: #d4cdc4;  <span style="color:#c9956b">--b-text-dim</span>: #8a8078;  <span style="color:#c9956b">--b-text-bright</span>: #f0ebe5;
+
+<span style="color:#666">/* ── Metanet: Bold Signal ── */</span>
+<span style="color:#e8983e">--m-bg</span>: #1e1e1e;  <span style="color:#e8983e">--m-bg2</span>: #2a2a2a;  <span style="color:#e8983e">--m-bg3</span>: #333333;
+<span style="color:#e8983e">--m-border</span>: #404040;
+<span style="color:#e8983e">--m-amber</span>: #e8983e;  <span style="color:#e8983e">--m-amber-light</span>: #f0ad5e;  <span style="color:#e8983e">--m-amber-dark</span>: #c47a28;
+<span style="color:#e8983e">--m-red</span>: #d44030;
+<span style="color:#e8983e">--m-text</span>: #d4d4d4;  <span style="color:#e8983e">--m-text-dim</span>: #888888;  <span style="color:#e8983e">--m-text-bright</span>: #ffffff;
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
