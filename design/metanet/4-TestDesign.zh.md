@@ -71,7 +71,7 @@
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
-| T3.1 | ECDH 双层加密 | Owner 有加密文件, Metanet Node 已注册 | Owner ECDH 重加密 → Metanet Node 接收 | Provider 密文 != Owner 密文, Owner 和 Metanet Node 各自可用己方私钥独立解密 | [unit] |
+| T3.1 | ECDH 双层加密 | Owner 有加密文件, Metanet Node 已注册 | Owner ECDH 重加密 → Metanet Node 接收 | Provider 密文 != Owner 密文, Metanet Node 无法解密原始内容 (仅持有外层密钥), Owner 可通过两层密钥解密 | [unit] |
 
 ---
 

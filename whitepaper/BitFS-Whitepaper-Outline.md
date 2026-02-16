@@ -21,7 +21,7 @@
 - 所有文件默认 Method 42 ECDH 加密
 - 访问控制不取决于"是否加密"，而取决于"谁能派生解密密钥"
 - HD 钱包镜像文件系统树，提供稳定节点身份 + 确定性密钥派生
-- 密文 SHA-256 哈希 → 内容寻址存储；元数据 → Metanet 交易
+- key_hash = SHA256(SHA256(plaintext)) → 内容寻址存储 + 密钥派生；元数据 → Metanet 交易
 - HTLC 原子交换实现无信任数据交易（卖方揭示密钥胶囊 = 哈希原像）
 - SPV 模式运行，从不查询区块链
 - Agent 优先 HTTP 接口 + x402 支付协议 → AI Agent 自主发现/浏览/购买
@@ -60,7 +60,7 @@
 **关键设计**：
 - 文件名仅存在于父目录子节点列表 → 与 Unix inode 不含文件名一致
 - 三种节点类型：FILE / DIR / LINK
-  - FILE：encrypted_hash, content_hash, MIME, size
+  - FILE：key_hash, MIME, size
   - DIR：children 列表 + next_child_index
   - LINK：link_target (HARD=TxID, SOFT=P_node, SOFT_REMOTE=domain/path)
 - 硬链接 → 固定版本；软链接 → 最新版本；远程软链接 → DNS 跨越信任边界
@@ -94,29 +94,27 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 
 **Method 42 ECDH 密钥派生步骤**：
 ```
-1. Df(0) = H[ Da(0) | content_hash | file_index ]     确定性派生
-2. Pf(0) = Df(0) × G                                   一次性公钥
-3. point = Da(0) × Pf(0) = Df(0) × Pa(0)              ECDH 共享点
-4. symmetric_key = SHA256( point.x )                    AES-256-GCM 密钥
-5. ciphertext = AES-GCM( plaintext, symmetric_key )
-6. encrypted_hash = SHA256( ciphertext )                内容寻址标识
+1. key_hash = SHA256(SHA256(plaintext))                  双重哈希（密钥派生 + 内容承诺）
+2. point = ECDH(D_node, P_node) = D_node × P_node       椭圆曲线 Diffie-Hellman
+3. aes_key = HKDF-SHA256(point.x, key_hash)              KDF 派生 AES-256-GCM 密钥
+4. ciphertext = AES-GCM(plaintext, aes_key)
 ```
 
-**变量说明**：Da(0)=主私钥，Pa(0)=主公钥，content_hash=SHA256(plaintext)，file_index=HD 树位置
+**变量说明**：D_node = BIP32 派生的节点私钥，P_node = D_node × G = 节点公钥（即 Metanet inode），key_hash = SHA256(SHA256(plaintext)) 兼做密钥派生盐值和内容承诺标识
 
 **关键设计**：
-- 一次性密钥 Pf(0) 从不存储 → 可从 Da(0) + content_hash 确定性恢复
-- 必须记录两个哈希：content_hash（派生密钥用）+ encrypted_hash（内容寻址用），不可合并
+- D_node 直接使用 BIP32 密钥，保留代数关系 → 支持目录树级 capsule 派生（设计决策 #66）
+- 仅需记录一个哈希 key_hash：双重哈希不暴露原始数据哈希（设计决策 #54），兼做密钥派生和内容寻址（设计决策 #12）
 
 **三种访问级别**（同一机制）：
 
 | 访问类型 | 密钥派生 | 谁能解密 |
 |---------|---------|---------|
-| 私有 | Df(0) = H[Da(0) \| content_hash \| file_index] | 仅所有者 |
-| 免费 | Df(0) = 1 → key = SHA256(Pa(0).x) | 知道 Pa(0) 的任何人 |
-| 付费 | 标准 Method 42 | 买方（HTLC 交换后）|
+| 私有 | aes_key = KDF(ECDH(D_node, D_node×G), key_hash) | 仅所有者（自加密） |
+| 免费 | aes_key = KDF(P_node, key_hash)（平凡密钥） | 知道 P_node 的任何人 |
+| 付费 | 标准 Method 42 ECDH capsule 交换 | 买方（HTLC 交换后）|
 
-**平凡密钥技巧**：免费数据设 Df(0)=1 → Pf(0)=G → 对称密钥=SHA256(Pa(0).x)。Pa(0) 通过 DNS 公开 → 任何人可解密，但磁盘上仍加密 → 统一存储模型。
+**平凡密钥技巧**：免费数据使用 P_node 作为 KDF 输入 → aes_key = KDF(P_node, key_hash)。P_node 通过 DNS 公开 → 任何人可派生解密密钥，但磁盘上仍加密 → 统一存储模型。
 
 **私有数据**：整个 Metanet 载荷用所有者对称密钥加密 → 文件名/大小/时间戳/目录结构在链上不可见。
 
@@ -124,11 +122,11 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 
 ## 5. 内容寻址存储
 
-- 扁平键值映射：`~/.bitfs/data/{encrypted_hash} → 密文字节`
+- 扁平键值映射：`~/.bitfs/data/{key_hash} → 密文字节`
 - Daemon 通过 HTTP `GET /data/{hash}` 提供内容
 - 无需外部依赖（如 IPFS）
 - 所有内容已加密 → 存储层仅处理不透明字节序列
-- 去重自然发生：密文相同 → 共享 encrypted_hash 和单一存储副本
+- 去重自然发生：密文相同 → 共享 key_hash 和单一存储副本
 
 ---
 
@@ -174,7 +172,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 **Method 42 握手**：
 - 交换 P_buyer/P_seller + nonce + timestamp
 - 双方计算 session_key = SHA256(ECDH.x || nonce_b || nonce_s)
-- HMAC 验证。卖方 P_seller 必须与 DNS 公布的 Pa(0) 一致 → 防 MITM
+- HMAC 验证。卖方 P_seller 必须与 DNS 公布的 P_node 一致 → 防 MITM
 
 **卖方完全无状态**：不维护买家数据库、不保持会话、不记录历史。
 
@@ -264,15 +262,15 @@ bitfs://example.com/docs/readme.txt
 ## 12. 激励层
 
 **Method 42 ECDH 同样实现存储证明**：
-- 向不同提供者分发时，每份副本使用提供者特定 ECDH 密钥重新加密
-- 每个提供者存储的数据密码学唯一
+- 向不同 Metanet Node 分发时，每份副本使用节点特定 ECDH 密钥重新加密
+- 每个节点存储的数据密码学唯一
 - 验证 = 简单 Merkle 挑战-响应 → 替代 Filecoin 的 zk 证明
 - 从数小时 GPU 降低到毫秒级 ECDH + AES
 
-**Metanet Chain**（独立子链）：
+**Metanet Chain**（BSV 同构链）：
 - 自有 PoW 共识 + 代币经济（2100 万固定供应、减半计划）
 - OP_RETURN Merkle 根定期锚定到 BSV 主链
-- 为存储提供者激励提供经济基础
+- 为 Metanet Node 激励提供经济基础
 - 详见 Metanet 白皮书
 
 ---

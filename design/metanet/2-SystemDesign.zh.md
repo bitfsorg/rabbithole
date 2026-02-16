@@ -182,7 +182,7 @@ Owner 在 Metanet payload 中设置 `revenue_share` 字段:
 
 ```
 revenue_share: {
-    sp_percent: 70,
+    node_percent: 70,
     owner_percent: 30,
     min_price_per_kb: 1
 }

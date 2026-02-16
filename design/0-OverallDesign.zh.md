@@ -62,7 +62,9 @@ libbitfs/
 ├── spv/          # SPV 轻节点 (本地 tx + Merkle proof)
 ├── storage/      # 内容存储抽象 (链下/链上)
 ├── paymail/      # Paymail 身份解析
-└── tx/           # BSV 交易构造 (go-sdk)
+├── tx/           # BSV 交易构造 (go-sdk)
+├── x402/         # x402 支付协议 + Token 预购
+└── revshare/     # Revenue Share / ISO 证券化
 ```
 
 ### 3.2 独立二进制
@@ -70,7 +72,7 @@ libbitfs/
 | 二进制 | 面向 | 核心功能 |
 |--------|------|----------|
 | `bitfs` | 文件所有者、访问者、AI Agent | `put/get/ls/cat/rm/mv/cp`、`sell`、`wallet`、`daemon` |
-| `metanet` | CDN 节点运营商 | `node start/stop`、`stake`、`withdraw`、`status`、`peer` |
+| `metanet` | CDN 节点运营商 | `init/start/stop`、`status`、`contracts`、`peers`、`mine` |
 
 `bitfs` 用户无需安装 `metanet`；`metanet` 节点内嵌 libbitfs 以解密和服务内容。
 

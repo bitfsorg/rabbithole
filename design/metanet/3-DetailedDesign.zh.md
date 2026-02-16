@@ -21,17 +21,17 @@
 
 ```
 StorageDeal UTXO (第 k 期):
-  <SP_pubkey> OP_CHECKSIGVERIFY           // Metanet Node 身份验证
-  OP_HASH256 <expected_hash_k> OP_EQUAL   // 验证存储证明 (预计算)
-  // expected_hash_k = HASH256(MerkleProof_k || chunk[challenge_k % N])
 
 OP_IF
-    // Metanet Node 路径: 提交有效存储证明后领取当期费用
-    <sp_pubkey> OP_CHECKSIG                    // Metanet Node 签名领取
+    // Metanet Node 路径: <node_sig> <proof_data> 1
+    <node_pubkey> OP_CHECKSIGVERIFY              // 验证 Metanet Node 签名
+    OP_SHA256 <expected_hash_k> OP_EQUALVERIFY   // 验证存储证明
+    // expected_hash_k = SHA256(MerkleProof_k || chunk[challenge_k % N])
+    OP_TRUE                                      // Metanet Node 领取当期费用
 OP_ELSE
-    // Owner 退款路径: 合约到期后 Metanet Node 未提交证明
+    // Owner 退款路径: <owner_sig> 0
     <expire_block> OP_CHECKLOCKTIMEVERIFY OP_DROP
-    <owner_pubkey> OP_CHECKSIG                 // Owner 取回 Token
+    <owner_pubkey> OP_CHECKSIG                   // Owner 取回 Token
 OP_ENDIF
 
 确定性挑战机制:
@@ -47,10 +47,10 @@ for k := 0; k < N; k++ {
 
     // 计算该期的 Merkle 证明
     proof_k = MerkleProof(data_tree, chunk_index)
-    expected_hash_k = HASH256(proof_k || chunks[chunk_index])
+    expected_hash_k = SHA256(proof_k || chunks[chunk_index])
 
     // 写入第 k 个 UTXO 的 Script
-    utxo_k.script = ... OP_HASH256 <expected_hash_k> OP_EQUAL ...
+    utxo_k.script = ... OP_SHA256 <expected_hash_k> OP_EQUAL ...
 }
 
 合约参数:
@@ -58,7 +58,7 @@ for k := 0; k < N; k++ {
   expire_block:       证明提交截止区块高度
   expected_hash_k:    第 k 期预计算的证明哈希 (确定性, 嵌入 UTXO)
   owner_pubkey:       Owner 公钥
-  sp_pubkey:          Metanet Node 公钥
+  node_pubkey:        Metanet Node 公钥
 
 合约生命周期:
   1. Owner 创建 StorageDeal 交易, 锁定 N 期费用 (N 个 UTXO)
@@ -82,7 +82,7 @@ for k := 0; k < N; k++ {
 存储证明 Script (StorageProof):
 
 // 输入: Metanet Node 提交 Merkle proof
-<sp_sig> <chunk_data> <merkle_siblings> <chunk_index>
+<node_sig> <chunk_data> <merkle_siblings> <chunk_index>
 
 // 验证逻辑 (Script):
 1. OP_SHA256 <chunk_data>                        → chunk_hash
@@ -95,7 +95,7 @@ for k := 0; k < N; k++ {
 3. 最终结果与合约中存储的 merkle_root 对比
 
 简化实现 (当前阶段):
-  - Script 只验证 OP_HASH256(proof_data) == expected_hash
+  - Script 只验证 OP_SHA256(proof_data) == expected_hash
   - 完整 Merkle 验证在链下进行, 结果哈希上链
   - 任何人可链下重放验证
 
@@ -178,16 +178,16 @@ func VerifyStorageProof(
    Output: 2-of-2 多签 (User + Metanet Node)
            Value: channel_capacity
 
-   Script: OP_2 <user_pubkey> <sp_pubkey> OP_2 OP_CHECKMULTISIG
+   Script: OP_2 <user_pubkey> <node_pubkey> OP_2 OP_CHECKMULTISIG
 
 2. 链下更新 (Commitment TX, 不广播):
    Input:  Funding TX output
-   Output 0: Node   → sp_balance
+   Output 0: Node   → node_balance
    Output 1: User   → user_balance
-   其中 sp_balance + user_balance = channel_capacity
+   其中 node_balance + user_balance = channel_capacity
 
    每次 x402 请求:
-     sp_balance   += price
+     node_balance   += price
      user_balance -= price
      双方签名新的 Commitment TX
 
@@ -259,12 +259,12 @@ func VerifyStorageProof(
 ```
 BSV 锚定交易 (Anchor TX):
 
-Output 0: OP_RETURN <bitfs_anchor_flag> <data>
+Output 0: OP_RETURN <metanet_anchor_flag> <data>
 Output 1: change (返回 Owner/矿工)
 
 data 格式:
   version:          uint8   = 0x01
-  anchor_flag:      bytes4  = "BFSA"  (BitFS Anchor)
+  anchor_flag:      bytes4  = "MNTA"  (Metanet Anchor)
   start_height:     uint32  = Metanet Chain 起始块高度
   end_height:       uint32  = Metanet Chain 结束块高度
   merkle_root:      bytes32 = 这批 Metanet Chain 块的 Merkle root
@@ -290,7 +290,7 @@ data 格式:
 
 1. 矿工构建 BTC/BSV 区块时:
    - 在 coinbase 交易中嵌入: OP_RETURN <aux_magic> <sub_chain_block_hash>
-   - aux_magic = "BFMP" (BitFS Merged PoW)
+   - aux_magic = "MNMP" (Metanet Merged PoW)
 
 2. 矿工同时构建 Metanet Chain 区块:
    - 正常的 Metanet Chain 区块 header
@@ -354,7 +354,7 @@ MNT Token 参数:
 
 创世块:
   时间戳:     (主网启动时确定, 当前为实验性参数)
-  message:    "BitFS: Decentralized CDN on Bitcoin"
+  message:    "Metanet: Decentralized CDN on Bitcoin"
   奖励接收者: 基金会多签地址 (3-of-5)
 ```
 
