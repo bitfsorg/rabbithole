@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/config"
+	"github.com/tongxiaofeng/libbitfs/config"
 )
 
 // runMv handles the "bitfs mv" command.

@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tongxiaofeng/bitfs/internal/config"
-	"github.com/tongxiaofeng/bitfs/internal/wallet"
+	"github.com/tongxiaofeng/libbitfs/config"
+	"github.com/tongxiaofeng/libbitfs/wallet"
 )
 
 // runWallet dispatches wallet subcommands.

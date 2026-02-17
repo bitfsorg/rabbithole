@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/method42"
-	"github.com/tongxiaofeng/bitfs/internal/wallet"
+	"github.com/tongxiaofeng/libbitfs/method42"
+	"github.com/tongxiaofeng/libbitfs/wallet"
 )
 
 // networkConfigs returns all 3 network configurations for parametric testing.

@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/metanet"
-	"github.com/tongxiaofeng/bitfs/internal/method42"
-	"github.com/tongxiaofeng/bitfs/internal/spv"
-	"github.com/tongxiaofeng/bitfs/internal/tx"
-	"github.com/tongxiaofeng/bitfs/internal/wallet"
+	"github.com/tongxiaofeng/libbitfs/metanet"
+	"github.com/tongxiaofeng/libbitfs/method42"
+	"github.com/tongxiaofeng/libbitfs/spv"
+	"github.com/tongxiaofeng/libbitfs/tx"
+	"github.com/tongxiaofeng/libbitfs/wallet"
 )
 
 // --- TestBuildFullMetanetTree ---

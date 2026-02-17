@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/config"
+	"github.com/tongxiaofeng/libbitfs/config"
 )
 
 // runSell handles the "bitfs sell" command.

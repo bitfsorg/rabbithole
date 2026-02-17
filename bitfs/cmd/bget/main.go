@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/paymail"
+	"github.com/tongxiaofeng/libbitfs/paymail"
 )
 
 func main() {
