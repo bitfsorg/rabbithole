@@ -1,94 +1,94 @@
-# Module Specification: cmd/bitfs
+# 模块规范：cmd/bitfs
 
-## PURPOSE
+## 目的
 
-Main CLI binary for BitFS -- the owner/writer interface for the decentralized encrypted file system. Implements all file management, encryption, trading, wallet, publishing, and daemon commands. Built with Cobra for subcommand management and Viper for configuration.
+BitFS 的主 CLI 二进制文件——去中心化加密文件系统的所有者/写入者接口。实现所有文件管理、加密、交易、钱包、发布和守护进程命令。使用 Cobra 进行子命令管理，使用 Viper 进行配置管理。
 
-Design references: ConceptDesign #1, #2, #19; SystemDesign sections 9, 10; DetailedDesign section 9-B.
+设计参考：ConceptDesign #1, #2, #19; SystemDesign 第 9, 10 节; DetailedDesign 第 9-B 节。
 
-## PUBLIC API
+## 公共 API
 
-### Subcommands
-
-```
-bitfs init [--network <net>]           Initialize wallet + first vault
-bitfs put <local> <remote>             Upload file (create or update)
-bitfs put --encrypt <local> <remote>   Upload encrypted (private mode)
-bitfs mkdir <path>                     Create directory
-bitfs rm <path>                        Delete file (remove ChildEntry from parent)
-bitfs rm -r <path>                     Recursive delete
-bitfs rmdir <path>                     Delete empty directory
-bitfs mv <src> <dst>                   Move/rename
-bitfs cp <src> <dst>                   Copy (independent new node)
-bitfs link <target> <name>             Hard link
-bitfs link -s <target> <name>          Soft link (local)
-bitfs link -s <domain/path> <name>     Soft link (remote)
-bitfs encrypt <path>                   Free -> Private
-bitfs decrypt <path>                   Private -> Free
-bitfs sell <path> --price <sat/KB>     Set price (PAID mode)
-bitfs sell <path> --recursive          Recursive pricing
-bitfs sales [path]                     View sales history
-bitfs publish <domain> [path]          Bind domain via DNSLink
-bitfs unpublish <domain>               Unbind domain
-bitfs publish                          List bindings
-bitfs vault create <name>              Create new vault
-bitfs vault list                       List vaults
-bitfs vault use <name>                 Switch active vault
-bitfs vault info [name]                Show vault details
-bitfs vault rename <old> <new>         Rename vault
-bitfs vault delete <name>              Delete vault (soft)
-bitfs wallet init                      Create HD wallet
-bitfs wallet restore                   Restore from mnemonic
-bitfs wallet info                      Balance, address, network
-bitfs wallet fund                      Show deposit address
-bitfs daemon start [-d]                Start daemon (optionally background)
-bitfs daemon stop                      Stop daemon
-bitfs daemon status                    Show daemon status
-bitfs daemon config                    Show daemon configuration
-bitfs shell                            FTP-style interactive REPL
-```
-
-### Global Flags
+### 子命令
 
 ```
---json              JSON output (agent-friendly)
---no-cache          Disable local cache
---timeout N         Request timeout (seconds)
---offline           Force cache-only mode
---home <path>       Override BITFS_HOME (default ~/.bitfs)
---vault <name>      Override active vault for this command
+bitfs init [--network <net>]           初始化钱包 + 第一个保险库
+bitfs put <local> <remote>             上传文件（创建或更新）
+bitfs put --encrypt <local> <remote>   上传加密文件（私有模式）
+bitfs mkdir <path>                     创建目录
+bitfs rm <path>                        删除文件（从父目录移除 ChildEntry）
+bitfs rm -r <path>                     递归删除
+bitfs rmdir <path>                     删除空目录
+bitfs mv <src> <dst>                   移动/重命名
+bitfs cp <src> <dst>                   复制（创建独立新节点）
+bitfs link <target> <name>             硬链接
+bitfs link -s <target> <name>          软链接（本地）
+bitfs link -s <domain/path> <name>     软链接（远程）
+bitfs encrypt <path>                   免费 -> 私有
+bitfs decrypt <path>                   私有 -> 免费
+bitfs sell <path> --price <sat/KB>     设置价格（付费模式）
+bitfs sell <path> --recursive          递归定价
+bitfs sales [path]                     查看销售记录
+bitfs publish <domain> [path]          通过 DNSLink 绑定域名
+bitfs unpublish <domain>               解绑域名
+bitfs publish                          列出绑定
+bitfs vault create <name>              创建新保险库
+bitfs vault list                       列出保险库
+bitfs vault use <name>                 切换活跃保险库
+bitfs vault info [name]                显示保险库详情
+bitfs vault rename <old> <new>         重命名保险库
+bitfs vault delete <name>              删除保险库（软删除）
+bitfs wallet init                      创建 HD 钱包
+bitfs wallet restore                   从助记词恢复
+bitfs wallet info                      余额、地址、网络
+bitfs wallet fund                      显示充值地址
+bitfs daemon start [-d]                启动守护进程（可选后台运行）
+bitfs daemon stop                      停止守护进程
+bitfs daemon status                    显示守护进程状态
+bitfs daemon config                    显示守护进程配置
+bitfs shell                            FTP 风格交互式 REPL
 ```
 
-### Exit Codes
+### 全局标志
 
 ```
-0 = success
-1 = general error
-2 = argument error
-3 = network error
-4 = data validation error
-5 = authentication error
-6 = not found
-7 = payment error
+--json              JSON 输出（代理友好）
+--no-cache          禁用本地缓存
+--timeout N         请求超时（秒）
+--offline           强制仅缓存模式
+--home <path>       覆盖 BITFS_HOME（默认 ~/.bitfs）
+--vault <name>      为此命令覆盖活跃保险库
 ```
 
-## DEPENDENCIES
+### 退出码
 
-- `github.com/spf13/cobra` -- CLI framework
-- `github.com/spf13/viper` -- Configuration
-- `internal/wallet` -- HD wallet operations
-- `internal/method42` -- Encryption
-- `internal/tx` -- Transaction construction
-- `internal/metanet` -- Filesystem operations
-- `internal/storage` -- Content storage
-- `internal/spv` -- SPV verification
-- `internal/daemon` -- Daemon management
-- `internal/paymail` -- URI resolution
-- `internal/x402` -- Payment protocol
+```
+0 = 成功
+1 = 一般错误
+2 = 参数错误
+3 = 网络错误
+4 = 数据验证错误
+5 = 认证错误
+6 = 未找到
+7 = 支付错误
+```
 
-## DATA STRUCTURES
+## 依赖
 
-### Configuration File (~/.bitfs/config.toml)
+- `github.com/spf13/cobra` -- CLI 框架
+- `github.com/spf13/viper` -- 配置管理
+- `internal/wallet` -- HD 钱包操作
+- `internal/method42` -- 加密
+- `internal/tx` -- 交易构建
+- `internal/metanet` -- 文件系统操作
+- `internal/storage` -- 内容存储
+- `internal/spv` -- SPV 验证
+- `internal/daemon` -- 守护进程管理
+- `internal/paymail` -- URI 解析
+- `internal/x402` -- 支付协议
+
+## 数据结构
+
+### 配置文件（~/.bitfs/config.toml）
 ```toml
 network = "mainnet"
 output = "plain"
@@ -104,21 +104,21 @@ eviction = "lru"
 listen = "0.0.0.0:80"
 ```
 
-## ERROR HANDLING
+## 错误处理
 
-All commands follow the same pattern:
-1. Parse arguments, validate inputs
-2. Load wallet (if needed), unlock with password
-3. Perform operation
-4. Output result (plain text or JSON based on --json flag)
-5. Return appropriate exit code
+所有命令遵循相同模式：
+1. 解析参数，验证输入
+2. 加载钱包（如需要），用密码解锁
+3. 执行操作
+4. 输出结果（根据 --json 标志选择纯文本或 JSON）
+5. 返回适当的退出码
 
-Network errors: retry 3x with exponential backoff (1s/2s/4s).
-UTXO conflicts: auto-reconstruct and retry (up to 3x).
-Insufficient balance: show deficit amount + `bitfs wallet fund` address.
+网络错误：使用指数退避重试 3 次（1秒/2秒/4秒）。
+UTXO 冲突：自动重建并重试（最多 3 次）。
+余额不足：显示差额金额 + `bitfs wallet fund` 地址。
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Password prompts**: Wallet password is read from terminal (not command line) to avoid shell history exposure.
-2. **Session management**: When daemon is running, CLI uses Unix socket (in-memory). Otherwise, uses session files with restricted permissions.
-3. **Mnemonic display**: Mnemonic is shown only once during `wallet init`, never stored in plaintext.
+1. **密码提示**：钱包密码从终端读取（不是命令行），避免 shell 历史记录暴露。
+2. **会话管理**：当守护进程运行时，CLI 使用 Unix 套接字（内存中）。否则，使用受限权限的会话文件。
+3. **助记词显示**：助记词仅在 `wallet init` 期间显示一次，永不以明文存储。

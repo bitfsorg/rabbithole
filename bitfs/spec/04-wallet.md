@@ -1,14 +1,14 @@
-# Module Specification: internal/wallet
+# 模块规范：internal/wallet
 
-## PURPOSE
+## 目的
 
-HD wallet implementing BIP32/BIP39 key derivation for BitFS. Manages the deterministic key hierarchy that mirrors the filesystem structure: `m/44'/236'/{account}'/{chain}/{index}`. Provides seed generation, Argon2id encryption, vault management, and UTXO tracking.
+为 BitFS 实现 BIP32/BIP39 密钥派生的 HD 钱包。管理镜像文件系统结构的确定性密钥层次：`m/44'/236'/{account}'/{chain}/{index}`。提供种子生成、Argon2id 加密、保险库（Vault）管理和 UTXO 追踪。
 
-Design references: ConceptDesign #5, #7, #30, #64, #65, #81; SystemDesign section 2; DetailedDesign section 2-B.
+设计参考：ConceptDesign #5, #7, #30, #64, #65, #81; SystemDesign 第 2 节; DetailedDesign 第 2-B 节。
 
-## PUBLIC API
+## 公共 API
 
-### Constants
+### 常量
 
 ```go
 const (
@@ -35,7 +35,7 @@ const (
 )
 ```
 
-### Types
+### 类型
 
 ```go
 // Wallet represents an HD wallet instance.
@@ -87,7 +87,7 @@ type NetworkConfig struct {
 }
 ```
 
-### Functions -- Seed Management
+### 函数 -- 种子管理
 
 ```go
 // GenerateMnemonic creates a new BIP39 mnemonic with the specified entropy bits.
@@ -114,7 +114,7 @@ func EncryptSeed(seed []byte, password string) ([]byte, error)
 func DecryptSeed(encrypted []byte, password string) ([]byte, error)
 ```
 
-### Functions -- Key Derivation
+### 函数 -- 密钥派生
 
 ```go
 // DeriveNodeKey derives a key pair for a filesystem node.
@@ -146,7 +146,7 @@ func (w *Wallet) DeriveVaultRootKey(vaultIndex uint32) (*KeyPair, error)
 func (w *Wallet) DeriveKeyCacheKey() (*KeyPair, error)
 ```
 
-### Functions -- Vault Management
+### 函数 -- 保险库管理
 
 ```go
 // CreateVault creates a new vault with the given name.
@@ -166,7 +166,7 @@ func (w *Wallet) RenameVault(state *WalletState, oldName, newName string) error
 func (w *Wallet) DeleteVault(state *WalletState, name string) error
 ```
 
-### Functions -- Network
+### 函数 -- 网络
 
 ```go
 // Predefined network configurations.
@@ -184,19 +184,19 @@ func GetNetwork(name string) (*NetworkConfig, error)
 func LoadCustomNetwork(path string) (*NetworkConfig, error)
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- secp256k1 keys
-- `github.com/bsv-blockchain/go-sdk/compat/bip32` -- HD key derivation
-- `github.com/bsv-blockchain/go-sdk/compat/bip39` -- Mnemonic generation
-- `golang.org/x/crypto/argon2` -- Argon2id password hashing
-- `crypto/aes`, `crypto/cipher` -- AES-256-GCM for seed encryption
-- `crypto/rand` -- Cryptographic random
-- `crypto/sha256` -- Checksum
+- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- secp256k1 密钥
+- `github.com/bsv-blockchain/go-sdk/compat/bip32` -- HD 密钥派生
+- `github.com/bsv-blockchain/go-sdk/compat/bip39` -- 助记词生成
+- `golang.org/x/crypto/argon2` -- Argon2id 密码哈希
+- `crypto/aes`, `crypto/cipher` -- AES-256-GCM 种子加密
+- `crypto/rand` -- 密码学安全随机数
+- `crypto/sha256` -- 校验和
 
-## DATA STRUCTURES
+## 数据结构
 
-### HD Key Tree Layout
+### HD 密钥树布局
 ```
 m/44'/236'/0'          Fee key chain (shared across all vaults)
   /0/M                   Receive addresses
@@ -211,37 +211,37 @@ m/44'/236'/N'          Vault #(N-1)
   /0/0                   Root directory
 ```
 
-### wallet.enc Binary Format
+### wallet.enc 二进制格式
 ```
 [salt: 16 bytes] [nonce: 12 bytes] [AES-GCM ciphertext of (seed || checksum)]
 ```
-Where:
-- salt: random, for Argon2id
-- nonce: random, for AES-GCM
-- checksum: SHA256(seed)[:4]
+其中：
+- salt：随机值，用于 Argon2id
+- nonce：随机值，用于 AES-GCM
+- checksum：SHA256(seed)[:4]
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
-|-------|-----------|
-| `ErrInvalidMnemonic` | Mnemonic fails BIP39 validation |
-| `ErrInvalidEntropy` | Entropy bits not 128 or 256 |
-| `ErrFileIndexOutOfRange` | Index exceeds MaxFileIndex (2^31-1) |
-| `ErrPathTooDeep` | Path exceeds MaxPathDepth (64) |
-| `ErrVaultNotFound` | Named vault does not exist |
-| `ErrVaultExists` | Vault name already taken |
-| `ErrDecryptionFailed` | Wrong password or corrupted wallet.enc |
-| `ErrChecksumMismatch` | Seed checksum verification failed after decryption |
-| `ErrInvalidNetwork` | Unknown network name and no custom config |
+| 错误 | 条件 |
+|------|------|
+| `ErrInvalidMnemonic` | 助记词未通过 BIP39 验证 |
+| `ErrInvalidEntropy` | 熵值位数不是 128 或 256 |
+| `ErrFileIndexOutOfRange` | 索引超过 MaxFileIndex (2^31-1) |
+| `ErrPathTooDeep` | 路径超过 MaxPathDepth (64) |
+| `ErrVaultNotFound` | 指定名称的保险库不存在 |
+| `ErrVaultExists` | 保险库名称已被占用 |
+| `ErrDecryptionFailed` | 密码错误或 wallet.enc 已损坏 |
+| `ErrChecksumMismatch` | 解密后种子校验和验证失败 |
+| `ErrInvalidNetwork` | 未知网络名称且无自定义配置 |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Argon2id**: Seed encryption uses Argon2id (m=64MB, t=3, p=4) to resist GPU/ASIC brute force. Single SHA256 can be attacked at billions/sec; Argon2id raises cost by orders of magnitude.
+1. **Argon2id**：种子加密使用 Argon2id（m=64MB, t=3, p=4）以抵抗 GPU/ASIC 暴力破解。单次 SHA256 可以以数十亿次/秒的速度被攻击；Argon2id 将成本提高了数个数量级。
 
-2. **Seed in memory**: After wallet creation, the mnemonic should be cleared from memory. Only the encrypted seed is persisted.
+2. **内存中的种子**：钱包创建后，助记词应从内存中清除。仅持久化加密后的种子。
 
-3. **Hardened default**: Child derivation defaults to hardened mode (design decision #82). This prevents child capsule from revealing parent capsule. Non-hardened is only used for explicit directory purchase scenarios.
+3. **默认硬化派生**：子密钥派生默认使用硬化模式（设计决策 #82）。这防止子胶囊（Capsule）泄露父胶囊。非硬化派生仅用于显式的目录购买场景。
 
-4. **Key cache encryption**: Cached AES keys in `~/.bitfs/cache/keys/` are encrypted with a wallet-derived key, never stored as plaintext JSON.
+4. **密钥缓存加密**：`~/.bitfs/cache/keys/` 中缓存的 AES 密钥使用钱包派生的密钥加密，永远不会以明文 JSON 存储。
 
-5. **Deterministic recovery**: Given (mnemonic, passphrase), all keys can be recomputed. Transaction data requires separate backup.
+5. **确定性恢复**：给定（助记词，口令），所有密钥均可重新计算。交易数据需要单独备份。

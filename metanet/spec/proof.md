@@ -1,16 +1,16 @@
-# Module Specification: internal/proof
+# 模块规格说明：internal/proof
 
-## PURPOSE
+## 目的
 
-The `proof` package implements storage proofs for the Metanet Chain. It handles the ECDH double-layer encryption scheme that ensures each Metanet Node holds a cryptographically unique copy of the data, and the Merkle challenge-response protocol that verifies continued data possession.
+`proof` 包实现 Metanet Chain 的存储证明。它处理 ECDH 双层加密方案——确保每个 Metanet Node 持有数据的密码学唯一副本，以及验证持续数据持有的 Merkle 挑战-响应协议。
 
-The double-layer encryption works as follows: the Owner's data is already encrypted with Method 42 (first layer). The Owner then uses ECDH with the Metanet Node's public key to derive a node-specific AES-256-GCM key and encrypts the entire ciphertext again (second layer). This produces a unique ciphertext per node, making it impossible for nodes to share proofs or copy each other's data.
+双层加密的工作原理如下：所有者的数据已经使用 Method 42 加密（第一层）。然后所有者使用与 Metanet Node 公钥的 ECDH 推导出节点专用的 AES-256-GCM 密钥，并对整个密文再次加密（第二层）。这为每个节点生成唯一的密文，使得节点之间无法共享证明或复制彼此的数据。
 
-The Merkle tree is built over fixed-size chunks of the double-encrypted data. Challenge-response verification uses SHA256-based Merkle proofs to prove possession of specific chunks.
+Merkle 树建立在双重加密数据的固定大小分片之上。挑战-响应验证使用基于 SHA256 的 Merkle 证明来验证对特定分片的持有。
 
-## PUBLIC API
+## 公开 API
 
-### Types
+### 类型
 
 ```go
 // MerkleTree represents a SHA256-based binary Merkle tree built
@@ -57,7 +57,7 @@ type ChallengeResponse struct {
 }
 ```
 
-### Constants
+### 常量
 
 ```go
 const (
@@ -71,7 +71,7 @@ const (
 )
 ```
 
-### Functions
+### 函数
 
 ```go
 // EncryptForNode performs ECDH double-layer encryption of data for a
@@ -138,18 +138,18 @@ func VerifyStorageProof(
 ) error
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `internal/contract` -- Challenge computation (ComputeChallenge)
-- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- ECDH key exchange (secp256k1)
-- `crypto/sha256` -- SHA256 hashing
-- `crypto/aes` -- AES-256-GCM encryption
-- `crypto/cipher` -- GCM mode
-- `crypto/rand` -- Nonce generation
+- `internal/contract` -- 挑战计算（ComputeChallenge）
+- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- ECDH 密钥交换（secp256k1）
+- `crypto/sha256` -- SHA256 哈希
+- `crypto/aes` -- AES-256-GCM 加密
+- `crypto/cipher` -- GCM 模式
+- `crypto/rand` -- 随机数生成
 
-## DATA STRUCTURES
+## 数据结构
 
-### Merkle Tree Structure
+### Merkle 树结构
 
 ```
 Binary tree with SHA256 leaves and internal nodes:
@@ -163,7 +163,7 @@ Binary tree with SHA256 leaves and internal nodes:
 If odd number of leaves, the last leaf is duplicated.
 ```
 
-### Double-Layer Encryption
+### 双层加密（Double-Layer Encryption）
 
 ```
 Layer 1 (Method 42): ciphertext_1 = AES-256-GCM(method42_key, nonce_1, plaintext)
@@ -179,7 +179,7 @@ Properties:
     - Owner can verify any node (holds all ECDH keys)
 ```
 
-### Proof Serialization Format
+### 证明序列化格式（Proof Serialization Format）
 
 ```
 proof_data = chunk_index (4 bytes LE)
@@ -189,24 +189,24 @@ proof_data = chunk_index (4 bytes LE)
            || siblings (num_siblings * 32 bytes)
 ```
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
+| 错误 | 条件 |
 |-------|-----------|
-| `ErrInvalidPrivateKey` | Owner private key is not valid secp256k1 |
-| `ErrInvalidPublicKey` | Node public key is not valid compressed secp256k1 |
-| `ErrEmptyData` | Input data is empty |
+| `ErrInvalidPrivateKey` | 所有者私钥不是有效的 secp256k1 密钥 |
+| `ErrInvalidPublicKey` | 节点公钥不是有效的压缩 secp256k1 密钥 |
+| `ErrEmptyData` | 输入数据为空 |
 | `ErrChunkIndexOutOfRange` | ChunkIndex >= NumLeaves |
-| `ErrMerkleProofInvalid` | Merkle proof does not verify against root |
-| `ErrProofHashMismatch` | ComputeProofHash does not match expected_hash_k |
-| `ErrChallengeMismatch` | Submitted chunk index does not match computed challenge |
-| `ErrEncryptionFailed` | AES-256-GCM encryption failed |
+| `ErrMerkleProofInvalid` | Merkle 证明未能通过根验证 |
+| `ErrProofHashMismatch` | ComputeProofHash 与 expected_hash_k 不匹配 |
+| `ErrChallengeMismatch` | 提交的分片索引与计算出的挑战不匹配 |
+| `ErrEncryptionFailed` | AES-256-GCM 加密失败 |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Per-node uniqueness**: ECDH with each node's public key produces a unique shared secret, ensuring each node's ciphertext is different. Nodes cannot collude to share proofs.
-2. **Two-layer opacity**: The Metanet Node only has the outer encryption key. It can verify chunk integrity (Merkle proof) but cannot decrypt the underlying content. Only the Owner (who knows both keys) can decrypt.
-3. **Merkle tree integrity**: SHA256-based binary Merkle tree. Chunk hashes are computed over the double-encrypted data, binding the proof to the specific node's copy.
-4. **Nonce uniqueness**: Each EncryptForNode call generates a fresh random 12-byte nonce for AES-256-GCM. Nonce reuse with the same key would compromise confidentiality.
-5. **Chunk size trade-off**: 256KB default chunk size balances proof size (log2(N) * 32 bytes for Merkle siblings) against granularity. Smaller chunks mean more precise verification but larger proofs.
-6. **Performance note**: For a 1GB file with N nodes, double-layer encryption requires N independent AES-GCM passes plus N network uploads. Future optimization may use lazy encryption or chunk-level encryption.
+1. **每节点唯一性**：与每个节点公钥的 ECDH 产生唯一的共享密钥，确保每个节点的密文不同。节点之间无法共谋共享证明。
+2. **双层不透明性**：Metanet Node 仅持有外层加密密钥。它可以验证分片完整性（Merkle 证明），但无法解密底层内容。只有所有者（同时知道两个密钥）才能解密。
+3. **Merkle 树完整性**：基于 SHA256 的二叉 Merkle 树。分片哈希在双重加密数据上计算，将证明绑定到特定节点的副本。
+4. **Nonce 唯一性**：每次 EncryptForNode 调用都会生成新的随机 12 字节 nonce 用于 AES-256-GCM。使用相同密钥重复使用 nonce 将危害机密性。
+5. **分片大小权衡**：默认 256KB 的分片大小在证明大小（log2(N) * 32 字节的 Merkle 兄弟节点）和粒度之间取得平衡。更小的分片意味着更精确的验证，但证明更大。
+6. **性能说明**：对于 1GB 文件和 N 个节点，双层加密需要 N 次独立的 AES-GCM 处理以及 N 次网络上传。未来可优化为延迟加密或分片级加密。

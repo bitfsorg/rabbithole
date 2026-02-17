@@ -1,235 +1,235 @@
-# BitFS Implementation Task Breakdown
+# BitFS 实现任务分解
 
-Tasks ordered by dependency. Each phase builds on the previous. Estimated ~938 test cases total across all phases (per TestDesign document).
-
----
-
-## Phase 1: Foundation (Cryptography + Wallet + Transactions)
-
-### Task 1: internal/method42 -- Method 42 ECDH Encryption Engine
-- **Package**: `internal/method42/`
-- **Files**: `encrypt.go`, `ecdh.go`, `kdf.go`, `access.go`, `method42_test.go`
-- **Description**: Implement the core encryption system. ECDH key exchange on secp256k1, HKDF-SHA256 key derivation, AES-256-GCM encryption/decryption, three access modes (private/free/paid), capsule computation for HTLC, re-encryption between modes.
-- **Acceptance Criteria**:
-  - [x] ComputeKeyHash returns SHA256(SHA256(plaintext))
-  - [x] ECDH computes correct shared secret x-coordinate
-  - [x] DeriveAESKey produces deterministic 32-byte keys via HKDF
-  - [x] Encrypt/Decrypt round-trip succeeds for all three access modes
-  - [x] FreePrivateKey (scalar 1) produces reproducible encryption
-  - [x] DecryptWithCapsule works for buyer flow
-  - [x] ReEncrypt correctly converts between FREE and PRIVATE
-  - [x] Key hash verification catches tampered content
-  - [x] All error conditions produce correct error types
-- **Estimated Tests**: 45
-- **Dependencies**: go-sdk (ec primitives), golang.org/x/crypto (hkdf)
-
-### Task 2: internal/wallet -- HD Wallet (BIP32/BIP39)
-- **Package**: `internal/wallet/`
-- **Files**: `seed.go`, `hd.go`, `vault.go`, `network.go`, `wallet_test.go`
-- **Description**: BIP39 mnemonic generation/validation, BIP32 key derivation with BitFS path scheme (m/44'/236'/...), Argon2id seed encryption, vault CRUD, fee key chain derivation, network configuration.
-- **Acceptance Criteria**:
-  - [x] GenerateMnemonic produces valid 12/24-word mnemonics
-  - [x] SeedFromMnemonic is deterministic (same input -> same seed)
-  - [x] EncryptSeed/DecryptSeed round-trip with correct password
-  - [x] DecryptSeed fails with wrong password (ErrDecryptionFailed)
-  - [x] Checksum verification catches corrupted data
-  - [x] DeriveNodeKey produces correct path m/44'/236'/(V+1)'/0/0/...
-  - [x] DeriveFeeKey produces correct path m/44'/236'/0'/chain/index
-  - [x] Hardened vs non-hardened derivation works correctly
-  - [x] MaxFileIndex and MaxPathDepth limits enforced
-  - [x] Vault create/list/rename/delete operations
-  - [x] Network configs (mainnet/testnet/regtest) load correctly
-  - [x] Same mnemonic+passphrase always produces same keys
-- **Estimated Tests**: 55
-- **Dependencies**: go-sdk (bip32, bip39, ec), golang.org/x/crypto (argon2)
-
-### Task 3: internal/tx -- BSV Transaction Construction
-- **Package**: `internal/tx/`
-- **Files**: `metanet_tx.go`, `utxo.go`, `opreturn.go`, `tx_test.go`
-- **Description**: Build the four Metanet transaction templates (CreateRoot, CreateChild, SelfUpdate, DataTransaction). OP_RETURN construction and parsing. UTXO tracking for the self-sustaining chain. Fee estimation.
-- **Acceptance Criteria**:
-  - [x] BuildCreateRoot produces valid tx with correct OP_RETURN format
-  - [x] BuildCreateChild spends P_parent UTXO and refreshes it on Output 2
-  - [x] BuildSelfUpdate preserves ParentTxID across updates
-  - [x] BuildDataTransaction embeds content with OP_DROP
-  - [x] BuildOPReturn/ParseOPReturn round-trip correctly
-  - [x] MetaFlag (0x6d657461) is correctly placed
-  - [x] Dust limit (546 sat) enforced on all P2PKH outputs
-  - [x] Fee estimation produces reasonable values
-  - [x] UTXO tracking correctly follows refresh chain
-  - [x] Insufficient funds errors are clear
-- **Estimated Tests**: 40
-- **Dependencies**: go-sdk (transaction, script, ec), internal/wallet
+任务按依赖关系排序。每个阶段建立在前一阶段之上。估计总共约 938 个测试用例（依据测试设计文档）。
 
 ---
 
-## Phase 2: Filesystem (DAG + Verification + Storage)
+## 第一阶段：基础（密码学 + 钱包 + 交易）
 
-### Task 4: internal/metanet -- Metanet DAG Parser
-- **Package**: `internal/metanet/`
-- **Files**: `node.go`, `parser.go`, `resolve.go`, `directory.go`, `link.go`, `metanet_test.go`
-- **Description**: Parse Metanet transactions into Node structs, implement Unix filesystem operations (path resolution, directory listing, link following), version resolution (latest block height + TTOR), price inheritance.
-- **Acceptance Criteria**:
-  - [x] ParseNode extracts P_node, ParentTxID, Protobuf payload
-  - [x] ResolvePath traverses directories correctly
-  - [x] "." and ".." navigation works (.. cannot escape root)
-  - [x] Soft link following with max depth 10
-  - [x] Hard link detection (same P_node, multiple ChildEntries)
-  - [x] Remote soft links return appropriate error
-  - [x] LatestVersion correctly orders by block height then TTOR
-  - [x] AddChild/RemoveChild/RenameChild directory operations
-  - [x] NextChildIndex monotonically increases (deleted indices never reused)
-  - [x] InheritPricePerKB walks up directory tree
-  - [x] Three node types (FILE/DIR/LINK) correctly parsed
-- **Estimated Tests**: 65
-- **Dependencies**: internal/tx, protobuf, go-sdk (ec)
+### 任务 1：internal/method42 -- Method 42 ECDH 加密引擎
+- **包**：`internal/method42/`
+- **文件**：`encrypt.go`、`ecdh.go`、`kdf.go`、`access.go`、`method42_test.go`
+- **描述**：实现核心加密系统。secp256k1 上的 ECDH 密钥交换、HKDF-SHA256 密钥推导、AES-256-GCM 加密/解密、三种访问模式（私有/免费/付费）、用于 HTLC 的胶囊（Capsule）计算、模式间重加密。
+- **验收标准**：
+  - [x] ComputeKeyHash 返回 SHA256(SHA256(plaintext))
+  - [x] ECDH 计算正确的共享密钥 x 坐标
+  - [x] DeriveAESKey 通过 HKDF 生成确定性的 32 字节密钥
+  - [x] Encrypt/Decrypt 对所有三种访问模式往返成功
+  - [x] FreePrivateKey（标量 1）产生可复现的加密结果
+  - [x] DecryptWithCapsule 对买方流程正常工作
+  - [x] ReEncrypt 正确转换 FREE 和 PRIVATE 之间的模式
+  - [x] 密钥哈希验证能捕获被篡改的内容
+  - [x] 所有错误条件产生正确的错误类型
+- **估计测试数**：45
+- **依赖**：go-sdk（ec 原语）、golang.org/x/crypto（hkdf）
 
-### Task 5: internal/spv -- SPV Light Client
-- **Package**: `internal/spv/`
-- **Files**: `merkle.go`, `header.go`, `verify.go`, `store.go`, `spv_test.go`
-- **Description**: Merkle proof verification, block header chain validation, full SPV verification chain (tx integrity -> Merkle proof -> block header -> longest chain). Header and transaction storage interfaces.
-- **Acceptance Criteria**:
-  - [x] VerifyMerkleProof computes correct root from branch
-  - [x] ComputeMerkleRoot handles odd/even number of leaves
-  - [x] VerifyTransaction completes full 4-step verification chain
-  - [x] VerifyHeaderChain validates PrevBlock linkage
-  - [x] SerializeHeader/DeserializeHeader round-trip (80 bytes)
-  - [x] DoubleHash matches known BSV block hashes
-  - [x] Unconfirmed transactions correctly flagged
-  - [x] Invalid proofs rejected with appropriate errors
-- **Estimated Tests**: 35
-- **Dependencies**: crypto/sha256
+### 任务 2：internal/wallet -- HD 钱包（BIP32/BIP39）
+- **包**：`internal/wallet/`
+- **文件**：`seed.go`、`hd.go`、`vault.go`、`network.go`、`wallet_test.go`
+- **描述**：BIP39 助记词生成/验证、使用 BitFS 路径方案（m/44'/236'/...）的 BIP32 密钥派生、Argon2id 种子加密、保险库 CRUD、手续费密钥链派生、网络配置。
+- **验收标准**：
+  - [x] GenerateMnemonic 产生有效的 12/24 词助记词
+  - [x] SeedFromMnemonic 具有确定性（相同输入 -> 相同种子）
+  - [x] EncryptSeed/DecryptSeed 使用正确密码往返成功
+  - [x] DecryptSeed 使用错误密码失败（ErrDecryptionFailed）
+  - [x] 校验和验证能捕获损坏的数据
+  - [x] DeriveNodeKey 产生正确路径 m/44'/236'/(V+1)'/0/0/...
+  - [x] DeriveFeeKey 产生正确路径 m/44'/236'/0'/chain/index
+  - [x] 硬化与非硬化派生正确工作
+  - [x] MaxFileIndex 和 MaxPathDepth 限制被执行
+  - [x] 保险库创建/列出/重命名/删除操作
+  - [x] 网络配置（mainnet/testnet/regtest）正确加载
+  - [x] 相同助记词+口令始终产生相同密钥
+- **估计测试数**：55
+- **依赖**：go-sdk（bip32、bip39、ec）、golang.org/x/crypto（argon2）
 
-### Task 6: internal/storage -- Content Storage
-- **Package**: `internal/storage/`
-- **Files**: `store.go`, `filestore.go`, `storage_test.go`
-- **Description**: File-based content-addressed storage. Flat KV where key_hash maps to ciphertext files, with directory sharding by first byte of hash.
-- **Acceptance Criteria**:
-  - [x] Put/Get round-trip for various content sizes
-  - [x] Has returns correct existence check
-  - [x] Delete removes content
-  - [x] Size returns correct byte count
-  - [x] List returns all stored hashes
-  - [x] Directory sharding creates proper subdirectories
-  - [x] Invalid key hash (not 32 bytes) rejected
-  - [x] Concurrent access safety
-- **Estimated Tests**: 25
-- **Dependencies**: os, encoding/hex
-
----
-
-## Phase 3: Network (Identity + Payment + Daemon)
-
-### Task 7: internal/paymail -- Paymail Identity Resolution
-- **Package**: `internal/paymail/`
-- **Files**: `uri.go`, `resolve.go`, `dns.go`, `paymail_test.go`
-- **Description**: Parse bitfs:// URIs, detect address type (Paymail/@, DNSLink, bare pubkey), DNS SRV/TXT resolution, Paymail capability discovery, PKI resolution.
-- **Acceptance Criteria**:
-  - [x] ParseURI correctly classifies all three address types
-  - [x] Paymail URI extracts alias and domain
-  - [x] DNSLink URI extracts domain
-  - [x] Bare pubkey URI extracts compressed key bytes
-  - [x] Invalid URIs produce clear errors
-  - [x] Path component parsing handles edge cases
-  - [x] DNS resolution (SRV, TXT) with timeout handling
-  - [x] Paymail capability discovery from .well-known
-  - [x] PKI resolution returns valid public key
-- **Estimated Tests**: 35
-- **Dependencies**: net, net/http, net/url
-
-### Task 8: internal/x402 -- x402 Payment Protocol
-- **Package**: `internal/x402/`
-- **Files**: `invoice.go`, `headers.go`, `htlc.go`, `verify.go`, `x402_test.go`
-- **Description**: Invoice creation, HTTP 402 headers, HTLC script construction, payment verification.
-- **Acceptance Criteria**:
-  - [x] CalculatePrice correctly computes ceil(pricePerKB * size / 1024)
-  - [x] NewInvoice generates valid invoices with expiry
-  - [x] SetPaymentHeaders/ParsePaymentHeaders round-trip
-  - [x] BuildHTLC produces correct IF/ELSE/ENDIF script
-  - [x] VerifyPayment validates tx output against invoice
-  - [x] Expired invoices rejected
-  - [x] ParseHTLCPreimage extracts capsule from spending tx
-- **Estimated Tests**: 30
-- **Dependencies**: go-sdk (transaction, script), internal/method42
-
-### Task 9: internal/daemon -- BitFS Daemon (LFCP)
-- **Package**: `internal/daemon/`
-- **Files**: `daemon.go`, `routes.go`, `handshake.go`, `content.go`, `webmcp.go`, `daemon_test.go`
-- **Description**: HTTP server with all endpoints, Method 42 handshake, content negotiation, x402 payment flow, WebMCP declarations, Paymail server capabilities.
-- **Acceptance Criteria**:
-  - [x] Health check endpoint returns 200
-  - [x] Content negotiation returns HTML/Markdown/JSON based on Accept header
-  - [x] Free content served directly
-  - [x] Paid content returns 402 with correct headers
-  - [x] Method 42 handshake establishes authenticated session
-  - [x] HTLC buy flow: capsule_hash -> submit HTLC -> reveal capsule
-  - [x] x402 payment verification accepts valid transactions
-  - [x] WebMCP forms included in HTML responses
-  - [x] Paymail .well-known endpoint serves capabilities
-  - [x] Rate limiting enforced
-  - [x] Graceful shutdown
-- **Estimated Tests**: 80
-- **Dependencies**: all internal packages, net/http
+### 任务 3：internal/tx -- BSV 交易构建
+- **包**：`internal/tx/`
+- **文件**：`metanet_tx.go`、`utxo.go`、`opreturn.go`、`tx_test.go`
+- **描述**：构建四种 Metanet 交易模板（CreateRoot、CreateChild、SelfUpdate、DataTransaction）。OP_RETURN 构建与解析。自维持链的 UTXO 追踪。手续费估算。
+- **验收标准**：
+  - [x] BuildCreateRoot 产生具有正确 OP_RETURN 格式的有效交易
+  - [x] BuildCreateChild 花费 P_parent UTXO 并在 Output 2 刷新它
+  - [x] BuildSelfUpdate 在更新间保持 ParentTxID 不变
+  - [x] BuildDataTransaction 使用 OP_DROP 嵌入内容
+  - [x] BuildOPReturn/ParseOPReturn 往返正确
+  - [x] MetaFlag (0x6d657461) 被正确放置
+  - [x] 所有 P2PKH 输出执行粉尘限额（546 聪）
+  - [x] 手续费估算产生合理的值
+  - [x] UTXO 追踪正确跟随刷新链
+  - [x] 资金不足错误信息清晰
+- **估计测试数**：40
+- **依赖**：go-sdk（transaction、script、ec）、internal/wallet
 
 ---
 
-## Phase 4: CLI (User Interface)
+## 第二阶段：文件系统（DAG + 验证 + 存储）
 
-### Task 10: cmd/bitfs -- Main CLI
-- **Package**: `cmd/bitfs/`
-- **Files**: `main.go`, `cmd_put.go`, `cmd_mkdir.go`, `cmd_rm.go`, `cmd_mv.go`, `cmd_cp.go`, `cmd_link.go`, `cmd_sell.go`, `cmd_encrypt.go`, `cmd_vault.go`, `cmd_wallet.go`, `cmd_publish.go`, `cmd_daemon.go`, `cmd_shell.go`, integration tests
-- **Description**: Full CLI implementation with all subcommands, Cobra command tree, Viper configuration, interactive shell (FTP-style REPL).
-- **Acceptance Criteria**:
-  - [x] All subcommands parse arguments correctly
-  - [x] --json flag produces valid JSON output
-  - [x] Exit codes follow specification
-  - [x] Error messages are clear and actionable
-  - [x] Shell mode supports all documented commands
-  - [x] Shell supports local/remote navigation (lcd/cd)
-  - [x] Password prompts use terminal (not stdin echo)
-  - [x] BITFS_HOME environment variable override works
-  - [x] Configuration file is read correctly
-- **Estimated Tests**: 120
-- **Dependencies**: cobra, viper, all internal packages
+### 任务 4：internal/metanet -- Metanet DAG 解析器
+- **包**：`internal/metanet/`
+- **文件**：`node.go`、`parser.go`、`resolve.go`、`directory.go`、`link.go`、`metanet_test.go`
+- **描述**：将 Metanet 交易解析为 Node 结构体，实现 Unix 文件系统操作（路径解析、目录列表、链接跟踪），版本解析（最高区块高度 + TTOR），价格继承。
+- **验收标准**：
+  - [x] ParseNode 提取 P_node、ParentTxID、Protobuf 载荷
+  - [x] ResolvePath 正确遍历目录
+  - [x] "." 和 ".." 导航正常工作（.. 不能跳出根目录）
+  - [x] 软链接跟踪最大深度 10
+  - [x] 硬链接检测（同一 P_node，多个 ChildEntry）
+  - [x] 远程软链接返回适当的错误
+  - [x] LatestVersion 正确按区块高度然后 TTOR 排序
+  - [x] AddChild/RemoveChild/RenameChild 目录操作
+  - [x] NextChildIndex 单调递增（已删除索引永不复用）
+  - [x] InheritPricePerKB 沿目录树向上查找
+  - [x] 三种节点类型（FILE/DIR/LINK）正确解析
+- **估计测试数**：65
+- **依赖**：internal/tx、protobuf、go-sdk（ec）
 
-### Task 11: cmd/b* -- Read-only Tools
-- **Package**: `cmd/bls/`, `cmd/bcat/`, `cmd/bget/`, `cmd/bstat/`, `cmd/btree/`
-- **Files**: `main.go` in each, shared `internal/client/` utilities
-- **Description**: Five independent binaries for read-only filesystem access. Each wraps shared client code with specific output formatting.
-- **Acceptance Criteria**:
-  - [x] bls produces ls-style output for directories
-  - [x] bcat outputs file content to stdout
-  - [x] bget downloads file to local filesystem
-  - [x] bstat shows file metadata (size, hash, owner, time, access)
-  - [x] btree shows recursive directory tree
-  - [x] All tools support --json flag
-  - [x] --buy flag triggers purchase flow
-  - [x] --offline uses cache only
-  - [x] URI parsing handles all three address types
-  - [x] Free content auto-decrypted
-- **Estimated Tests**: 75
-- **Dependencies**: cobra, internal/paymail, internal/method42, internal/x402
+### 任务 5：internal/spv -- SPV 轻客户端
+- **包**：`internal/spv/`
+- **文件**：`merkle.go`、`header.go`、`verify.go`、`store.go`、`spv_test.go`
+- **描述**：Merkle 证明验证、区块头链验证、完整 SPV 验证链（交易完整性 -> Merkle 证明 -> 区块头 -> 最长链）。区块头和交易存储接口。
+- **验收标准**：
+  - [x] VerifyMerkleProof 从分支正确计算根
+  - [x] ComputeMerkleRoot 处理奇数/偶数叶节点数
+  - [x] VerifyTransaction 完成完整的 4 步验证链
+  - [x] VerifyHeaderChain 验证 PrevBlock 链接
+  - [x] SerializeHeader/DeserializeHeader 往返正确（80 字节）
+  - [x] DoubleHash 匹配已知的 BSV 区块哈希
+  - [x] 未确认交易被正确标记
+  - [x] 无效证明被适当的错误拒绝
+- **估计测试数**：35
+- **依赖**：crypto/sha256
+
+### 任务 6：internal/storage -- 内容存储
+- **包**：`internal/storage/`
+- **文件**：`store.go`、`filestore.go`、`storage_test.go`
+- **描述**：基于文件的内容寻址存储。扁平键值存储，key_hash 映射到密文文件，按哈希第一个字节进行目录分片。
+- **验收标准**：
+  - [x] 各种内容大小的 Put/Get 往返
+  - [x] Has 返回正确的存在性检查
+  - [x] Delete 移除内容
+  - [x] Size 返回正确的字节数
+  - [x] List 返回所有已存储的哈希
+  - [x] 目录分片创建正确的子目录
+  - [x] 无效 key hash（非 32 字节）被拒绝
+  - [x] 并发访问安全
+- **估计测试数**：25
+- **依赖**：os、encoding/hex
 
 ---
 
-## Phase Summary
+## 第三阶段：网络（身份 + 支付 + 守护进程）
 
-| Phase | Packages | Est. Tests | Cumulative |
-|-------|----------|-----------|------------|
-| 1 Foundation | method42, wallet, tx | 140 | 140 |
-| 2 Filesystem | metanet, spv, storage | 125 | 265 |
-| 3 Network | paymail, x402, daemon | 145 | 410 |
+### 任务 7：internal/paymail -- Paymail 身份解析
+- **包**：`internal/paymail/`
+- **文件**：`uri.go`、`resolve.go`、`dns.go`、`paymail_test.go`
+- **描述**：解析 bitfs:// URI，检测地址类型（Paymail/@、DNSLink、裸公钥），DNS SRV/TXT 解析，Paymail 能力发现，PKI 解析。
+- **验收标准**：
+  - [x] ParseURI 正确分类所有三种地址类型
+  - [x] Paymail URI 提取别名和域名
+  - [x] DNSLink URI 提取域名
+  - [x] 裸公钥 URI 提取压缩密钥字节
+  - [x] 无效 URI 产生清晰的错误
+  - [x] 路径组件解析处理边缘情况
+  - [x] DNS 解析（SRV、TXT）带超时处理
+  - [x] Paymail 能力从 .well-known 发现
+  - [x] PKI 解析返回有效公钥
+- **估计测试数**：35
+- **依赖**：net、net/http、net/url
+
+### 任务 8：internal/x402 -- x402 支付协议
+- **包**：`internal/x402/`
+- **文件**：`invoice.go`、`headers.go`、`htlc.go`、`verify.go`、`x402_test.go`
+- **描述**：发票创建、HTTP 402 头部、HTLC 脚本构建、支付验证。
+- **验收标准**：
+  - [x] CalculatePrice 正确计算 ceil(pricePerKB * size / 1024)
+  - [x] NewInvoice 生成带过期时间的有效发票
+  - [x] SetPaymentHeaders/ParsePaymentHeaders 往返正确
+  - [x] BuildHTLC 产生正确的 IF/ELSE/ENDIF 脚本
+  - [x] VerifyPayment 验证交易输出与发票匹配
+  - [x] 过期发票被拒绝
+  - [x] ParseHTLCPreimage 从花费交易中提取胶囊
+- **估计测试数**：30
+- **依赖**：go-sdk（transaction、script）、internal/method42
+
+### 任务 9：internal/daemon -- BitFS 守护进程（LFCP）
+- **包**：`internal/daemon/`
+- **文件**：`daemon.go`、`routes.go`、`handshake.go`、`content.go`、`webmcp.go`、`daemon_test.go`
+- **描述**：HTTP 服务器包含所有端点、Method 42 握手、内容协商、x402 支付流程、WebMCP 声明、Paymail 服务器能力。
+- **验收标准**：
+  - [x] 健康检查端点返回 200
+  - [x] 内容协商根据 Accept 头部返回 HTML/Markdown/JSON
+  - [x] 免费内容直接提供
+  - [x] 付费内容返回 402 并带正确头部
+  - [x] Method 42 握手建立认证会话
+  - [x] HTLC 购买流程：capsule_hash -> 提交 HTLC -> 揭示 capsule
+  - [x] x402 支付验证接受有效交易
+  - [x] HTML 响应中包含 WebMCP 表单
+  - [x] Paymail .well-known 端点提供能力声明
+  - [x] 速率限制被执行
+  - [x] 优雅关闭
+- **估计测试数**：80
+- **依赖**：所有 internal 包、net/http
+
+---
+
+## 第四阶段：CLI（用户界面）
+
+### 任务 10：cmd/bitfs -- 主 CLI
+- **包**：`cmd/bitfs/`
+- **文件**：`main.go`、`cmd_put.go`、`cmd_mkdir.go`、`cmd_rm.go`、`cmd_mv.go`、`cmd_cp.go`、`cmd_link.go`、`cmd_sell.go`、`cmd_encrypt.go`、`cmd_vault.go`、`cmd_wallet.go`、`cmd_publish.go`、`cmd_daemon.go`、`cmd_shell.go`、集成测试
+- **描述**：完整 CLI 实现，包含所有子命令、Cobra 命令树、Viper 配置、交互式 shell（FTP 风格 REPL）。
+- **验收标准**：
+  - [x] 所有子命令正确解析参数
+  - [x] --json 标志产生有效 JSON 输出
+  - [x] 退出码遵循规范
+  - [x] 错误消息清晰且可操作
+  - [x] Shell 模式支持所有文档化的命令
+  - [x] Shell 支持本地/远程导航（lcd/cd）
+  - [x] 密码提示使用终端（非 stdin 回显）
+  - [x] BITFS_HOME 环境变量覆盖正常工作
+  - [x] 配置文件被正确读取
+- **估计测试数**：120
+- **依赖**：cobra、viper、所有 internal 包
+
+### 任务 11：cmd/b* -- 只读工具
+- **包**：`cmd/bls/`、`cmd/bcat/`、`cmd/bget/`、`cmd/bstat/`、`cmd/btree/`
+- **文件**：每个包中的 `main.go`，共享的 `internal/client/` 工具库
+- **描述**：五个独立的只读文件系统访问二进制文件。每个封装共享客户端代码并提供特定的输出格式化。
+- **验收标准**：
+  - [x] bls 对目录产生 ls 风格输出
+  - [x] bcat 将文件内容输出到 stdout
+  - [x] bget 将文件下载到本地文件系统
+  - [x] bstat 显示文件元数据（大小、哈希、所有者、时间、访问权限）
+  - [x] btree 显示递归目录树
+  - [x] 所有工具支持 --json 标志
+  - [x] --buy 标志触发购买流程
+  - [x] --offline 仅使用缓存
+  - [x] URI 解析处理所有三种地址类型
+  - [x] 免费内容自动解密
+- **估计测试数**：75
+- **依赖**：cobra、internal/paymail、internal/method42、internal/x402
+
+---
+
+## 阶段汇总
+
+| 阶段 | 包 | 估计测试数 | 累计 |
+|------|------|-----------|------|
+| 1 基础 | method42, wallet, tx | 140 | 140 |
+| 2 文件系统 | metanet, spv, storage | 125 | 265 |
+| 3 网络 | paymail, x402, daemon | 145 | 410 |
 | 4 CLI | cmd/bitfs, cmd/b* | 195 | 605 |
-| Integration | cross-package | ~333 | ~938 |
+| 集成测试 | 跨包 | ~333 | ~938 |
 
-**Total estimated**: ~938 test cases (matching TestDesign document).
+**总计估计**：约 938 个测试用例（与测试设计文档一致）。
 
 ---
 
-## Implementation Notes
+## 实现注意事项
 
-1. **go-sdk is the ONLY BSV dependency**: `github.com/bsv-blockchain/go-sdk`. No other BSV libraries.
-2. **Testing**: Table-driven tests using `github.com/stretchr/testify`. Each package has comprehensive unit tests.
-3. **Protobuf**: `BitFSPayload` proto file to be generated from the schema in SystemDesign section 4.
-4. **Error wrapping**: Use `fmt.Errorf("context: %w", err)` for error chains.
-5. **Context propagation**: Long-running operations accept `context.Context` for cancellation.
+1. **go-sdk 是唯一的 BSV 依赖**：`github.com/bsv-blockchain/go-sdk`。不使用其他 BSV 库。
+2. **测试**：使用 `github.com/stretchr/testify` 的表驱动测试。每个包都有全面的单元测试。
+3. **Protobuf**：`BitFSPayload` proto 文件根据 SystemDesign 第 4 节的模式生成。
+4. **错误包装**：使用 `fmt.Errorf("context: %w", err)` 构建错误链。
+5. **上下文传播**：长时间运行的操作接受 `context.Context` 以支持取消。

@@ -1,14 +1,14 @@
-# Module Specification: internal/spv
+# 模块规范：internal/spv
 
-## PURPOSE
+## 目的
 
-SPV (Simplified Payment Verification) light client for BitFS. Stores transactions locally with Merkle proofs, verifies inclusion in the blockchain without downloading full blocks. Implements the core principle: "all transaction info + Merkle proof saved locally, never query blockchain."
+BitFS 的 SPV（简易支付验证，Simplified Payment Verification）轻客户端。在本地存储带有 Merkle 证明的交易，无需下载完整区块即可验证交易是否包含在区块链中。实现核心原则："所有交易信息 + Merkle 证明保存在本地，永不查询区块链。"
 
-Design references: ConceptDesign #3; SystemDesign section 7; DetailedDesign implied by SPV verification chain.
+设计参考：ConceptDesign #3; SystemDesign 第 7 节; DetailedDesign 中 SPV 验证链相关内容。
 
-## PUBLIC API
+## 公共 API
 
-### Types
+### 类型
 
 ```go
 // BlockHeader represents a BSV block header (80 bytes).
@@ -41,7 +41,7 @@ type StoredTx struct {
 }
 ```
 
-### Interfaces
+### 接口
 
 ```go
 // HeaderStore persists block headers for chain verification.
@@ -81,7 +81,7 @@ type TxStore interface {
 }
 ```
 
-### Functions
+### 函数
 
 ```go
 // VerifyMerkleProof verifies that a transaction is included in a block.
@@ -114,14 +114,14 @@ func DeserializeHeader(data []byte) (*BlockHeader, error)
 func DoubleHash(data []byte) []byte
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `crypto/sha256` -- Double-SHA256 hashing
-- `encoding/binary` -- Header serialization
+- `crypto/sha256` -- 双重 SHA-256 哈希
+- `encoding/binary` -- 区块头序列化
 
-## DATA STRUCTURES
+## 数据结构
 
-### Merkle Proof Verification
+### Merkle 证明验证
 ```
 Given: TxID, Index, ProofNodes[]
 
@@ -135,7 +135,7 @@ for i, node in ProofNodes:
 verify: hash == block.MerkleRoot
 ```
 
-### SPV Verification Chain
+### SPV 验证链
 ```
 1. Raw TX -> deserialize -> extract OP_RETURN
 2. MerkleProof(TxHash, nodes) -> computed MerkleRoot
@@ -144,19 +144,19 @@ verify: hash == block.MerkleRoot
 5. Content: SHA256(SHA256(plaintext)) == key_hash
 ```
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
-|-------|-----------|
-| `ErrMerkleProofInvalid` | Computed root does not match expected |
-| `ErrHeaderNotFound` | Block header not in local store |
-| `ErrTxNotFound` | Transaction not in local store |
-| `ErrUnconfirmed` | Transaction has no Merkle proof yet |
-| `ErrChainBroken` | Headers do not form a valid chain |
-| `ErrInvalidHeader` | Header fails deserialization or hash check |
+| 错误 | 条件 |
+|------|------|
+| `ErrMerkleProofInvalid` | 计算出的根与期望值不匹配 |
+| `ErrHeaderNotFound` | 区块头不在本地存储中 |
+| `ErrTxNotFound` | 交易不在本地存储中 |
+| `ErrUnconfirmed` | 交易尚无 Merkle 证明 |
+| `ErrChainBroken` | 区块头未形成有效链 |
+| `ErrInvalidHeader` | 区块头反序列化或哈希检查失败 |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **No network queries**: SPV module itself never makes network calls. Headers and proofs are provided by callers (typically from daemon or P2P sync).
-2. **Checkpoint validation**: For initial sync, hardcoded checkpoints can validate the header chain without downloading all headers from genesis.
-3. **Longest chain**: The module trusts the longest chain of valid headers. Eclipse attacks are mitigated by connecting to multiple peers (handled at network layer, not in this module).
+1. **无网络查询**：SPV 模块本身不发起网络调用。区块头和证明由调用者提供（通常来自守护进程或 P2P 同步）。
+2. **检查点验证**：初始同步时，硬编码检查点可以在不从创世块下载所有区块头的情况下验证头链。
+3. **最长链**：模块信任最长的有效区块头链。日蚀攻击（Eclipse Attack）通过连接多个对等节点来缓解（在网络层处理，不在本模块中）。

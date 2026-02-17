@@ -1,25 +1,25 @@
-# Module Specification: cmd/b* (Read-only Tools)
+# 模块规范：cmd/b*（只读工具）
 
-## PURPOSE
+## 目的
 
-Five independent read-only CLI tools for querying the BitFS filesystem. These are stateless visitor tools that do not require a wallet. They follow Unix conventions for composability via pipes.
+五个独立的只读 CLI 工具，用于查询 BitFS 文件系统。这些是无状态的访问者工具，不需要钱包。它们遵循 Unix 约定，可通过管道组合使用。
 
-Design references: ConceptDesign #1, #2, #3; SystemDesign section 8.
+设计参考：ConceptDesign #1, #2, #3; SystemDesign 第 8 节。
 
-## TOOLS
+## 工具
 
-### cmd/bls -- List Directory (like `ls`)
+### cmd/bls -- 列出目录（类似 `ls`）
 
 ```
 bls [OPTIONS] bitfs://<authority>/<path>
 
 Options:
-  -l, --long       Detailed listing
-  --json           JSON output
-  --keyword <kw>   Filter by keyword
-  --no-cache       Skip cache
-  --timeout N      Timeout in seconds
-  --offline        Cache-only mode
+  -l, --long       详细列表
+  --json           JSON 输出
+  --keyword <kw>   按关键字过滤
+  --no-cache       跳过缓存
+  --timeout N      超时（秒）
+  --offline        仅缓存模式
 
 Output (default):
   readme.txt    4.2 KB    2026-02-14    [free]
@@ -30,16 +30,16 @@ Output (--json):
   [{"name":"readme.txt","type":"file","size":4300,"access":"free",...}]
 ```
 
-### cmd/bcat -- Output File Content (like `cat`)
+### cmd/bcat -- 输出文件内容（类似 `cat`）
 
 ```
 bcat [OPTIONS] bitfs://<authority>/<path>
 
 Options:
-  --buy            Auto-purchase (paid content)
-  --json           JSON envelope output
-  --no-cache       Skip cache
-  --timeout N      Timeout
+  --buy            自动购买（付费内容）
+  --json           JSON 封装输出
+  --no-cache       跳过缓存
+  --timeout N      超时
 
 Behavior:
   - Free content: auto-decrypt using D_node=1 trick
@@ -47,18 +47,18 @@ Behavior:
   - Uncached paid content: show price, suggest --buy
 ```
 
-### cmd/bget -- Download File (like `wget`)
+### cmd/bget -- 下载文件（类似 `wget`）
 
 ```
 bget [OPTIONS] bitfs://<authority>/<path>
 
 Options:
-  -o <file>        Output filename
-  --buy            Auto-purchase
-  --version N      Download specific version
-  --json           JSON progress output
-  --no-cache       Skip cache
-  --timeout N      Timeout
+  -o <file>        输出文件名
+  --buy            自动购买
+  --version N      下载指定版本
+  --json           JSON 进度输出
+  --no-cache       跳过缓存
+  --timeout N      超时
 
 Behavior:
   - Downloads file to local filesystem
@@ -67,15 +67,15 @@ Behavior:
   - Paid with --buy: HTLC purchase + download + cache key
 ```
 
-### cmd/bstat -- File Metadata (like `stat`)
+### cmd/bstat -- 文件元数据（类似 `stat`）
 
 ```
 bstat [OPTIONS] bitfs://<authority>/<path>
 
 Options:
-  --versions       Show all versions
-  --json           JSON output
-  --no-cache       Skip cache
+  --versions       显示所有版本
+  --json           JSON 输出
+  --no-cache       跳过缓存
 
 Output:
     File: readme.txt
@@ -88,15 +88,15 @@ Output:
   Access: free
 ```
 
-### cmd/btree -- Directory Tree (like `tree`)
+### cmd/btree -- 目录树（类似 `tree`）
 
 ```
 btree [OPTIONS] bitfs://<authority>/<path>
 
 Options:
-  -d N             Max depth
-  --json           JSON output
-  --no-cache       Skip cache
+  -d N             最大深度
+  --json           JSON 输出
+  --no-cache       跳过缓存
 
 Output:
   example.com/
@@ -109,34 +109,34 @@ Output:
   +-- LICENSE (1.1 KB) [free]
 ```
 
-## SHARED IMPLEMENTATION
+## 共享实现
 
-All b* tools share:
-- URI parsing via `internal/paymail.ParseURI()`
-- Endpoint resolution via `internal/paymail.ResolveURI()`
-- Metadata fetching from daemon via HTTP
-- Local cache in `~/.bitfs/cache/meta/` (optional)
-- Common flags: `--json`, `--no-cache`, `--timeout`, `--offline`
-- Exit codes: same as cmd/bitfs
+所有 b* 工具共享：
+- 通过 `internal/paymail.ParseURI()` 进行 URI 解析
+- 通过 `internal/paymail.ResolveURI()` 进行端点解析
+- 通过 HTTP 从守护进程获取元数据
+- `~/.bitfs/cache/meta/` 中的本地缓存（可选）
+- 公共标志：`--json`、`--no-cache`、`--timeout`、`--offline`
+- 退出码：与 cmd/bitfs 相同
 
-## DEPENDENCIES
+## 依赖
 
-- `github.com/spf13/cobra` -- CLI framework
-- `internal/paymail` -- URI resolution
-- `internal/method42` -- Decryption (for free content)
-- `internal/x402` -- Payment handling (for --buy)
-- `net/http` -- Daemon API client
+- `github.com/spf13/cobra` -- CLI 框架
+- `internal/paymail` -- URI 解析
+- `internal/method42` -- 解密（用于免费内容）
+- `internal/x402` -- 支付处理（用于 --buy）
+- `net/http` -- 守护进程 API 客户端
 
-## ERROR HANDLING
+## 错误处理
 
-Same exit codes as cmd/bitfs (0-7). All tools gracefully handle:
-- Network timeouts with retry
-- Missing cache entries
-- Invalid URIs
-- Payment required responses
+与 cmd/bitfs 相同的退出码（0-7）。所有工具优雅处理：
+- 网络超时并重试
+- 缺失的缓存条目
+- 无效 URI
+- 需要支付的响应
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Read-only**: These tools never write to the blockchain or modify local wallet state.
-2. **Key caching**: Purchased keys are cached locally in encrypted form. Tools read cached keys but only b-tools with --buy flag trigger purchases.
-3. **No wallet required**: Default operation requires no wallet. Only --buy flag triggers wallet interaction.
+1. **只读**：这些工具永远不会写入区块链或修改本地钱包状态。
+2. **密钥缓存**：已购买的密钥以加密形式缓存在本地。工具读取缓存的密钥，但只有带 --buy 标志的 b-tools 才会触发购买。
+3. **无需钱包**：默认操作不需要钱包。只有 --buy 标志会触发钱包交互。

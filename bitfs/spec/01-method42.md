@@ -1,17 +1,17 @@
-# Module Specification: internal/method42
+# 模块规范：internal/method42
 
-## PURPOSE
+## 目的
 
-Method 42 ECDH encryption engine for BitFS. Provides deterministic per-file encryption using secp256k1 elliptic curve Diffie-Hellman key exchange combined with AES-256-GCM symmetric encryption. All data stored in BitFS is encrypted by default; this module is the core cryptographic primitive.
+BitFS 的 Method 42 ECDH 加密引擎。基于 secp256k1 椭圆曲线 Diffie-Hellman 密钥交换结合 AES-256-GCM 对称加密，提供确定性的逐文件加密。BitFS 中存储的所有数据默认加密；本模块是核心密码学原语。
 
-Key derivation formula: `aes_key = HKDF-SHA256(ECDH(D_node, P_node).x, key_hash, "bitfs-file-encryption")`
-where `key_hash = SHA256(SHA256(plaintext))` serves dual purpose as KDF salt and content commitment.
+密钥推导公式：`aes_key = HKDF-SHA256(ECDH(D_node, P_node).x, key_hash, "bitfs-file-encryption")`
+其中 `key_hash = SHA256(SHA256(plaintext))` 同时用作 KDF 盐值和内容承诺（Content Commitment）。
 
-Design references: ConceptDesign #11, #12, #53, #54, #66; SystemDesign section 5; DetailedDesign sections 2-B.D, 5-B.
+设计参考：ConceptDesign #11, #12, #53, #54, #66; SystemDesign 第 5 节; DetailedDesign 第 2-B.D, 5-B 节。
 
-## PUBLIC API
+## 公共 API
 
-### Types
+### 类型
 
 ```go
 // Access represents the three access control modes for encrypted content.
@@ -37,7 +37,7 @@ type DecryptResult struct {
 }
 ```
 
-### Functions
+### 函数
 
 ```go
 // ComputeKeyHash computes the double-SHA256 content commitment.
@@ -95,7 +95,7 @@ func ComputeCapsuleHash(capsule []byte) []byte
 func FreePrivateKey() *ec.PrivateKey
 ```
 
-### Internal (unexported) Functions
+### 内部（未导出）函数
 
 ```go
 // aesGCMEncrypt encrypts plaintext with AES-256-GCM.
@@ -107,28 +107,28 @@ func aesGCMEncrypt(plaintext, key []byte) ([]byte, error)
 func aesGCMDecrypt(ciphertext, key []byte) ([]byte, error)
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- secp256k1 elliptic curve operations
-- `crypto/aes` -- AES block cipher
-- `crypto/cipher` -- GCM mode
-- `crypto/rand` -- Cryptographic random number generation
-- `crypto/sha256` -- SHA-256 hashing
-- `golang.org/x/crypto/hkdf` -- HKDF key derivation
+- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- secp256k1 椭圆曲线操作
+- `crypto/aes` -- AES 分组密码
+- `crypto/cipher` -- GCM 模式
+- `crypto/rand` -- 密码学安全随机数生成
+- `crypto/sha256` -- SHA-256 哈希
+- `golang.org/x/crypto/hkdf` -- HKDF 密钥推导
 
-## DATA STRUCTURES
+## 数据结构
 
-### AES-256-GCM Ciphertext Format
+### AES-256-GCM 密文格式
 ```
 [nonce: 12 bytes] [ciphertext: variable] [GCM tag: 16 bytes]
 ```
 
-### Key Hash
+### 密钥哈希（Key Hash）
 ```
 key_hash = SHA256(SHA256(plaintext))  // 32 bytes, double-hash
 ```
 
-### HKDF Parameters
+### HKDF 参数
 ```
 IKM  = ECDH(D_node, P_node).x   // 32 bytes (x-coordinate of shared point)
 Salt = key_hash                   // 32 bytes
@@ -136,28 +136,28 @@ Info = "bitfs-file-encryption"    // constant string
 Len  = 32                         // AES-256 key length
 ```
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
-|-------|-----------|
-| `ErrNilPrivateKey` | Private key is nil |
-| `ErrNilPublicKey` | Public key is nil |
-| `ErrInvalidCiphertext` | Ciphertext too short (< 28 bytes: 12 nonce + 16 tag) |
-| `ErrDecryptionFailed` | AES-GCM authentication failed |
-| `ErrKeyHashMismatch` | SHA256(SHA256(decrypted)) != expected key_hash |
-| `ErrInvalidAccess` | Unknown access mode value |
-| `ErrHKDFFailure` | HKDF key derivation failed |
+| 错误 | 条件 |
+|------|------|
+| `ErrNilPrivateKey` | 私钥为 nil |
+| `ErrNilPublicKey` | 公钥为 nil |
+| `ErrInvalidCiphertext` | 密文过短（< 28 字节：12 nonce + 16 tag） |
+| `ErrDecryptionFailed` | AES-GCM 认证失败 |
+| `ErrKeyHashMismatch` | SHA256(SHA256(decrypted)) != 期望的 key_hash |
+| `ErrInvalidAccess` | 未知的访问模式值 |
+| `ErrHKDFFailure` | HKDF 密钥推导失败 |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Nonce uniqueness**: 12-byte random nonce per encryption. Different files use different AES keys (derived via ECDH), so cross-file nonce collision is not a risk. Same-file re-encryption count is far below 2^48.
+1. **Nonce 唯一性**：每次加密使用 12 字节随机 nonce。不同文件使用不同的 AES 密钥（通过 ECDH 推导），因此跨文件的 nonce 碰撞不构成风险。同一文件的重加密次数远低于 2^48。
 
-2. **Double hash**: `key_hash = SHA256(SHA256(plaintext))` prevents direct exposure of content hash. Still vulnerable to dictionary attack on known content -- this is an accepted trade-off documented in design decision #54.
+2. **双重哈希**：`key_hash = SHA256(SHA256(plaintext))` 防止直接暴露内容哈希。仍然容易受到已知内容的字典攻击——这是设计决策 #54 中记录的已接受折衷。
 
-3. **Free mode trivial key**: `AccessFree` uses D_node=1, making `aes_key = KDF(P_node, key_hash)`. P_node is public, so anyone can compute the key. This is by design -- "encrypted at rest" even for free content.
+3. **免费模式平凡密钥**：`AccessFree` 使用 D_node=1，使得 `aes_key = KDF(P_node, key_hash)`。P_node 是公开的，因此任何人都可以计算密钥。这是设计意图——即使是免费内容也"静态加密"。
 
-4. **BIP32 algebraic preservation**: ECDH uses D_node directly (not a derived hash), preserving BIP32 non-hardened derivation transitivity. This enables directory-tree-level capsule derivation for bulk purchases.
+4. **BIP32 代数保持性**：ECDH 直接使用 D_node（而非派生哈希），保持 BIP32 非硬化派生的传递性。这使得目录树级别的胶囊（Capsule）派生成为可能，支持批量购买。
 
-5. **Key hash as content commitment**: After decryption, callers MUST verify `SHA256(SHA256(plaintext)) == key_hash` to confirm content integrity.
+5. **密钥哈希作为内容承诺**：解密后，调用者必须验证 `SHA256(SHA256(plaintext)) == key_hash` 以确认内容完整性。
 
-6. **No key storage**: AES keys are deterministically derived from (D_node, P_node, key_hash) and never stored. Only the HD seed needs backup.
+6. **无密钥存储**：AES 密钥从 (D_node, P_node, key_hash) 确定性推导，永远不会存储。只需备份 HD 种子。

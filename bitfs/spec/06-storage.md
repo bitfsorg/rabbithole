@@ -1,14 +1,14 @@
-# Module Specification: internal/storage
+# 模块规范：internal/storage
 
-## PURPOSE
+## 目的
 
-Content storage abstraction for BitFS. Provides a flat key-value store where `key_hash` (SHA256(SHA256(plaintext))) maps to encrypted ciphertext. Supports off-chain storage (default, in `~/.bitfs/store/`) and on-chain reference tracking.
+BitFS 的内容存储抽象层。提供扁平键值存储，其中 `key_hash`（SHA256(SHA256(plaintext))）映射到加密密文。支持链下存储（默认，在 `~/.bitfs/store/` 中）和链上引用追踪。
 
-Design references: ConceptDesign #14, #25, #60; SystemDesign section 4 (content storage); DetailedDesign section 8-B.
+设计参考：ConceptDesign #14, #25, #60; SystemDesign 第 4 节（内容存储）; DetailedDesign 第 8-B 节。
 
-## PUBLIC API
+## 公共 API
 
-### Interfaces
+### 接口
 
 ```go
 // Store provides content-addressed storage for encrypted file data.
@@ -34,7 +34,7 @@ type Store interface {
 }
 ```
 
-### Types
+### 类型
 
 ```go
 // FileStore implements Store using the local filesystem.
@@ -51,7 +51,7 @@ type OnChainRef struct {
 }
 ```
 
-### Functions
+### 函数
 
 ```go
 // NewFileStore creates a new file-based content store.
@@ -63,15 +63,15 @@ func NewFileStore(baseDir string) (*FileStore, error)
 func KeyHashToPath(baseDir string, keyHash []byte) string
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `os` -- File I/O
-- `encoding/hex` -- Key hash to filename conversion
-- `path/filepath` -- Path construction
+- `os` -- 文件 I/O
+- `encoding/hex` -- 密钥哈希到文件名的转换
+- `path/filepath` -- 路径构建
 
-## DATA STRUCTURES
+## 数据结构
 
-### File Layout
+### 文件布局
 ```
 ~/.bitfs/store/
   ab/
@@ -79,19 +79,19 @@ func KeyHashToPath(baseDir string, keyHash []byte) string
   cd/
     cdef...
 ```
-First byte of key_hash used as subdirectory prefix to avoid too many files in one directory.
+使用 key_hash 的第一个字节作为子目录前缀，避免单个目录中文件过多。
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
-|-------|-----------|
-| `ErrNotFound` | No content for given key_hash |
-| `ErrInvalidKeyHash` | Key hash is not 32 bytes |
-| `ErrStoreFull` | Disk space exhausted |
-| `ErrIOFailure` | File read/write error |
+| 错误 | 条件 |
+|------|------|
+| `ErrNotFound` | 给定 key_hash 无对应内容 |
+| `ErrInvalidKeyHash` | 密钥哈希不是 32 字节 |
+| `ErrStoreFull` | 磁盘空间耗尽 |
+| `ErrIOFailure` | 文件读写错误 |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Content is always encrypted**: The store only holds ciphertext. Even if the filesystem is compromised, content remains protected by Method 42 encryption.
-2. **Key hash as index**: The filename (key_hash) is a double-hash of plaintext. It leaks no information about content to filesystem-level observers (subject to dictionary attack on known content, as documented).
-3. **No metadata in store**: The store is pure content-addressed. All metadata lives in Metanet transactions.
+1. **内容始终加密**：存储中仅保存密文。即使文件系统被入侵，内容仍受 Method 42 加密保护。
+2. **密钥哈希作为索引**：文件名（key_hash）是明文的双重哈希。对于文件系统级别的观察者，它不会泄露任何内容信息（但存在对已知内容的字典攻击风险，已在文档中说明）。
+3. **存储中无元数据**：存储是纯粹的内容寻址。所有元数据存在于 Metanet 交易中。

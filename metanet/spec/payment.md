@@ -1,19 +1,19 @@
-# Module Specification: internal/payment
+# 模块规格说明：internal/payment
 
-## PURPOSE
+## 目的
 
-The `payment` package implements dual payment channels for the Metanet CDN: BSV channels for end-user x402 micropayments and MNT channels for inter-node economics. Payment channels enable off-chain microtransactions with on-chain settlement, supporting high-frequency x402 content retrieval without per-request transaction fees.
+`payment` 包实现 Metanet CDN 的双通道支付：用于终端用户 x402 微支付的 BSV 通道和用于节点间经济的 MNT 通道。支付通道（Payment Channel）实现链下微交易与链上结算，支持高频率的 x402 内容检索而无需逐笔交易费用。
 
-The channel design uses standard Bitcoin Script (2-of-2 multisig funding, OP_CHECKSEQUENCEVERIFY for dispute windows, revocation keys for punishment). There are three channel types:
-- **BSV channels** (User <-> Metanet Node): x402 streaming micropayments for content retrieval
-- **MNT channels** (Owner <-> Metanet Node): CDN hosting fee payments
-- **MNT channels** (Metanet Node <-> Metanet Node): Wholesale data trading between nodes
+通道设计使用标准 Bitcoin Script（2-of-2 多重签名资金锁定、OP_CHECKSEQUENCEVERIFY 用于争议窗口、撤销密钥用于惩罚机制）。共有三种通道类型：
+- **BSV 通道**（用户 <-> Metanet Node）：用于内容检索的 x402 流式微支付
+- **MNT 通道**（所有者 <-> Metanet Node）：CDN 托管费用支付
+- **MNT 通道**（Metanet Node <-> Metanet Node）：节点间批量数据交易
 
-The x402 HTTP protocol extensions enable channel-based payments via custom HTTP headers.
+x402 HTTP 协议扩展通过自定义 HTTP 头实现基于通道的支付。
 
-## PUBLIC API
+## 公开 API
 
-### Types
+### 类型
 
 ```go
 // ChannelType identifies the currency and purpose of a payment channel.
@@ -71,7 +71,7 @@ type x402ChannelHeaders struct {
 }
 ```
 
-### Functions
+### 函数
 
 ```go
 // BuildFundingTx constructs a 2-of-2 multisig funding transaction.
@@ -172,25 +172,25 @@ func DefaultBSVParams() *ChannelParams
 func DefaultMNTParams() *ChannelParams
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `internal/chain` -- Chain parameters
-- `github.com/bsv-blockchain/go-sdk/transaction` -- Transaction construction
-- `github.com/bsv-blockchain/go-sdk/script` -- Script construction (multisig, CSV)
-- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- Key operations, signing
-- `crypto/sha256` -- Hashing
-- `encoding/base64` -- Voucher encoding
+- `internal/chain` -- 链参数
+- `github.com/bsv-blockchain/go-sdk/transaction` -- 交易构造
+- `github.com/bsv-blockchain/go-sdk/script` -- 脚本构造（多重签名、CSV）
+- `github.com/bsv-blockchain/go-sdk/primitives/ec` -- 密钥操作、签名
+- `crypto/sha256` -- 哈希
+- `encoding/base64` -- 凭证编码
 
-## DATA STRUCTURES
+## 数据结构
 
-### Funding Transaction Script
+### 资金交易脚本（Funding Transaction Script）
 
 ```
 2-of-2 multisig:
   OP_2 <initiator_pubkey> <responder_pubkey> OP_2 OP_CHECKMULTISIG
 ```
 
-### Commitment Transaction
+### 承诺交易（Commitment Transaction）
 
 ```
 Input:
@@ -208,14 +208,14 @@ Output 1 (Initiator):
     script: OP_DUP OP_HASH160 <initiator_pubkey_hash> OP_EQUALVERIFY OP_CHECKSIG
 ```
 
-### Revocation Mechanism
+### 撤销机制（Revocation Mechanism）
 
-Each state update produces a revocation key for the previous state. If a party broadcasts an old commitment:
-1. The counterparty detects the old sequence number
-2. Within the dispute window (CSV blocks), submits a punishment transaction using the revocation key
-3. Punishment claims the entire channel balance
+每次状态更新都会为前一个状态生成撤销密钥。如果一方广播旧的承诺交易：
+1. 对手方检测到旧的序列号
+2. 在争议窗口（CSV 区块数）内，使用撤销密钥提交惩罚交易
+3. 惩罚交易领取通道内的全部余额
 
-### x402 Channel HTTP Headers
+### x402 通道 HTTP 头
 
 ```
 Request:
@@ -236,26 +236,26 @@ Error responses:
     400 Bad Request (invalid signature)
 ```
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
+| 错误 | 条件 |
 |-------|-----------|
-| `ErrInsufficientCapacity` | Payment amount exceeds remaining balance |
-| `ErrChannelClosed` | Attempt to update a closed channel |
-| `ErrInvalidSequence` | Commitment sequence number is not greater than current |
-| `ErrInvalidSignature` | Signature verification failed |
-| `ErrInvalidVoucher` | Voucher decoding or verification failed |
-| `ErrDisputeWindowActive` | Attempting action during active dispute period |
-| `ErrInvalidRevocationKey` | Revocation key does not match expected value |
-| `ErrBelowMinDeposit` | Funding amount is below MinDeposit |
-| `ErrChannelExpired` | Channel has exceeded MaxDuration |
-| `ErrInvalidChannelID` | Channel ID format is invalid |
+| `ErrInsufficientCapacity` | 支付金额超过剩余余额 |
+| `ErrChannelClosed` | 试图更新已关闭的通道 |
+| `ErrInvalidSequence` | 承诺序列号不大于当前值 |
+| `ErrInvalidSignature` | 签名验证失败 |
+| `ErrInvalidVoucher` | 凭证解码或验证失败 |
+| `ErrDisputeWindowActive` | 在活跃争议期间尝试操作 |
+| `ErrInvalidRevocationKey` | 撤销密钥与预期值不匹配 |
+| `ErrBelowMinDeposit` | 资金金额低于 MinDeposit |
+| `ErrChannelExpired` | 通道已超过 MaxDuration |
+| `ErrInvalidChannelID` | 通道 ID 格式无效 |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **2-of-2 multisig**: The funding output requires both signatures to spend, preventing either party from unilaterally stealing funds (except via the commitment mechanism).
-2. **Revocation punishment**: Broadcasting an old state results in total loss of channel funds. This provides strong economic incentive to only broadcast the latest state.
-3. **CSV dispute window**: The 6-block (~1 hour) dispute window gives the counterparty time to detect and punish old state broadcasts. This must be long enough for monitoring but short enough for practical use.
-4. **Sequence number monotonicity**: Strictly increasing sequence numbers enable clear identification of stale commitments.
-5. **Voucher replay protection**: Each voucher contains the sequence number and channel ID, preventing replay across channels or reuse of old vouchers.
-6. **Channel capacity limits**: MaxDuration prevents indefinite locking of funds. MinDeposit prevents dust channel spam.
+1. **2-of-2 多重签名**：资金输出需要双方签名才能花费，防止任何一方单方面窃取资金（通过承诺机制除外）。
+2. **撤销惩罚**：广播旧状态将导致通道资金全部损失。这提供了强大的经济激励，促使各方只广播最新状态。
+3. **CSV 争议窗口**：6 个区块（约 1 小时）的争议窗口给予对手方时间来检测和惩罚旧状态广播。这个时间必须足够长以便于监控，但又足够短以保证实用性。
+4. **序列号单调性**：严格递增的序列号使得旧承诺可以被明确识别。
+5. **凭证重放保护**：每个凭证包含序列号和通道 ID，防止跨通道重放或旧凭证重复使用。
+6. **通道容量限制**：MaxDuration 防止资金被无限期锁定。MinDeposit 防止微尘通道的垃圾攻击。

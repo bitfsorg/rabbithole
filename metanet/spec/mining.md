@@ -1,14 +1,14 @@
-# Module Specification: internal/mining
+# 模块规格说明：internal/mining
 
-## PURPOSE
+## 目的
 
-The `mining` package implements merged mining (AuxPoW) for the Metanet Chain, allowing BTC/BSV SHA256 miners to simultaneously mine Metanet Chain blocks without additional work. It also handles BSV anchoring -- periodic publication of Metanet Chain Merkle roots to BSV for long-range attack prevention.
+`mining` 包实现了 Metanet Chain 的合并挖矿（Merged Mining，AuxPoW），允许 BTC/BSV SHA256 矿工在不增加额外工作量的情况下同时挖掘 Metanet Chain 区块。该包还负责 BSV 锚定——定期将 Metanet Chain 的 Merkle 根发布到 BSV，以防止远程攻击（Long-range Attack）。
 
-Merged mining is the primary security mechanism for the Metanet Chain. Miners embed a commitment to the Metanet Chain block hash in their BTC/BSV coinbase transaction. The Metanet Chain then validates the auxiliary proof-of-work by verifying the parent chain header, coinbase transaction, and Merkle branch.
+合并挖矿是 Metanet Chain 的主要安全机制。矿工在其 BTC/BSV 的 coinbase 交易中嵌入对 Metanet Chain 区块哈希的承诺。Metanet Chain 随后通过验证父链区块头、coinbase 交易和 Merkle 分支来验证辅助工作量证明。
 
-## PUBLIC API
+## 公开 API
 
-### Types
+### 类型
 
 ```go
 // AuxPoWHeader extends a standard block header with merged mining proof.
@@ -49,7 +49,7 @@ type DifficultyAdjustment struct {
 }
 ```
 
-### Functions
+### 函数
 
 ```go
 // ValidateAuxPoW validates the auxiliary proof-of-work for a Metanet Chain block.
@@ -109,17 +109,17 @@ func ValidateAnchorChain(anchors []*AnchorTx) error
 func BuildBlockRangeMerkleRoot(headers []chain.BlockHeader) [32]byte
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `internal/chain` -- Block header types, chain parameters
-- `github.com/bsv-blockchain/go-sdk/transaction` -- BSV transaction construction (for anchors)
-- `crypto/sha256` -- SHA256 hashing
-- `encoding/binary` -- Serialization
-- `math/big` -- Target arithmetic
+- `internal/chain` -- 区块头类型、链参数
+- `github.com/bsv-blockchain/go-sdk/transaction` -- BSV 交易构造（用于锚定）
+- `crypto/sha256` -- SHA256 哈希
+- `encoding/binary` -- 序列化
+- `math/big` -- 目标算术运算
 
-## DATA STRUCTURES
+## 数据结构
 
-### Coinbase Commitment Format
+### Coinbase 承诺格式
 
 ```
 OP_RETURN <MNMP> <block_hash>
@@ -130,7 +130,7 @@ Where:
   block_hash  = 32 bytes: SHA256d(metanet_chain_block_header)
 ```
 
-### BSV Anchor OP_RETURN Format
+### BSV 锚定 OP_RETURN 格式
 
 ```
 OP_RETURN <MNTA> <version> <start_height> <end_height> <merkle_root> <block_count> <prev_anchor_txid>
@@ -146,7 +146,7 @@ Where:
   prev_anchor_txid = 32 bytes: previous BSV anchor TxID
 ```
 
-### Difficulty Adjustment Algorithm
+### 难度调整算法（Difficulty Adjustment Algorithm）
 
 ```
 Every 2016 blocks:
@@ -157,24 +157,24 @@ Every 2016 blocks:
 Where expected_timespan = 2016 * 600 seconds = 1,209,600 seconds
 ```
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
+| 错误 | 条件 |
 |-------|-----------|
-| `ErrNoAuxPoWCommitment` | Coinbase does not contain MNMP marker |
-| `ErrInvalidCoinbaseBranch` | Merkle branch does not prove coinbase inclusion |
-| `ErrAuxPoWHashMismatch` | Committed block hash does not match actual header hash |
-| `ErrInsufficientAuxPoW` | Parent header hash does not meet Metanet difficulty target |
-| `ErrInvalidParentHeader` | Parent header fails basic validation |
-| `ErrAnchorHeightMismatch` | Anchor block range is not contiguous |
-| `ErrAnchorChainBroken` | Anchor PrevAnchorTx does not reference previous anchor |
-| `ErrDifficultyOverflow` | Computed difficulty exceeds representable range |
+| `ErrNoAuxPoWCommitment` | Coinbase 不包含 MNMP 标记 |
+| `ErrInvalidCoinbaseBranch` | Merkle 分支无法证明 coinbase 包含在区块中 |
+| `ErrAuxPoWHashMismatch` | 提交的区块哈希与实际区块头哈希不匹配 |
+| `ErrInsufficientAuxPoW` | 父链区块头哈希未达到 Metanet 难度目标 |
+| `ErrInvalidParentHeader` | 父链区块头基本验证失败 |
+| `ErrAnchorHeightMismatch` | 锚定区块范围不连续 |
+| `ErrAnchorChainBroken` | 锚定的 PrevAnchorTx 未引用前一个锚定交易 |
+| `ErrDifficultyOverflow` | 计算出的难度超出可表示范围 |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Parent header validation**: Only the hash of the parent header must meet Metanet difficulty -- we do not validate the parent header against parent chain rules (that would require a BTC/BSV full node). This is standard merged mining behavior.
-2. **Coinbase branch verification**: The Merkle branch must cryptographically prove the coinbase is included in the parent block, preventing fabricated AuxPoW proofs.
-3. **MNMP uniqueness**: Only one MNMP commitment per coinbase is allowed. Multiple commitments indicate an error.
-4. **Difficulty clamping**: The 4x cap on difficulty adjustment per period prevents sudden difficulty swings that could destabilize the chain.
-5. **BSV anchor integrity**: Anchor transactions form a chain (each references the previous TxID), making it impossible to insert or remove anchors without detection.
-6. **Timejacking mitigation**: Miners cannot manipulate Metanet Chain difficulty via parent chain timestamps because difficulty uses Metanet Chain block timestamps, not parent chain timestamps.
+1. **父链区块头验证**：仅要求父链区块头的哈希满足 Metanet 难度要求——我们不按照父链规则验证父链区块头（那需要 BTC/BSV 全节点）。这是标准的合并挖矿行为。
+2. **Coinbase 分支验证**：Merkle 分支必须以密码学方式证明 coinbase 包含在父链区块中，防止伪造 AuxPoW 证明。
+3. **MNMP 唯一性**：每个 coinbase 只允许一个 MNMP 承诺。多个承诺表示存在错误。
+4. **难度限幅（Difficulty Clamping）**：每个调整周期 4 倍的变化上限，防止难度突变导致链不稳定。
+5. **BSV 锚定完整性**：锚定交易形成链式结构（每个引用前一个 TxID），使得在不被检测到的情况下无法插入或删除锚定。
+6. **时间劫持缓解（Timejacking Mitigation）**：矿工无法通过父链时间戳操纵 Metanet Chain 难度，因为难度使用的是 Metanet Chain 的区块时间戳，而非父链时间戳。

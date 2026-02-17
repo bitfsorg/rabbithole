@@ -1,14 +1,14 @@
-# Module Specification: internal/chain
+# 模块规格说明：internal/chain
 
-## PURPOSE
+## 目的
 
-The `chain` package implements the Metanet Chain core -- a BSV-homomorphic sidechain for CDN economics. It uses the identical transaction format, Bitcoin Script engine, and UTXO model as BSV, but with a different genesis block and chain parameters tuned for the Metanet CDN incentive layer.
+`chain` 包实现了 Metanet Chain 核心——一条与 BSV 同构的侧链（Sidechain），用于 CDN 经济。它使用与 BSV 完全相同的交易格式、Bitcoin Script 引擎和 UTXO 模型，但拥有不同的创世区块和为 Metanet CDN 激励层调优的链参数。
 
-The Metanet Chain's native token is MNT (21M total supply), following the exact same emission schedule as Bitcoin (50 token initial reward, 210,000 block halving). The chain is secured by SHA256 merged mining (AuxPoW) shared with BTC/BSV miners.
+Metanet Chain 的原生代币为 MNT（总供应量 2100 万），遵循与 Bitcoin 完全相同的发行计划（初始奖励 50 个代币，每 210,000 个区块减半）。该链通过与 BTC/BSV 矿工共享的 SHA256 合并挖矿（AuxPoW）来保障安全。
 
-## PUBLIC API
+## 公开 API
 
-### Types
+### 类型
 
 ```go
 // Params defines the consensus parameters for the Metanet Chain.
@@ -63,7 +63,7 @@ type AuxPoW struct {
 }
 ```
 
-### Functions
+### 函数
 
 ```go
 // MainNetParams returns the Metanet Chain mainnet consensus parameters.
@@ -108,16 +108,16 @@ func DeserializeBlockHeader(data [80]byte) *BlockHeader
 func ValidateBlockHeader(h *BlockHeader, params *Params) error
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `github.com/bsv-blockchain/go-sdk/transaction` -- BSV transaction types
-- `crypto/sha256` -- SHA256 hashing
-- `encoding/binary` -- Little-endian serialization
-- `math/big` -- Difficulty target arithmetic
+- `github.com/bsv-blockchain/go-sdk/transaction` -- BSV 交易类型
+- `crypto/sha256` -- SHA256 哈希
+- `encoding/binary` -- 小端序列化
+- `math/big` -- 难度目标算术运算
 
-## DATA STRUCTURES
+## 数据结构
 
-### Genesis Block
+### 创世区块（Genesis Block）
 
 ```
 Timestamp:    TBD (mainnet launch)
@@ -128,9 +128,9 @@ Bits:         Initial difficulty target
 Nonce:        TBD (mined at launch)
 ```
 
-### Halving Schedule
+### 减半计划（Halving Schedule）
 
-| Era | Block Range | Reward/Block | Era Total |
+| 纪元 | 区块范围 | 每块奖励 | 纪元总量 |
 |-----|-------------|--------------|-----------|
 | 0 | 0 - 209,999 | 50.0 MNT | 10,500,000 MNT |
 | 1 | 210,000 - 419,999 | 25.0 MNT | 5,250,000 MNT |
@@ -139,27 +139,27 @@ Nonce:        TBD (mined at launch)
 | ... | ... | ... | ... |
 | 32+ | 6,720,000+ | 0 MNT | 0 MNT |
 
-### Difficulty Encoding
+### 难度编码（Difficulty Encoding）
 
-The `Bits` field uses Bitcoin's compact target representation (same as BSV). Difficulty adjusts every 2016 blocks to maintain ~10 minute average block time.
+`Bits` 字段使用 Bitcoin 的紧凑目标表示法（与 BSV 相同）。难度每 2016 个区块调整一次，以维持约 10 分钟的平均出块时间。
 
-## ERROR HANDLING
+## 错误处理
 
-| Error | Condition |
+| 错误 | 条件 |
 |-------|-----------|
-| `ErrInvalidPrevHash` | PrevHash does not reference a known block |
-| `ErrTimestampTooOld` | Block timestamp before median of last 11 blocks |
-| `ErrTimestampTooNew` | Block timestamp more than 2 hours in the future |
-| `ErrInvalidDifficulty` | Bits does not match expected difficulty |
-| `ErrInsufficientPoW` | Block hash does not meet difficulty target |
-| `ErrBlockTooLarge` | Serialized block exceeds MaxBlockSize |
-| `ErrInvalidMerkleRoot` | MerkleRoot does not match transaction Merkle tree |
-| `ErrDuplicateTx` | Block contains duplicate transaction IDs |
+| `ErrInvalidPrevHash` | PrevHash 未引用已知区块 |
+| `ErrTimestampTooOld` | 区块时间戳早于最近 11 个区块的中位数 |
+| `ErrTimestampTooNew` | 区块时间戳超过未来 2 小时 |
+| `ErrInvalidDifficulty` | Bits 与预期难度不匹配 |
+| `ErrInsufficientPoW` | 区块哈希未达到难度目标 |
+| `ErrBlockTooLarge` | 序列化后的区块超过 MaxBlockSize |
+| `ErrInvalidMerkleRoot` | MerkleRoot 与交易 Merkle 树不匹配 |
+| `ErrDuplicateTx` | 区块包含重复的交易 ID |
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Double-SHA256**: All block hashing uses SHA256d (SHA256(SHA256(x))) for consistency with BSV.
-2. **Timestamp validation**: Blocks must have timestamps after median of last 11 blocks and no more than 2 hours in the future, preventing timestamp manipulation.
-3. **Difficulty integrity**: Difficulty adjustment uses exact Bitcoin algorithm (every 2016 blocks, capped at 4x change per period).
-4. **Genesis block immutability**: The genesis block is a compile-time constant; its hash anchors the entire chain.
-5. **BSV anchoring**: Periodic Merkle root anchoring to BSV prevents long-range attacks on the Metanet Chain.
+1. **双重 SHA256（Double-SHA256）**：所有区块哈希使用 SHA256d（SHA256(SHA256(x))），与 BSV 保持一致。
+2. **时间戳验证**：区块的时间戳必须晚于最近 11 个区块的中位数，且不超过未来 2 小时，以防止时间戳操纵。
+3. **难度完整性**：难度调整使用与 Bitcoin 完全相同的算法（每 2016 个区块调整，每个周期最大变化限制在 4 倍）。
+4. **创世区块不可变性**：创世区块是编译时常量；其哈希锚定整条链。
+5. **BSV 锚定**：定期将 Merkle 根锚定到 BSV，防止对 Metanet Chain 的远程攻击（Long-range Attack）。

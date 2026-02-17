@@ -1,14 +1,14 @@
-# Module Specification: internal/daemon
+# 模块规范：internal/daemon
 
-## PURPOSE
+## 目的
 
-BitFS daemon implementing LFCP (Local Full-Copy Peer) functionality. Serves as an HTTP server providing content retrieval, Metanet metadata queries, Method 42 ECDH handshake for identity verification, x402 payment handling for paid content, and WebMCP for browser-based AI agents.
+BitFS 守护进程，实现 LFCP（本地全拷贝对等节点，Local Full-Copy Peer）功能。作为 HTTP 服务器提供内容检索、Metanet 元数据查询、Method 42 ECDH 握手身份验证、x402 付费内容支付处理，以及面向浏览器 AI 代理的 WebMCP。
 
-Design references: ConceptDesign #8, #21, #27, #33; SystemDesign section 13; DetailedDesign section 13-B.
+设计参考：ConceptDesign #8, #21, #27, #33; SystemDesign 第 13 节; DetailedDesign 第 13-B 节。
 
-## PUBLIC API
+## 公共 API
 
-### Types
+### 类型
 
 ```go
 // Config holds daemon configuration.
@@ -82,7 +82,7 @@ type Session struct {
 }
 ```
 
-### Functions
+### 函数
 
 ```go
 // New creates a new Daemon instance.
@@ -98,41 +98,41 @@ func (d *Daemon) Stop(ctx context.Context) error
 func (d *Daemon) RegisterRoutes(mux *http.ServeMux)
 ```
 
-### HTTP Endpoints
+### HTTP 端点
 
 ```
-GET  /                              Root (Content Negotiation: HTML/Markdown/JSON)
-GET  /{path}                        Path access (Content Negotiation)
-GET  /_bitfs/data/{hash}            Encrypted data retrieval (may trigger x402)
-GET  /_bitfs/meta/{pnode}/{path}    Metanet metadata query
-GET  /_bitfs/health                 Health check
+GET  /                              根路径（内容协商：HTML/Markdown/JSON）
+GET  /{path}                        路径访问（内容协商）
+GET  /_bitfs/data/{hash}            加密数据检索（可能触发 x402）
+GET  /_bitfs/meta/{pnode}/{path}    Metanet 元数据查询
+GET  /_bitfs/health                 健康检查
 
-POST /_bitfs/handshake              Method 42 ECDH handshake
-POST /_bitfs/pay/{invoice_id}       Submit BSV payment (x402)
-GET  /_bitfs/buy/{txid}             Get purchase info (capsule_hash, price)
-POST /_bitfs/buy/{txid}             Submit HTLC, receive capsule
+POST /_bitfs/handshake              Method 42 ECDH 握手
+POST /_bitfs/pay/{invoice_id}       提交 BSV 支付（x402）
+GET  /_bitfs/buy/{txid}             获取购买信息（capsule_hash，价格）
+POST /_bitfs/buy/{txid}             提交 HTLC，接收胶囊（Capsule）
 
-POST /_bitfs/git/push               Git remote helper push endpoint
-GET  /_bitfs/git/refs/{path}        Git refs retrieval
+POST /_bitfs/git/push               Git 远程助手推送端点
+GET  /_bitfs/git/refs/{path}        Git 引用检索
 
-GET  /.well-known/bsvalias          Paymail capability discovery
-GET  /api/v1/pki/{alias}@{domain}   Paymail PKI endpoint
+GET  /.well-known/bsvalias          Paymail 能力发现
+GET  /api/v1/pki/{alias}@{domain}   Paymail PKI 端点
 ```
 
-## DEPENDENCIES
+## 依赖
 
-- `net/http` -- HTTP server
-- `internal/wallet` -- Key management
-- `internal/storage` -- Content storage
-- `internal/method42` -- Encryption/decryption and handshake
-- `internal/metanet` -- DAG traversal
-- `internal/x402` -- Payment protocol
-- `internal/paymail` -- Paymail server capabilities
-- `internal/spv` -- Transaction verification
+- `net/http` -- HTTP 服务器
+- `internal/wallet` -- 密钥管理
+- `internal/storage` -- 内容存储
+- `internal/method42` -- 加密/解密与握手
+- `internal/metanet` -- DAG 遍历
+- `internal/x402` -- 支付协议
+- `internal/paymail` -- Paymail 服务器能力
+- `internal/spv` -- 交易验证
 
-## DATA STRUCTURES
+## 数据结构
 
-### Method 42 Handshake Flow
+### Method 42 握手流程
 ```
 1. Buyer  -> POST /_bitfs/handshake: { P_buyer, nonce_b, timestamp }
 2. Seller <- Response: { P_seller, nonce_s, timestamp }
@@ -142,35 +142,35 @@ GET  /api/v1/pki/{alias}@{domain}   Paymail PKI endpoint
 5. Subsequent communication encrypted with session_key (AES-256-GCM)
 ```
 
-### Content Negotiation
+### 内容协商
 ```
 Accept: text/html       -> HTML page (+ WebMCP declarations)
 Accept: text/markdown   -> Markdown agent guide
 Accept: application/json -> JSON metadata
 ```
 
-## ERROR HANDLING
+## 错误处理
 
-HTTP error codes:
-- 400 Bad Request
-- 402 Payment Required (x402)
-- 404 Not Found
-- 408 Timeout
-- 409 Transaction Conflict
-- 429 Rate Limited
-- 500 Internal Error
-- 503 Storage Unavailable
+HTTP 错误码：
+- 400 Bad Request（错误请求）
+- 402 Payment Required（需要支付，x402）
+- 404 Not Found（未找到）
+- 408 Timeout（超时）
+- 409 Transaction Conflict（交易冲突）
+- 429 Rate Limited（速率限制）
+- 500 Internal Error（内部错误）
+- 503 Storage Unavailable（存储不可用）
 
-JSON error format:
+JSON 错误格式：
 ```json
 {"error": {"code": "NETWORK_TIMEOUT", "message": "...", "retry": true, "cached": false}}
 ```
 
-## SECURITY CONSIDERATIONS
+## 安全考量
 
-1. **Method 42 handshake**: P_seller must match DNSLink-published P_node. ECDH prevents MITM.
-2. **Rate limiting**: Per-IP rate limits (default 60 RPM, burst 20) prevent abuse.
-3. **CORS**: Configurable origins for browser access.
-4. **TLS**: Production deployments must use TLS (reverse proxy recommended).
-5. **Session expiry**: Handshake sessions expire after configurable TTL.
-6. **Invoice verification**: Payment proofs are verified against mempool or Merkle proof before releasing content.
+1. **Method 42 握手**：P_seller 必须匹配 DNSLink 发布的 P_node。ECDH 防止中间人攻击（MITM）。
+2. **速率限制**：每 IP 速率限制（默认 60 RPM，突发 20）防止滥用。
+3. **CORS**：可配置的来源列表用于浏览器访问。
+4. **TLS**：生产环境部署必须使用 TLS（建议使用反向代理）。
+5. **会话过期**：握手会话在可配置的 TTL 后过期。
+6. **发票验证**：在释放内容之前，支付证明需要通过内存池或 Merkle 证明进行验证。
