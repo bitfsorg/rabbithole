@@ -8,6 +8,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -259,5 +261,230 @@ func TestConfigPath(t *testing.T) {
 	want := filepath.Join("/home/user/.bitfs", "config")
 	if got != want {
 		t.Errorf("ConfigPath = %q, want %q", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Supplementary tests — DefaultDataDir
+// ---------------------------------------------------------------------------
+
+func TestDefaultDataDir_EndsWith_DotBitfs(t *testing.T) {
+	dir := DefaultDataDir()
+	if !strings.HasSuffix(dir, ".bitfs") {
+		t.Errorf("DefaultDataDir() = %q, want suffix %q", dir, ".bitfs")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Supplementary tests — LoadConfig parser edge cases
+// ---------------------------------------------------------------------------
+
+func TestLoadConfig_EmptyValue(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+
+	content := "network=\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Network != "" {
+		t.Errorf("Network = %q, want empty string", cfg.Network)
+	}
+}
+
+func TestLoadConfig_MultipleEquals(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+
+	// The value "/tmp/a=b.log" contains an extra '='.
+	// parseKeyValue should split on the first '=' only.
+	content := "logfile=/tmp/a=b.log\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.LogFile != "/tmp/a=b.log" {
+		t.Errorf("LogFile = %q, want %q", cfg.LogFile, "/tmp/a=b.log")
+	}
+}
+
+func TestLoadConfig_WhitespaceAroundEquals(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+
+	// Leading/trailing whitespace on the line and around '='.
+	content := "  network = testnet  \n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Network != "testnet" {
+		t.Errorf("Network = %q, want %q", cfg.Network, "testnet")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Supplementary tests — SaveConfig output format
+// ---------------------------------------------------------------------------
+
+func TestSaveConfig_OutputContainsHeader(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+
+	cfg := DefaultConfig()
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "# BitFS Configuration") {
+		t.Error("saved config should contain header '# BitFS Configuration'")
+	}
+}
+
+func TestSaveConfig_OutputContainsAllKeys(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+
+	cfg := Config{
+		DataDir:    "/data",
+		ListenAddr: ":9090",
+		Network:    "testnet",
+		LogLevel:   "warn",
+		LogFile:    "/var/log/bitfs.log",
+	}
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+
+	keys := []string{"datadir", "listen", "network", "loglevel", "logfile"}
+	for _, key := range keys {
+		if !strings.Contains(content, key+" = ") {
+			t.Errorf("saved config should contain key %q", key)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Supplementary tests — ValidateConfig boundary cases
+// ---------------------------------------------------------------------------
+
+func TestValidateConfig_LogLevelCaseInsensitive(t *testing.T) {
+	// ValidateConfig lowercases the log level before lookup,
+	// so mixed-case values should be accepted.
+	levels := []string{"INFO", "Debug", "WARN", "Error", "dEbUg"}
+	for _, level := range levels {
+		t.Run(level, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.LogLevel = level
+			if err := ValidateConfig(cfg); err != nil {
+				t.Errorf("ValidateConfig with LogLevel %q: %v", level, err)
+			}
+		})
+	}
+}
+
+func TestValidateConfig_EmptyListenAddr(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ListenAddr = ""
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidListenAddr) {
+		t.Errorf("ValidateConfig empty ListenAddr: got %v, want ErrInvalidListenAddr", err)
+	}
+}
+
+func TestValidateConfig_ValidListenAddrVariants(t *testing.T) {
+	addrs := []string{
+		"127.0.0.1:80",
+		"0.0.0.0:443",
+		":8080",
+		"localhost:3000",
+		"[::1]:8080",
+	}
+	for _, addr := range addrs {
+		t.Run(addr, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.ListenAddr = addr
+			if err := ValidateConfig(cfg); err != nil {
+				t.Errorf("ValidateConfig with ListenAddr %q: %v", addr, err)
+			}
+		})
+	}
+}
+
+func TestValidateConfig_EmptyNetwork(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Network = ""
+	err := ValidateConfig(cfg)
+	if !errors.Is(err, ErrInvalidNetwork) {
+		t.Errorf("ValidateConfig empty Network: got %v, want ErrInvalidNetwork", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Supplementary tests — LoadConfig error paths
+// ---------------------------------------------------------------------------
+
+func TestLoadConfig_PermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("permission test not reliable on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("cannot test permission denial as root")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+
+	if err := os.WriteFile(path, []byte("network=testnet\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Remove read permission.
+	if err := os.Chmod(path, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(path, 0600) })
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("LoadConfig on unreadable file: expected error, got nil")
+	}
+	// The error should NOT be ErrConfigNotFound — the file exists.
+	if errors.Is(err, ErrConfigNotFound) {
+		t.Error("LoadConfig on unreadable file should not return ErrConfigNotFound")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Supplementary tests — ConfigPath
+// ---------------------------------------------------------------------------
+
+func TestConfigPath_WithTrailingSlash(t *testing.T) {
+	got := ConfigPath("/foo/")
+	want := filepath.Join("/foo", "config")
+	if got != want {
+		t.Errorf("ConfigPath(%q) = %q, want %q", "/foo/", got, want)
 	}
 }
