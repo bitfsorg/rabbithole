@@ -5,10 +5,17 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"strconv"
+	"syscall"
 
+	"github.com/tongxiaofeng/bitfs/internal/daemon"
+	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs/config"
 )
 
@@ -40,26 +47,68 @@ func runDaemon(args []string) int {
 }
 
 // runDaemonStart handles "bitfs daemon start".
-// Stub: prints intended action.
 func runDaemonStart(args []string) int {
 	fs := flag.NewFlagSet("daemon start", flag.ContinueOnError)
 	listen := fs.String("listen", ":8080", "listen address")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
+	password := fs.String("password", "", "wallet password (for testing)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsageError
 	}
 
-	fmt.Printf("Starting BitFS daemon...\n")
+	eng, err := engine.New(*dataDir, *password)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitWalletError
+	}
+	defer eng.Close()
+
+	// Create daemon with adapter types.
+	cfg := daemon.DefaultConfig()
+	cfg.ListenAddr = *listen
+
+	walletAdapter := engine.NewWalletAdapter(eng)
+	storeAdapter := engine.NewStoreAdapter(eng)
+	metanetAdapter := engine.NewMetanetAdapter(eng)
+
+	d, err := daemon.New(cfg, walletAdapter, storeAdapter, metanetAdapter)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitError
+	}
+
+	// Write PID file.
+	pidPath := filepath.Join(*dataDir, "daemon.pid")
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write PID file: %v\n", err)
+	}
+
+	if err := d.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitError
+	}
+
+	fmt.Printf("BitFS daemon started on %s\n", *listen)
 	fmt.Printf("  Data directory: %s\n", *dataDir)
-	fmt.Printf("  Listen:         %s\n", *listen)
-	fmt.Printf("\nDaemon started (stub -- full server not yet implemented).\n")
+	fmt.Printf("  PID: %d\n", os.Getpid())
+
+	// Wait for interrupt signal.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+
+	fmt.Printf("\nShutting down...\n")
+	if err := d.Stop(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "Error stopping daemon: %v\n", err)
+	}
+	_ = os.Remove(pidPath)
+	fmt.Printf("Daemon stopped.\n")
 
 	return exitSuccess
 }
 
 // runDaemonStop handles "bitfs daemon stop".
-// Stub: prints intended action.
 func runDaemonStop(args []string) int {
 	fs := flag.NewFlagSet("daemon stop", flag.ContinueOnError)
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
@@ -68,9 +117,32 @@ func runDaemonStop(args []string) int {
 		return exitUsageError
 	}
 
-	fmt.Printf("Stopping BitFS daemon...\n")
-	fmt.Printf("  Data directory: %s\n", *dataDir)
-	fmt.Printf("\nDaemon stopped (stub -- full server not yet implemented).\n")
+	pidPath := filepath.Join(*dataDir, "daemon.pid")
+	pidData, err := os.ReadFile(pidPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: no running daemon found (no PID file at %s)\n", pidPath)
+		return exitNotFound
+	}
+
+	pid, err := strconv.Atoi(string(pidData))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid PID file: %v\n", err)
+		return exitError
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: cannot find process %d: %v\n", pid, err)
+		return exitError
+	}
+
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: cannot signal process %d: %v\n", pid, err)
+		return exitError
+	}
+
+	_ = os.Remove(pidPath)
+	fmt.Printf("Sent SIGTERM to daemon (PID %d).\n", pid)
 
 	return exitSuccess
 }

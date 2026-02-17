@@ -89,7 +89,7 @@ func (d *Daemon) handleOptions(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, `{"status":"ok"}`)
+	_, _ = fmt.Fprint(w, `{"status":"ok"}`)
 }
 
 // handleBSVAlias serves the .well-known/bsvalias capabilities document.
@@ -114,7 +114,7 @@ func (d *Daemon) handleBSVAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(caps)
+	_ = json.NewEncoder(w).Encode(caps)
 }
 
 // handleRootOrPath handles GET / and all sub-paths with content negotiation.
@@ -134,7 +134,7 @@ func (d *Daemon) serveWithContentNegotiation(w http.ResponseWriter, r *http.Requ
 		if err == nil {
 			// Check access control
 			if node.Access == "paid" && d.config.X402.Enabled {
-				d.servePaidContent(w, r, node)
+				d.servePaidContent(w, node)
 				return
 			}
 
@@ -175,15 +175,15 @@ func (d *Daemon) serveBasicInfo(w http.ResponseWriter, r *http.Request, path str
 	switch accept {
 	case "text/html":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<!DOCTYPE html>
+		_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
 <html><head><title>BitFS</title></head>
 <body><h1>BitFS LFCP Node</h1><p>Path: %s</p></body></html>`, path)
 	case "text/markdown":
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		fmt.Fprintf(w, "# BitFS LFCP Node\n\nPath: %s\n", path)
+		_, _ = fmt.Fprintf(w, "# BitFS LFCP Node\n\nPath: %s\n", path)
 	default:
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"node": "BitFS LFCP",
 			"path": path,
 		})
@@ -195,16 +195,16 @@ func (d *Daemon) serveHTML(w http.ResponseWriter, node *NodeInfo) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if node.Type == "dir" {
-		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>BitFS Directory</title></head><body>`)
-		fmt.Fprintf(w, `<h1>Directory</h1><ul>`)
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><head><title>BitFS Directory</title></head><body>`)
+		_, _ = fmt.Fprintf(w, `<h1>Directory</h1><ul>`)
 		for _, child := range node.Children {
-			fmt.Fprintf(w, `<li><a href="%s">%s</a> (%s)</li>`, child.Name, child.Name, child.Type)
+			_, _ = fmt.Fprintf(w, `<li><a href="%s">%s</a> (%s)</li>`, child.Name, child.Name, child.Type)
 		}
-		fmt.Fprint(w, `</ul></body></html>`)
+		_, _ = fmt.Fprint(w, `</ul></body></html>`)
 	} else {
-		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>BitFS File</title></head><body>`)
-		fmt.Fprintf(w, `<h1>%s</h1><p>Type: %s, Size: %d bytes</p>`, node.MimeType, node.Type, node.FileSize)
-		fmt.Fprint(w, `</body></html>`)
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><head><title>BitFS File</title></head><body>`)
+		_, _ = fmt.Fprintf(w, `<h1>%s</h1><p>Type: %s, Size: %d bytes</p>`, node.MimeType, node.Type, node.FileSize)
+		_, _ = fmt.Fprint(w, `</body></html>`)
 	}
 }
 
@@ -213,31 +213,31 @@ func (d *Daemon) serveMarkdown(w http.ResponseWriter, node *NodeInfo) {
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 
 	if node.Type == "dir" {
-		fmt.Fprint(w, "# Directory Listing\n\n")
+		_, _ = fmt.Fprint(w, "# Directory Listing\n\n")
 		for _, child := range node.Children {
-			fmt.Fprintf(w, "- %s (%s)\n", child.Name, child.Type)
+			_, _ = fmt.Fprintf(w, "- %s (%s)\n", child.Name, child.Type)
 		}
 	} else {
-		fmt.Fprintf(w, "# File\n\nType: %s\nSize: %d bytes\n", node.MimeType, node.FileSize)
+		_, _ = fmt.Fprintf(w, "# File\n\nType: %s\nSize: %d bytes\n", node.MimeType, node.FileSize)
 	}
 }
 
 // serveJSON serves node metadata as JSON.
 func (d *Daemon) serveJSON(w http.ResponseWriter, node *NodeInfo) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(node)
+	_ = json.NewEncoder(w).Encode(node)
 }
 
 // servePaidContent returns 402 Payment Required for paid content.
-func (d *Daemon) servePaidContent(w http.ResponseWriter, r *http.Request, node *NodeInfo) {
+func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Price-Per-KB", fmt.Sprintf("%d", node.PricePerKB))
 	w.Header().Set("X-File-Size", fmt.Sprintf("%d", node.FileSize))
 	w.WriteHeader(http.StatusPaymentRequired)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"error":       "payment required",
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":        "payment required",
 		"price_per_kb": node.PricePerKB,
-		"file_size":   node.FileSize,
+		"file_size":    node.FileSize,
 	})
 }
 

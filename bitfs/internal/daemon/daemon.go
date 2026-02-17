@@ -405,6 +405,6 @@ func extractClientIP(r *http.Request) string {
 func writeJSONError(w http.ResponseWriter, code int, errCode, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, `{"error":{"code":%q,"message":%q,"retry":%t,"cached":false}}`,
+	_, _ = fmt.Fprintf(w, `{"error":{"code":%q,"message":%q,"retry":%t,"cached":false}}`,
 		errCode, message, code == http.StatusTooManyRequests || code >= 500)
 }

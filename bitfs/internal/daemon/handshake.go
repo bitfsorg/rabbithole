@@ -13,9 +13,9 @@ import (
 
 // HandshakeRequest represents an incoming Method 42 handshake request.
 type HandshakeRequest struct {
-	BuyerPub  string `json:"buyer_pub"`  // Hex-encoded compressed public key
-	NonceB    string `json:"nonce_b"`    // Hex-encoded nonce
-	Timestamp int64  `json:"timestamp"`  // Unix timestamp
+	BuyerPub  string `json:"buyer_pub"` // Hex-encoded compressed public key
+	NonceB    string `json:"nonce_b"`   // Hex-encoded nonce
+	Timestamp int64  `json:"timestamp"` // Unix timestamp
 }
 
 // HandshakeResponse represents the seller's handshake response.
@@ -42,7 +42,7 @@ func (d *Daemon) handleHandshake(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req HandshakeRequest
 	if err := json.Unmarshal(body, &req); err != nil {
@@ -118,7 +118,7 @@ func (d *Daemon) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // computeECDH performs the ECDH shared secret computation.

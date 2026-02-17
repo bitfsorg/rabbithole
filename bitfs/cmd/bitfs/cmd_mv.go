@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs/config"
 )
 
 // runMv handles the "bitfs mv" command.
-// Stub: parses args, loads wallet, derives keys, prints intended action.
 func runMv(args []string) int {
 	fs := flag.NewFlagSet("mv", flag.ContinueOnError)
 	vault := fs.String("vault", "", "vault name")
@@ -32,36 +32,34 @@ func runMv(args []string) int {
 	src := fs.Arg(0)
 	dst := fs.Arg(1)
 
-	w, state, err := loadWalletFromDataDir(*dataDir, *password)
+	eng, err := engine.New(*dataDir, *password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
+	defer eng.Close()
 
-	vaultIdx, err := resolveVaultIndex(w, state, *vault)
+	vaultIdx, err := eng.ResolveVaultIndex(*vault)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	srcIndices := pathToIndices(src)
-	srcKey, err := w.DeriveNodeKey(vaultIdx, srcIndices, nil)
+	result, err := eng.Move(&engine.MoveOpts{
+		VaultIndex: vaultIdx,
+		SrcPath:    src,
+		DstPath:    dst,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return exitWalletError
+		return exitError
 	}
 
-	dstIndices := pathToIndices(dst)
-	dstKey, err := w.DeriveNodeKey(vaultIdx, dstIndices, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return exitWalletError
+	fmt.Println(result.Message)
+	if result.TxHex != "" {
+		fmt.Printf("  TxID: %s\n", result.TxID)
+		fmt.Printf("  Raw:  %s\n", result.TxHex)
 	}
-
-	fmt.Printf("Would move %s -> %s\n", src, dst)
-	fmt.Printf("  Vault:        %d\n", vaultIdx)
-	fmt.Printf("  Src key path: %s\n", srcKey.Path)
-	fmt.Printf("  Dst key path: %s\n", dstKey.Path)
 
 	return exitSuccess
 }

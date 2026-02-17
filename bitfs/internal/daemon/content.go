@@ -55,7 +55,7 @@ func (d *Daemon) handleData(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", size))
 	w.Header().Set("X-Key-Hash", hashStr)
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 // handleMeta handles GET /_bitfs/meta/{pnode}/{path...} for metadata queries.
@@ -75,5 +75,5 @@ func (d *Daemon) handleMeta(w http.ResponseWriter, r *http.Request) {
 	path := r.PathValue("path")
 
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"pnode":%q,"path":%q,"status":"ok"}`, pnode, path)
+	_, _ = fmt.Fprintf(w, `{"pnode":%q,"path":%q,"status":"ok"}`, pnode, path)
 }

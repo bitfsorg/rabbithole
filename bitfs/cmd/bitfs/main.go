@@ -65,6 +65,8 @@ func run(args []string) int {
 		return runDaemon(cmdArgs)
 	case "shell":
 		return runShell(cmdArgs)
+	case "fund":
+		return runFund(cmdArgs)
 	case "--help", "-h", "help":
 		printUsage()
 		return exitSuccess
@@ -111,6 +113,9 @@ Publishing Commands:
 Daemon Commands:
   daemon start   Start the daemon
   daemon stop    Stop the daemon
+
+Bootstrap:
+  fund           Register externally-funded UTXOs
 
 Interactive:
   shell          FTP-style interactive REPL

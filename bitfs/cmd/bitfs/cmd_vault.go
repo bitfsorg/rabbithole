@@ -75,8 +75,7 @@ func runVaultCreate(args []string) int {
 		return exitConflict
 	}
 
-	statePath := config.ConfigPath(*dataDir)
-	statePath = *dataDir + "/state.json"
+	statePath := *dataDir + "/state.json"
 	if err := saveWalletState(statePath, state); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to save state: %v\n", err)
 		return exitError

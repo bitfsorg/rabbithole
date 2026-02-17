@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs/config"
 )
 
 // runPublish handles the "bitfs publish" command.
-// Stub: parses args, loads wallet, prints intended action.
 // Binds a domain to a vault's root via DNSLink.
 func runPublish(args []string) int {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
@@ -32,27 +32,29 @@ func runPublish(args []string) int {
 
 	domain := fs.Arg(0)
 
-	w, state, err := loadWalletFromDataDir(*dataDir, *password)
+	eng, err := engine.New(*dataDir, *password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
+	defer eng.Close()
 
-	vaultIdx, err := resolveVaultIndex(w, state, *vault)
+	vaultIdx, err := eng.ResolveVaultIndex(*vault)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	rootKey, err := w.DeriveVaultRootKey(vaultIdx)
+	result, err := eng.Publish(&engine.PublishOpts{
+		VaultIndex: vaultIdx,
+		Domain:     domain,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return exitWalletError
+		return exitError
 	}
 
-	fmt.Printf("Would publish vault to domain %s\n", domain)
-	fmt.Printf("  Vault:         %d\n", vaultIdx)
-	fmt.Printf("  Root key path: %s\n", rootKey.Path)
+	fmt.Println(result.Message)
 
 	return exitSuccess
 }

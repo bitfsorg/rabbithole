@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs/config"
 )
 
 // runPut handles the "bitfs put" command.
-// Stub: parses args, loads wallet, derives key, prints intended action.
 func runPut(args []string) int {
 	fs := flag.NewFlagSet("put", flag.ContinueOnError)
 	vault := fs.String("vault", "", "vault name")
@@ -44,29 +44,35 @@ func runPut(args []string) int {
 		return exitNotFound
 	}
 
-	w, state, err := loadWalletFromDataDir(*dataDir, *password)
+	eng, err := engine.New(*dataDir, *password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
+	defer eng.Close()
 
-	vaultIdx, err := resolveVaultIndex(w, state, *vault)
+	vaultIdx, err := eng.ResolveVaultIndex(*vault)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	indices := pathToIndices(remotePath)
-	key, err := w.DeriveNodeKey(vaultIdx, indices, nil)
+	result, err := eng.PutFile(&engine.PutOpts{
+		VaultIndex: vaultIdx,
+		LocalFile:  localFile,
+		RemotePath: remotePath,
+		Access:     *access,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return exitWalletError
+		return exitError
 	}
 
-	fmt.Printf("Would upload %q to %s\n", localFile, remotePath)
-	fmt.Printf("  Vault:    %d\n", vaultIdx)
-	fmt.Printf("  Access:   %s\n", *access)
-	fmt.Printf("  Key path: %s\n", key.Path)
+	fmt.Println(result.Message)
+	if result.TxHex != "" {
+		fmt.Printf("  TxID: %s\n", result.TxID)
+		fmt.Printf("  Raw:  %s\n", result.TxHex)
+	}
 
 	return exitSuccess
 }

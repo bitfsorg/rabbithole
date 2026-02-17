@@ -227,10 +227,10 @@ func TestVaultDeleteNoArgs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Stub command tests (filesystem operations)
+// Filesystem command tests (require engine + UTXOs)
 // ---------------------------------------------------------------------------
 
-func TestPutStub(t *testing.T) {
+func TestPutNoUTXO(t *testing.T) {
 	dataDir := initTestWallet(t)
 
 	// Create a temp file to "upload".
@@ -239,9 +239,10 @@ func TestPutStub(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Without funded UTXOs, put should fail with exitError.
 	code := runPut([]string{"--datadir", dataDir, "--password", "testpass", tmpFile, "/docs/test.txt"})
-	if code != exitSuccess {
-		t.Errorf("runPut returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runPut without UTXOs should not succeed (got %d)", code)
 	}
 }
 
@@ -263,12 +264,13 @@ func TestPutBadAccess(t *testing.T) {
 	}
 }
 
-func TestMkdirStub(t *testing.T) {
+func TestMkdirNoUTXO(t *testing.T) {
 	dataDir := initTestWallet(t)
 
+	// Without funded UTXOs, mkdir should fail.
 	code := runMkdir([]string{"--datadir", dataDir, "--password", "testpass", "/docs"})
-	if code != exitSuccess {
-		t.Errorf("runMkdir returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runMkdir without UTXOs should not succeed (got %d)", code)
 	}
 }
 
@@ -279,12 +281,13 @@ func TestMkdirNoArgs(t *testing.T) {
 	}
 }
 
-func TestRmStub(t *testing.T) {
+func TestRmNoNode(t *testing.T) {
 	dataDir := initTestWallet(t)
 
+	// No node exists at this path, so rm should fail.
 	code := runRm([]string{"--datadir", dataDir, "--password", "testpass", "/docs/test.txt"})
-	if code != exitSuccess {
-		t.Errorf("runRm returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runRm on nonexistent node should not succeed (got %d)", code)
 	}
 }
 
@@ -295,12 +298,13 @@ func TestRmNoArgs(t *testing.T) {
 	}
 }
 
-func TestMvStub(t *testing.T) {
+func TestMvNoNode(t *testing.T) {
 	dataDir := initTestWallet(t)
 
+	// No node exists, so mv should fail.
 	code := runMv([]string{"--datadir", dataDir, "--password", "testpass", "/a.txt", "/b.txt"})
-	if code != exitSuccess {
-		t.Errorf("runMv returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runMv on nonexistent node should not succeed (got %d)", code)
 	}
 }
 
@@ -311,21 +315,23 @@ func TestMvNoArgs(t *testing.T) {
 	}
 }
 
-func TestLinkStub(t *testing.T) {
+func TestLinkNoNode(t *testing.T) {
 	dataDir := initTestWallet(t)
 
+	// No target exists, so link should fail.
 	code := runLink([]string{"--datadir", dataDir, "--password", "testpass", "/target.txt", "/link.txt"})
-	if code != exitSuccess {
-		t.Errorf("runLink returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runLink on nonexistent target should not succeed (got %d)", code)
 	}
 }
 
-func TestLinkSoftStub(t *testing.T) {
+func TestLinkSoftNoNode(t *testing.T) {
 	dataDir := initTestWallet(t)
 
+	// No target exists, so soft link should fail.
 	code := runLink([]string{"--datadir", dataDir, "--password", "testpass", "--soft", "/target.txt", "/link.txt"})
-	if code != exitSuccess {
-		t.Errorf("runLink --soft returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runLink --soft on nonexistent target should not succeed (got %d)", code)
 	}
 }
 
@@ -336,12 +342,13 @@ func TestLinkNoArgs(t *testing.T) {
 	}
 }
 
-func TestSellStub(t *testing.T) {
+func TestSellNoNode(t *testing.T) {
 	dataDir := initTestWallet(t)
 
+	// No node exists at this path, so sell should fail.
 	code := runSell([]string{"--datadir", dataDir, "--password", "testpass", "--price", "50", "/premium/data.csv"})
-	if code != exitSuccess {
-		t.Errorf("runSell returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runSell on nonexistent node should not succeed (got %d)", code)
 	}
 }
 
@@ -361,12 +368,13 @@ func TestSellNoArgs(t *testing.T) {
 	}
 }
 
-func TestEncryptStub(t *testing.T) {
+func TestEncryptNoNode(t *testing.T) {
 	dataDir := initTestWallet(t)
 
+	// No node exists at this path, so encrypt should fail.
 	code := runEncrypt([]string{"--datadir", dataDir, "--password", "testpass", "/docs/secret.txt"})
-	if code != exitSuccess {
-		t.Errorf("runEncrypt returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("runEncrypt on nonexistent node should not succeed (got %d)", code)
 	}
 }
 
@@ -394,20 +402,24 @@ func TestPublishNoArgs(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Daemon stub tests
+// Daemon tests
 // ---------------------------------------------------------------------------
 
-func TestDaemonStart(t *testing.T) {
-	code := runDaemonStart(nil)
-	if code != exitSuccess {
-		t.Errorf("runDaemonStart returned %d, want %d", code, exitSuccess)
+func TestDaemonStartNoWallet(t *testing.T) {
+	// Without a wallet at the default datadir, daemon start should fail.
+	dir := t.TempDir()
+	code := runDaemonStart([]string{"--datadir", dir})
+	if code != exitWalletError {
+		t.Errorf("runDaemonStart (no wallet) returned %d, want %d", code, exitWalletError)
 	}
 }
 
-func TestDaemonStop(t *testing.T) {
-	code := runDaemonStop(nil)
-	if code != exitSuccess {
-		t.Errorf("runDaemonStop returned %d, want %d", code, exitSuccess)
+func TestDaemonStopNoPID(t *testing.T) {
+	// Without a PID file, daemon stop should fail.
+	dir := t.TempDir()
+	code := runDaemonStop([]string{"--datadir", dir})
+	if code != exitNotFound {
+		t.Errorf("runDaemonStop (no PID) returned %d, want %d", code, exitNotFound)
 	}
 }
 
@@ -426,13 +438,15 @@ func TestDaemonHelp(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Shell stub test
+// Shell test
 // ---------------------------------------------------------------------------
 
-func TestShellStub(t *testing.T) {
-	code := runShell(nil)
-	if code != exitSuccess {
-		t.Errorf("runShell returned %d, want %d", code, exitSuccess)
+func TestShellNoWallet(t *testing.T) {
+	// Without a wallet, shell should fail with wallet error.
+	dir := t.TempDir()
+	code := runShell([]string{"--datadir", dir})
+	if code != exitWalletError {
+		t.Errorf("runShell (no wallet) returned %d, want %d", code, exitWalletError)
 	}
 }
 

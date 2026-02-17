@@ -98,25 +98,27 @@ func TestVersionOutput(t *testing.T) {
 // 3. Put command -- access modes
 // ---------------------------------------------------------------------------
 
-func TestPutPrivateAccess(t *testing.T) {
+func TestPutPrivateAccess_NoUTXO(t *testing.T) {
 	dataDir := initTestWallet(t)
 	tmpFile := filepath.Join(t.TempDir(), "secret.txt")
 	os.WriteFile(tmpFile, []byte("classified"), 0600)
 
+	// Valid access mode but no UTXOs funded — should fail.
 	code := runPut([]string{"--datadir", dataDir, "--password", "testpass", "--access", "private", tmpFile, "/vault/secret.txt"})
-	if code != exitSuccess {
-		t.Errorf("runPut --access private returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("runPut --access private without UTXOs should not succeed")
 	}
 }
 
-func TestPutFreeAccess(t *testing.T) {
+func TestPutFreeAccess_NoUTXO(t *testing.T) {
 	dataDir := initTestWallet(t)
 	tmpFile := filepath.Join(t.TempDir(), "public.txt")
 	os.WriteFile(tmpFile, []byte("public data"), 0600)
 
+	// Valid access mode but no UTXOs funded — should fail.
 	code := runPut([]string{"--datadir", dataDir, "--password", "testpass", "--access", "free", tmpFile, "/public/readme.txt"})
-	if code != exitSuccess {
-		t.Errorf("runPut --access free returned %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("runPut --access free without UTXOs should not succeed")
 	}
 }
 

@@ -37,12 +37,15 @@ func TestRun_AllCommands_NoWallet(t *testing.T) {
 }
 
 func TestRun_DaemonSubcommands(t *testing.T) {
+	tmpDir := t.TempDir()
 	tests := []struct {
 		args []string
 		want int
 	}{
-		{[]string{"daemon", "start"}, exitSuccess},
-		{[]string{"daemon", "stop"}, exitSuccess},
+		// start needs a wallet → fails with wallet error
+		{[]string{"daemon", "start", "--datadir", tmpDir}, exitWalletError},
+		// stop needs a PID file → fails with not found
+		{[]string{"daemon", "stop", "--datadir", tmpDir}, exitNotFound},
 		{[]string{"daemon", "--help"}, exitSuccess},
 		{[]string{"daemon", "-h"}, exitSuccess},
 		{[]string{"daemon", "restart"}, exitUsageError},
@@ -55,15 +58,11 @@ func TestRun_DaemonSubcommands(t *testing.T) {
 	}
 }
 
-func TestRun_ShellCommand(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"shell"})
-		if code != exitSuccess {
-			t.Errorf("run shell = %d, want %d", code, exitSuccess)
-		}
-	})
-	if !strings.Contains(out, "Shell mode") {
-		t.Errorf("shell output %q missing expected text", out)
+func TestRun_ShellCommand_NoWallet(t *testing.T) {
+	tmpDir := t.TempDir()
+	code := run([]string{"shell", "--datadir", tmpDir})
+	if code != exitWalletError {
+		t.Errorf("run shell (no wallet) = %d, want %d", code, exitWalletError)
 	}
 }
 
@@ -280,9 +279,10 @@ func TestPut_WithVaultName(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "data.bin")
 	os.WriteFile(tmpFile, []byte("content"), 0600)
 
+	// With valid vault but no UTXOs, put should fail (not succeed).
 	code := runPut([]string{"--datadir", dataDir, "--password", "testpass", "--vault", "default", tmpFile, "/data.bin"})
-	if code != exitSuccess {
-		t.Errorf("put with --vault default = %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Errorf("put with --vault default but no UTXOs should not succeed")
 	}
 }
 
@@ -307,49 +307,55 @@ func TestPut_FileNotFound(t *testing.T) {
 
 func TestMkdir_WithVaultName(t *testing.T) {
 	dataDir := initTestWallet(t)
+	// Valid vault, but no UTXOs funded — should fail.
 	code := runMkdir([]string{"--datadir", dataDir, "--password", "testpass", "--vault", "default", "/mydir"})
-	if code != exitSuccess {
-		t.Errorf("mkdir with --vault = %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("mkdir with --vault but no UTXOs should not succeed")
 	}
 }
 
 func TestRm_WithVaultName(t *testing.T) {
 	dataDir := initTestWallet(t)
+	// No node exists at this path — should fail.
 	code := runRm([]string{"--datadir", dataDir, "--password", "testpass", "--vault", "default", "/file"})
-	if code != exitSuccess {
-		t.Errorf("rm with --vault = %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("rm on nonexistent node should not succeed")
 	}
 }
 
 func TestMv_WithVaultName(t *testing.T) {
 	dataDir := initTestWallet(t)
+	// No node exists at src — should fail.
 	code := runMv([]string{"--datadir", dataDir, "--password", "testpass", "--vault", "default", "/src", "/dst"})
-	if code != exitSuccess {
-		t.Errorf("mv with --vault = %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("mv on nonexistent node should not succeed")
 	}
 }
 
 func TestLink_WithVaultName(t *testing.T) {
 	dataDir := initTestWallet(t)
+	// No target exists — should fail.
 	code := runLink([]string{"--datadir", dataDir, "--password", "testpass", "--vault", "default", "/target", "/link"})
-	if code != exitSuccess {
-		t.Errorf("link with --vault = %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("link on nonexistent target should not succeed")
 	}
 }
 
 func TestSell_WithVaultName(t *testing.T) {
 	dataDir := initTestWallet(t)
+	// No node exists at path — should fail.
 	code := runSell([]string{"--datadir", dataDir, "--password", "testpass", "--vault", "default", "--price", "500", "/file"})
-	if code != exitSuccess {
-		t.Errorf("sell with --vault = %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("sell on nonexistent node should not succeed")
 	}
 }
 
 func TestEncrypt_WithVaultName(t *testing.T) {
 	dataDir := initTestWallet(t)
+	// No node exists at path — should fail.
 	code := runEncrypt([]string{"--datadir", dataDir, "--password", "testpass", "--vault", "default", "/file"})
-	if code != exitSuccess {
-		t.Errorf("encrypt with --vault = %d, want %d", code, exitSuccess)
+	if code == exitSuccess {
+		t.Error("encrypt on nonexistent node should not succeed")
 	}
 }
 
@@ -393,38 +399,26 @@ func TestVaultDelete_InvalidFlags(t *testing.T) {
 	}
 }
 
-func TestDaemonStart_CustomListen(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := runDaemonStart([]string{"--listen", ":9090"})
-		if code != exitSuccess {
-			t.Errorf("daemon start = %d", code)
-		}
-	})
-	if !strings.Contains(out, ":9090") {
-		t.Errorf("daemon start output missing listen addr: %q", out)
+func TestDaemonStart_NoWallet(t *testing.T) {
+	tmpDir := t.TempDir()
+	code := runDaemonStart([]string{"--listen", ":9090", "--datadir", tmpDir})
+	if code != exitWalletError {
+		t.Errorf("daemon start (no wallet) = %d, want %d", code, exitWalletError)
 	}
 }
 
-func TestDaemonStop_WithDataDir(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := runDaemonStop([]string{"--datadir", "/tmp/testbitfs"})
-		if code != exitSuccess {
-			t.Errorf("daemon stop = %d", code)
-		}
-	})
-	if !strings.Contains(out, "/tmp/testbitfs") {
-		t.Errorf("daemon stop output missing datadir: %q", out)
+func TestDaemonStop_NoPIDFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	code := runDaemonStop([]string{"--datadir", tmpDir})
+	if code != exitNotFound {
+		t.Errorf("daemon stop (no PID) = %d, want %d", code, exitNotFound)
 	}
 }
 
-func TestShell_WithVault(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := runShell([]string{"--vault", "test"})
-		if code != exitSuccess {
-			t.Errorf("shell = %d", code)
-		}
-	})
-	if !strings.Contains(out, "Shell mode") {
-		t.Errorf("shell output: %q", out)
+func TestShell_NoWallet(t *testing.T) {
+	tmpDir := t.TempDir()
+	code := runShell([]string{"--vault", "test", "--datadir", tmpDir})
+	if code != exitWalletError {
+		t.Errorf("shell (no wallet) = %d, want %d", code, exitWalletError)
 	}
 }

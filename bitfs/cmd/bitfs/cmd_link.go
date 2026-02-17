@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs/config"
 )
 
 // runLink handles the "bitfs link" command.
-// Stub: parses args, loads wallet, derives key, prints intended action.
 func runLink(args []string) int {
 	fs := flag.NewFlagSet("link", flag.ContinueOnError)
 	soft := fs.Bool("soft", false, "create soft link instead of hard link")
@@ -33,33 +33,35 @@ func runLink(args []string) int {
 	target := fs.Arg(0)
 	linkPath := fs.Arg(1)
 
-	w, state, err := loadWalletFromDataDir(*dataDir, *password)
+	eng, err := engine.New(*dataDir, *password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
+	defer eng.Close()
 
-	vaultIdx, err := resolveVaultIndex(w, state, *vault)
+	vaultIdx, err := eng.ResolveVaultIndex(*vault)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	indices := pathToIndices(linkPath)
-	key, err := w.DeriveNodeKey(vaultIdx, indices, nil)
+	result, err := eng.Link(&engine.LinkOpts{
+		VaultIndex: vaultIdx,
+		TargetPath: target,
+		LinkPath:   linkPath,
+		Soft:       *soft,
+	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return exitWalletError
+		return exitError
 	}
 
-	linkType := "hard"
-	if *soft {
-		linkType = "soft"
+	fmt.Println(result.Message)
+	if result.TxHex != "" {
+		fmt.Printf("  TxID: %s\n", result.TxID)
+		fmt.Printf("  Raw:  %s\n", result.TxHex)
 	}
-
-	fmt.Printf("Would create %s link: %s -> %s\n", linkType, linkPath, target)
-	fmt.Printf("  Vault:    %d\n", vaultIdx)
-	fmt.Printf("  Key path: %s\n", key.Path)
 
 	return exitSuccess
 }
