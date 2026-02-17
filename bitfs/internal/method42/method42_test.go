@@ -3,11 +3,13 @@ package method42
 import (
 	"bytes"
 	"crypto/sha256"
+	"io"
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/hkdf"
 )
 
 // --- Helper functions ---
@@ -590,4 +592,436 @@ func TestEncrypt_LargePlaintext(t *testing.T) {
 	decResult, err := Decrypt(result.Ciphertext, privKey, pubKey, result.KeyHash, AccessPrivate)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decResult.Plaintext)
+}
+
+// =============================================================================
+// Supplementary tests — added to close AUDIT.md coverage gaps
+// =============================================================================
+
+// --- Gap 4 (MOST CRITICAL): ErrKeyHashMismatch post-AES content integrity ---
+
+func TestDecrypt_KeyHashMismatch_ContentIntegrity(t *testing.T) {
+	// To trigger lines 137-139 of encrypt.go (post-decryption integrity check),
+	// AES decryption must succeed but ComputeKeyHash(plaintext) != keyHash.
+	//
+	// Strategy: use DecryptWithCapsule with the lower-level API:
+	//  1. Choose plaintext, compute its real keyHash.
+	//  2. Choose a fake keyHash (32 bytes, different from the real one).
+	//  3. Derive an AES key from (capsule, fakeKeyHash) via DeriveAESKey.
+	//  4. Encrypt plaintext with that AES key directly via aesGCMEncrypt.
+	//  5. Call DecryptWithCapsule(ciphertext, capsule, fakeKeyHash).
+	//     AES succeeds (key matches), but ComputeKeyHash(plaintext) != fakeKeyHash.
+	plaintext := []byte("content for integrity check")
+	realKeyHash := ComputeKeyHash(plaintext)
+
+	// Fabricate a capsule (any 32-byte value)
+	capsule := bytes.Repeat([]byte{0x42}, 32)
+
+	// Fabricate a fake keyHash that differs from the real one
+	fakeKeyHash := bytes.Repeat([]byte{0xaa}, 32)
+	require.NotEqual(t, realKeyHash, fakeKeyHash, "sanity: fake must differ from real")
+
+	// Derive AES key that will be used when DecryptWithCapsule is called with fakeKeyHash
+	aesKey, err := DeriveAESKey(capsule, fakeKeyHash)
+	require.NoError(t, err)
+
+	// Encrypt the plaintext directly with that AES key (bypassing Encrypt)
+	ciphertext, err := aesGCMEncrypt(plaintext, aesKey)
+	require.NoError(t, err)
+
+	// Now DecryptWithCapsule: AES will succeed (key matches), but post-decryption
+	// integrity check will fail because SHA256(SHA256(plaintext)) != fakeKeyHash.
+	_, err = DecryptWithCapsule(ciphertext, capsule, fakeKeyHash)
+	assert.ErrorIs(t, err, ErrKeyHashMismatch,
+		"should return ErrKeyHashMismatch when AES succeeds but content hash differs")
+}
+
+func TestDecrypt_KeyHashMismatch_ViaDecrypt(t *testing.T) {
+	// Same strategy as above but via the Decrypt function.
+	// Use AccessFree so the effective private key is FreePrivateKey() (scalar 1),
+	// meaning ECDH(1, P) = P.x. We can predict the shared secret.
+	_, pubKey := generateKeyPair(t)
+	plaintext := []byte("integrity test via Decrypt")
+	realKeyHash := ComputeKeyHash(plaintext)
+
+	// The shared secret for Free mode is just pubKey.X (32 bytes, zero-padded)
+	freeKey := FreePrivateKey()
+	sharedX, err := ECDH(freeKey, pubKey)
+	require.NoError(t, err)
+
+	// Fabricate a fake keyHash
+	fakeKeyHash := bytes.Repeat([]byte{0xbb}, 32)
+	require.NotEqual(t, realKeyHash, fakeKeyHash)
+
+	// Derive AES key from (sharedX, fakeKeyHash) — same as Decrypt will do
+	aesKey, err := DeriveAESKey(sharedX, fakeKeyHash)
+	require.NoError(t, err)
+
+	// Encrypt directly with that key
+	ciphertext, err := aesGCMEncrypt(plaintext, aesKey)
+	require.NoError(t, err)
+
+	// Decrypt expects AES to succeed (because key matches), then integrity fails
+	_, err = Decrypt(ciphertext, nil, pubKey, fakeKeyHash, AccessFree)
+	assert.ErrorIs(t, err, ErrKeyHashMismatch,
+		"should return ErrKeyHashMismatch from Decrypt when content hash diverges")
+}
+
+// --- Gap 7: ReEncrypt mode transitions Private->Paid and Paid->Free ---
+
+func TestReEncrypt_PrivateToPaid(t *testing.T) {
+	privKey, pubKey := generateKeyPair(t)
+	plaintext := []byte("private content becoming paid")
+
+	// Encrypt as PRIVATE
+	privResult, err := Encrypt(plaintext, privKey, pubKey, AccessPrivate)
+	require.NoError(t, err)
+
+	// Re-encrypt as PAID
+	paidResult, err := ReEncrypt(privResult.Ciphertext, privKey, pubKey, privResult.KeyHash, AccessPrivate, AccessPaid)
+	require.NoError(t, err)
+
+	// Verify the new ciphertext decrypts in PAID mode
+	decResult, err := Decrypt(paidResult.Ciphertext, privKey, pubKey, paidResult.KeyHash, AccessPaid)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, decResult.Plaintext)
+
+	// Key hash should be preserved (same plaintext)
+	assert.Equal(t, privResult.KeyHash, paidResult.KeyHash)
+}
+
+func TestReEncrypt_PaidToFree(t *testing.T) {
+	privKey, pubKey := generateKeyPair(t)
+	plaintext := []byte("paid content becoming free")
+
+	// Encrypt as PAID
+	paidResult, err := Encrypt(plaintext, privKey, pubKey, AccessPaid)
+	require.NoError(t, err)
+
+	// Re-encrypt as FREE
+	freeResult, err := ReEncrypt(paidResult.Ciphertext, privKey, pubKey, paidResult.KeyHash, AccessPaid, AccessFree)
+	require.NoError(t, err)
+
+	// Verify anyone can decrypt with FREE mode (no private key needed)
+	decResult, err := Decrypt(freeResult.Ciphertext, nil, pubKey, freeResult.KeyHash, AccessFree)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, decResult.Plaintext)
+}
+
+// --- Gap 1: Decrypt with invalid access mode ---
+
+func TestDecrypt_InvalidAccess(t *testing.T) {
+	privKey, pubKey := generateKeyPair(t)
+	plaintext := []byte("test content for invalid access decrypt")
+
+	encResult, err := Encrypt(plaintext, privKey, pubKey, AccessPrivate)
+	require.NoError(t, err)
+
+	_, err = Decrypt(encResult.Ciphertext, privKey, pubKey, encResult.KeyHash, Access(99))
+	assert.ErrorIs(t, err, ErrInvalidAccess,
+		"Decrypt should return ErrInvalidAccess for unknown access mode")
+}
+
+// --- Gap 2: DecryptWithCapsule invalid keyHash length ---
+
+func TestDecryptWithCapsule_InvalidKeyHashLength(t *testing.T) {
+	tests := []struct {
+		name    string
+		keyHash []byte
+	}{
+		{"empty keyHash", []byte{}},
+		{"16 bytes", bytes.Repeat([]byte{0x01}, 16)},
+		{"31 bytes", bytes.Repeat([]byte{0x01}, 31)},
+		{"33 bytes", bytes.Repeat([]byte{0x01}, 33)},
+	}
+
+	capsule := bytes.Repeat([]byte{0xab}, 32)
+	ciphertext := bytes.Repeat([]byte{0x00}, MinCiphertextLen) // dummy ciphertext
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := DecryptWithCapsule(ciphertext, capsule, tt.keyHash)
+			assert.ErrorIs(t, err, ErrKeyHashMismatch,
+				"DecryptWithCapsule should return ErrKeyHashMismatch for non-32-byte keyHash")
+		})
+	}
+}
+
+// --- Gap 3: Decrypt invalid keyHash length ---
+
+func TestDecrypt_InvalidKeyHashLength(t *testing.T) {
+	tests := []struct {
+		name    string
+		keyHash []byte
+	}{
+		{"nil keyHash", nil},
+		{"empty keyHash", []byte{}},
+		{"16 bytes", bytes.Repeat([]byte{0x01}, 16)},
+		{"31 bytes", bytes.Repeat([]byte{0x01}, 31)},
+		{"33 bytes", bytes.Repeat([]byte{0x01}, 33)},
+	}
+
+	privKey, pubKey := generateKeyPair(t)
+	ciphertext := bytes.Repeat([]byte{0x00}, MinCiphertextLen)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Decrypt(ciphertext, privKey, pubKey, tt.keyHash, AccessPrivate)
+			assert.ErrorIs(t, err, ErrKeyHashMismatch,
+				"Decrypt should return ErrKeyHashMismatch for non-32-byte keyHash")
+		})
+	}
+}
+
+// --- Gap 8: Encrypt nil public key ---
+
+func TestEncrypt_NilPublicKey(t *testing.T) {
+	privKey, _ := generateKeyPair(t)
+
+	tests := []struct {
+		name   string
+		access Access
+	}{
+		{"private mode", AccessPrivate},
+		{"paid mode", AccessPaid},
+		{"free mode", AccessFree},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Encrypt([]byte("test"), privKey, nil, tt.access)
+			assert.ErrorIs(t, err, ErrNilPublicKey,
+				"Encrypt should return ErrNilPublicKey when publicKey is nil")
+		})
+	}
+}
+
+// --- Gap 9: ComputeCapsule nil arguments ---
+
+func TestComputeCapsule_NilPrivateKey(t *testing.T) {
+	_, pubKey := generateKeyPair(t)
+	_, err := ComputeCapsule(nil, pubKey)
+	assert.ErrorIs(t, err, ErrNilPrivateKey,
+		"ComputeCapsule should return ErrNilPrivateKey when nodePrivateKey is nil")
+}
+
+func TestComputeCapsule_NilPublicKey(t *testing.T) {
+	privKey, _ := generateKeyPair(t)
+	_, err := ComputeCapsule(privKey, nil)
+	assert.ErrorIs(t, err, ErrNilPublicKey,
+		"ComputeCapsule should return ErrNilPublicKey when buyerPublicKey is nil")
+}
+
+// --- Gap 11: ECDH x-coordinate always 32 bytes (zero-padding branch) ---
+
+func TestECDH_XCoordinateAlways32Bytes(t *testing.T) {
+	// Run ECDH on many random keys and verify the output is always exactly
+	// 32 bytes. This is a statistical test to exercise the zero-padding path
+	// at ecdh.go:36-40 (may trigger if x-coordinate < 32 bytes).
+	const iterations = 200
+	for i := 0; i < iterations; i++ {
+		privKey, pubKey := generateKeyPair(t)
+		shared, err := ECDH(privKey, pubKey)
+		require.NoError(t, err)
+		assert.Len(t, shared, 32, "ECDH output must always be exactly 32 bytes (iteration %d)", i)
+	}
+}
+
+// --- Gap 5: ReEncrypt error propagation from decrypt phase ---
+
+func TestReEncrypt_InvalidCiphertext(t *testing.T) {
+	privKey, pubKey := generateKeyPair(t)
+	shortCiphertext := []byte{0x01, 0x02, 0x03} // way too short
+	keyHash := bytes.Repeat([]byte{0x01}, 32)
+
+	_, err := ReEncrypt(shortCiphertext, privKey, pubKey, keyHash, AccessPrivate, AccessFree)
+	assert.Error(t, err, "ReEncrypt should propagate ErrInvalidCiphertext from Decrypt")
+	assert.ErrorIs(t, err, ErrInvalidCiphertext)
+}
+
+// --- Gap 6: ReEncrypt error propagation from encrypt phase (invalid toAccess) ---
+
+func TestReEncrypt_InvalidToAccess(t *testing.T) {
+	privKey, pubKey := generateKeyPair(t)
+	plaintext := []byte("content for invalid toAccess test")
+
+	encResult, err := Encrypt(plaintext, privKey, pubKey, AccessPrivate)
+	require.NoError(t, err)
+
+	_, err = ReEncrypt(encResult.Ciphertext, privKey, pubKey, encResult.KeyHash, AccessPrivate, Access(99))
+	assert.ErrorIs(t, err, ErrInvalidAccess,
+		"ReEncrypt should return ErrInvalidAccess when toAccess is invalid")
+}
+
+func TestReEncrypt_InvalidFromAccess(t *testing.T) {
+	privKey, pubKey := generateKeyPair(t)
+	keyHash := bytes.Repeat([]byte{0x01}, 32)
+	ciphertext := bytes.Repeat([]byte{0x00}, MinCiphertextLen+10)
+
+	_, err := ReEncrypt(ciphertext, privKey, pubKey, keyHash, Access(99), AccessFree)
+	assert.ErrorIs(t, err, ErrInvalidAccess,
+		"ReEncrypt should return ErrInvalidAccess when fromAccess is invalid")
+}
+
+// --- Gap 10: DeriveAESKey different shared secrets ---
+
+func TestDeriveAESKey_DifferentSharedSecret(t *testing.T) {
+	keyHash := bytes.Repeat([]byte{0x01}, 32)
+	sharedX1 := bytes.Repeat([]byte{0xaa}, 32)
+	sharedX2 := bytes.Repeat([]byte{0xbb}, 32)
+
+	key1, err := DeriveAESKey(sharedX1, keyHash)
+	require.NoError(t, err)
+
+	key2, err := DeriveAESKey(sharedX2, keyHash)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, key1, key2,
+		"different shared secrets with same key_hash should produce different AES keys")
+}
+
+// --- Gap 12: Minimal ciphertext (empty plaintext via AES-GCM) ---
+
+func TestAESGCM_MinimalCiphertext(t *testing.T) {
+	key := bytes.Repeat([]byte{0xab}, 32)
+
+	// Encrypt empty plaintext
+	ciphertext, err := aesGCMEncrypt([]byte{}, key)
+	require.NoError(t, err)
+
+	// Ciphertext should be exactly 28 bytes: 12 (nonce) + 16 (GCM tag)
+	assert.Len(t, ciphertext, MinCiphertextLen,
+		"empty plaintext should produce exactly nonce+tag bytes")
+
+	// Decrypt should succeed and return empty
+	plaintext, err := aesGCMDecrypt(ciphertext, key)
+	require.NoError(t, err)
+	assert.Empty(t, plaintext)
+}
+
+// --- Gap 13: DeriveAESKey HKDF info constant verification ---
+
+func TestDeriveAESKey_HKDFInfoConstant(t *testing.T) {
+	// Verify the HKDFInfo constant has the expected value
+	assert.Equal(t, "bitfs-file-encryption", HKDFInfo,
+		"HKDFInfo constant must equal 'bitfs-file-encryption'")
+}
+
+func TestDeriveAESKey_HKDFInfoAffectsOutput(t *testing.T) {
+	// Verify that the HKDF info string is actually used in key derivation.
+	// Compute a reference key using DeriveAESKey, then manually derive with
+	// a different info string and show the results differ.
+	sharedX := bytes.Repeat([]byte{0x42}, 32)
+	keyHash := bytes.Repeat([]byte{0x24}, 32)
+
+	derivedKey, err := DeriveAESKey(sharedX, keyHash)
+	require.NoError(t, err)
+	require.Len(t, derivedKey, 32)
+
+	// Manually derive with a different info to prove the constant matters
+	wrongInfoKey := make([]byte, 32)
+	hkdfReader := hkdf.New(sha256.New, sharedX, keyHash, []byte("wrong-info-string"))
+	_, err = io.ReadFull(hkdfReader, wrongInfoKey)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, derivedKey, wrongInfoKey,
+		"DeriveAESKey output should differ when info string changes, proving HKDFInfo is used")
+
+	// Also verify the key matches the expected output with the correct info
+	correctInfoKey := make([]byte, 32)
+	hkdfReader2 := hkdf.New(sha256.New, sharedX, keyHash, []byte(HKDFInfo))
+	_, err = io.ReadFull(hkdfReader2, correctInfoKey)
+	require.NoError(t, err)
+
+	assert.Equal(t, derivedKey, correctInfoKey,
+		"DeriveAESKey output should match manual HKDF with the same info string")
+}
+
+// --- Exported constants assertions ---
+
+func TestExportedConstants(t *testing.T) {
+	assert.Equal(t, 12, NonceLen, "NonceLen must be 12")
+	assert.Equal(t, 16, GCMTagLen, "GCMTagLen must be 16")
+	assert.Equal(t, 28, MinCiphertextLen, "MinCiphertextLen must be NonceLen + GCMTagLen = 28")
+	assert.Equal(t, 32, AESKeyLen, "AESKeyLen must be 32")
+}
+
+// --- Edge cases from AUDIT.md ---
+
+func TestEncrypt_NilPrivateKey_PaidMode(t *testing.T) {
+	_, pubKey := generateKeyPair(t)
+	_, err := Encrypt([]byte("paid content"), nil, pubKey, AccessPaid)
+	assert.ErrorIs(t, err, ErrNilPrivateKey,
+		"Encrypt with AccessPaid and nil privateKey should return ErrNilPrivateKey")
+}
+
+func TestEncrypt_NilPrivateKey_PrivateMode(t *testing.T) {
+	_, pubKey := generateKeyPair(t)
+	_, err := Encrypt([]byte("private content"), nil, pubKey, AccessPrivate)
+	assert.ErrorIs(t, err, ErrNilPrivateKey,
+		"Encrypt with AccessPrivate and nil privateKey should return ErrNilPrivateKey")
+}
+
+func TestComputeKeyHash_NilPlaintext(t *testing.T) {
+	// nil plaintext should work (sha256.Sum256 handles nil)
+	hash := ComputeKeyHash(nil)
+	assert.Len(t, hash, 32, "nil plaintext should produce a 32-byte hash")
+
+	// Verify it matches SHA256(SHA256(nil)) which is same as SHA256(SHA256([]byte{}))
+	emptyHash := ComputeKeyHash([]byte{})
+	assert.Equal(t, emptyHash, hash,
+		"nil and empty plaintext should produce the same key hash")
+}
+
+func TestEncrypt_NilPlaintext(t *testing.T) {
+	privKey, pubKey := generateKeyPair(t)
+
+	// Encrypt nil plaintext
+	result, err := Encrypt(nil, privKey, pubKey, AccessPrivate)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Ciphertext)
+	assert.Len(t, result.KeyHash, 32)
+
+	// Decrypt should succeed and return empty (nil normalized to empty)
+	decResult, err := Decrypt(result.Ciphertext, privKey, pubKey, result.KeyHash, AccessPrivate)
+	require.NoError(t, err)
+	assert.Empty(t, decResult.Plaintext)
+}
+
+func TestReEncrypt_NonceUniqueness(t *testing.T) {
+	// Verify that re-encrypting the same content produces different ciphertexts
+	// due to fresh random nonces (Spec Security Consideration #1).
+	privKey, pubKey := generateKeyPair(t)
+	plaintext := []byte("content for nonce uniqueness test")
+
+	encResult, err := Encrypt(plaintext, privKey, pubKey, AccessPrivate)
+	require.NoError(t, err)
+
+	// Re-encrypt same content in same mode
+	reResult1, err := ReEncrypt(encResult.Ciphertext, privKey, pubKey, encResult.KeyHash, AccessPrivate, AccessPrivate)
+	require.NoError(t, err)
+
+	reResult2, err := ReEncrypt(encResult.Ciphertext, privKey, pubKey, encResult.KeyHash, AccessPrivate, AccessPrivate)
+	require.NoError(t, err)
+
+	// Ciphertexts should differ (random nonce)
+	assert.NotEqual(t, reResult1.Ciphertext, reResult2.Ciphertext,
+		"re-encryptions should produce different ciphertexts due to fresh nonces")
+
+	// But both should decrypt to the same plaintext
+	dec1, err := Decrypt(reResult1.Ciphertext, privKey, pubKey, reResult1.KeyHash, AccessPrivate)
+	require.NoError(t, err)
+	dec2, err := Decrypt(reResult2.Ciphertext, privKey, pubKey, reResult2.KeyHash, AccessPrivate)
+	require.NoError(t, err)
+	assert.Equal(t, dec1.Plaintext, dec2.Plaintext)
+	assert.Equal(t, plaintext, dec1.Plaintext)
+}
+
+func TestComputeCapsuleHash_EmptyCapsule(t *testing.T) {
+	hash := ComputeCapsuleHash([]byte{})
+	assert.Len(t, hash, 32, "ComputeCapsuleHash of empty input should return 32-byte hash")
+
+	// Should be standard SHA256 of empty
+	expected := sha256.Sum256([]byte{})
+	assert.Equal(t, expected[:], hash)
 }

@@ -432,6 +432,78 @@ func TestMultiVaultKeyIsolation(t *testing.T) {
 	}
 }
 
+// --- TestFeeKeyIsolationFromVaultKeys (T029) ---
+
+func TestFeeKeyIsolationFromVaultKeys(t *testing.T) {
+	for _, nc := range networkConfigs() {
+		t.Run(nc.name, func(t *testing.T) {
+			w, _, _ := createTestWallet(t, nc.network)
+
+			// 1. Derive fee key (ExternalChain, index 0)
+			feeKey, err := w.DeriveFeeKey(wallet.ExternalChain, 0)
+			require.NoError(t, err)
+			require.NotNil(t, feeKey.PrivateKey)
+			require.NotNil(t, feeKey.PublicKey)
+
+			// Fee key path should be m/44'/236'/0'/0/0 (fee account = 0)
+			assert.Equal(t, "m/44'/236'/0'/0/0", feeKey.Path,
+				"fee key should use account 0 (fee account)")
+
+			// 2. Derive vault root key (vault 0) -> account 1
+			vaultRootKey, err := w.DeriveVaultRootKey(0)
+			require.NoError(t, err)
+			require.NotNil(t, vaultRootKey.PrivateKey)
+			require.NotNil(t, vaultRootKey.PublicKey)
+
+			// Vault root path should be m/44'/236'/1'/0/0 (vault account starts at 1)
+			assert.Equal(t, "m/44'/236'/1'/0/0", vaultRootKey.Path,
+				"vault root key should use account 1 (DefaultVaultAccount)")
+
+			// 3. Derive a node key under vault 0
+			nodeKey, err := w.DeriveNodeKey(0, []uint32{1, 2}, nil)
+			require.NoError(t, err)
+			require.NotNil(t, nodeKey.PrivateKey)
+			require.NotNil(t, nodeKey.PublicKey)
+
+			// Node key should be under account 1 as well
+			assert.Equal(t, "m/44'/236'/1'/0/0/1'/2'", nodeKey.Path,
+				"node key should be under vault account")
+
+			// 4. Verify all three keys are different
+			feePub := feeKey.PublicKey.Compressed()
+			vaultRootPub := vaultRootKey.PublicKey.Compressed()
+			nodePub := nodeKey.PublicKey.Compressed()
+
+			assert.NotEqual(t, feePub, vaultRootPub,
+				"fee key must differ from vault root key")
+			assert.NotEqual(t, feePub, nodePub,
+				"fee key must differ from node key")
+			assert.NotEqual(t, vaultRootPub, nodePub,
+				"vault root key must differ from node key")
+
+			// 5. Encrypt with node key, verify fee key CANNOT decrypt
+			plaintext := []byte("Isolated encryption test on " + nc.name)
+			encResult, err := method42.Encrypt(plaintext, nodeKey.PrivateKey, nodeKey.PublicKey, method42.AccessPrivate)
+			require.NoError(t, err)
+
+			// Fee key should NOT be able to decrypt content encrypted with node key
+			_, err = method42.Decrypt(encResult.Ciphertext, feeKey.PrivateKey, feeKey.PublicKey, encResult.KeyHash, method42.AccessPrivate)
+			assert.Error(t, err, "fee key must not decrypt content encrypted with node key")
+
+			// Vault root key should also NOT be able to decrypt (different derivation path)
+			_, err = method42.Decrypt(encResult.Ciphertext, vaultRootKey.PrivateKey, vaultRootKey.PublicKey, encResult.KeyHash, method42.AccessPrivate)
+			assert.Error(t, err, "vault root key must not decrypt content encrypted with node key")
+
+			// 6. Verify a second fee key (different index) is also isolated
+			feeKey2, err := w.DeriveFeeKey(wallet.ExternalChain, 1)
+			require.NoError(t, err)
+			assert.Equal(t, "m/44'/236'/0'/0/1", feeKey2.Path)
+			assert.NotEqual(t, feePub, feeKey2.PublicKey.Compressed(),
+				"different fee key indices should produce different keys")
+		})
+	}
+}
+
 // --- TestEmptyAndLargeContentCrypto ---
 
 func TestEmptyAndLargeContentCrypto(t *testing.T) {

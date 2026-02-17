@@ -461,3 +461,316 @@ func TestSizeAfterOverwrite(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(24), size2)
 }
+
+// =============================================================================
+// Supplementary tests — addressing gaps identified in AUDIT.md
+// =============================================================================
+
+// --- Gap 9: Nil key hash on Get/Has/Delete/Size ---
+
+func TestGet_NilKeyHash(t *testing.T) {
+	store := newTestStore(t)
+	_, err := store.Get(nil)
+	assert.ErrorIs(t, err, ErrInvalidKeyHash)
+}
+
+func TestHas_NilKeyHash(t *testing.T) {
+	store := newTestStore(t)
+	exists, err := store.Has(nil)
+	assert.ErrorIs(t, err, ErrInvalidKeyHash)
+	assert.False(t, exists)
+}
+
+func TestDelete_NilKeyHash(t *testing.T) {
+	store := newTestStore(t)
+	err := store.Delete(nil)
+	assert.ErrorIs(t, err, ErrInvalidKeyHash)
+}
+
+func TestSize_NilKeyHash(t *testing.T) {
+	store := newTestStore(t)
+	size, err := store.Size(nil)
+	assert.ErrorIs(t, err, ErrInvalidKeyHash)
+	assert.Equal(t, int64(0), size)
+}
+
+// --- Gap 7 & 8: List resilience with corrupt/junk entries ---
+
+func TestList_CorruptEntries(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir)
+	require.NoError(t, err)
+
+	// Put a legitimate item so we have exactly 1 valid entry.
+	validKey := makeKeyHash(0xAA)
+	require.NoError(t, store.Put(validKey, []byte("valid data")))
+
+	hexHash := hex.EncodeToString(validKey)
+	shardDir := filepath.Join(dir, hexHash[:2])
+
+	tests := []struct {
+		name     string
+		setup    func(t *testing.T)
+		wantLen  int
+		wantKeys [][]byte
+	}{
+		{
+			name: "non-hex file in shard directory",
+			setup: func(t *testing.T) {
+				t.Helper()
+				// Place a .DS_Store-like junk file in the shard directory.
+				err := os.WriteFile(filepath.Join(shardDir, ".DS_Store"), []byte("junk"), 0600)
+				require.NoError(t, err)
+			},
+			wantLen:  1,
+			wantKeys: [][]byte{validKey},
+		},
+		{
+			name: "wrong-length hex file in shard directory",
+			setup: func(t *testing.T) {
+				t.Helper()
+				// Create a hex-named file with only 16 bytes (32 hex chars) instead of 32 bytes (64 hex chars).
+				shortHex := hex.EncodeToString(make([]byte, 16))
+				err := os.WriteFile(filepath.Join(shardDir, shortHex), []byte("short"), 0600)
+				require.NoError(t, err)
+			},
+			wantLen:  1,
+			wantKeys: [][]byte{validKey},
+		},
+		{
+			name: "subdirectory inside shard directory",
+			setup: func(t *testing.T) {
+				t.Helper()
+				err := os.MkdirAll(filepath.Join(shardDir, "nested_subdir"), 0700)
+				require.NoError(t, err)
+			},
+			wantLen:  1,
+			wantKeys: [][]byte{validKey},
+		},
+		{
+			name: "non-2-char directory in base directory",
+			setup: func(t *testing.T) {
+				t.Helper()
+				// Create a directory with a long name that is not a valid shard.
+				err := os.MkdirAll(filepath.Join(dir, "longdirname"), 0700)
+				require.NoError(t, err)
+			},
+			wantLen:  1,
+			wantKeys: [][]byte{validKey},
+		},
+		{
+			name: "regular file (not directory) in base directory",
+			setup: func(t *testing.T) {
+				t.Helper()
+				// Place a file directly in baseDir (not a shard directory).
+				err := os.WriteFile(filepath.Join(dir, "README.txt"), []byte("readme"), 0600)
+				require.NoError(t, err)
+			},
+			wantLen:  1,
+			wantKeys: [][]byte{validKey},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.setup(t)
+
+			keys, err := store.List()
+			require.NoError(t, err)
+			assert.Len(t, keys, tt.wantLen)
+
+			if tt.wantKeys != nil {
+				found := make(map[string]bool)
+				for _, k := range keys {
+					found[hex.EncodeToString(k)] = true
+				}
+				for _, wk := range tt.wantKeys {
+					assert.True(t, found[hex.EncodeToString(wk)],
+						"expected key %s not found in List result", hex.EncodeToString(wk))
+				}
+			}
+		})
+	}
+}
+
+// --- Gap 5: Concurrent delete ---
+
+func TestConcurrentDelete(t *testing.T) {
+	store := newTestStore(t)
+	const goroutines = 10
+
+	// Pre-populate with items to delete.
+	for i := 0; i < goroutines; i++ {
+		keyHash := makeKeyHash(byte(i))
+		require.NoError(t, store.Put(keyHash, []byte("data to delete")))
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			keyHash := makeKeyHash(byte(idx))
+			err := store.Delete(keyHash)
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify all items deleted.
+	keys, err := store.List()
+	require.NoError(t, err)
+	assert.Empty(t, keys)
+}
+
+// --- Gap 6: Concurrent list while writing ---
+
+func TestConcurrentList(t *testing.T) {
+	store := newTestStore(t)
+	const writers = 5
+	const deleters = 5
+	const listers = 5
+
+	// Seed some initial data.
+	for i := 0; i < writers; i++ {
+		keyHash := makeKeyHash(byte(i))
+		require.NoError(t, store.Put(keyHash, []byte("seed data")))
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(writers + deleters + listers)
+
+	// Writers: put new items concurrently.
+	for i := writers; i < writers*2; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			keyHash := makeKeyHash(byte(idx))
+			err := store.Put(keyHash, []byte("concurrent data"))
+			assert.NoError(t, err)
+		}(i)
+	}
+
+	// Deleters: delete the seeded items concurrently.
+	for i := 0; i < deleters; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			keyHash := makeKeyHash(byte(idx))
+			// Delete may succeed or the item may already be gone by the time
+			// this goroutine runs — both are acceptable.
+			_ = store.Delete(keyHash)
+		}(i)
+	}
+
+	// Listers: call List concurrently.
+	for i := 0; i < listers; i++ {
+		go func() {
+			defer wg.Done()
+			keys, err := store.List()
+			assert.NoError(t, err)
+			// We cannot predict the exact count, but keys must be a valid slice.
+			assert.NotNil(t, keys)
+		}()
+	}
+
+	wg.Wait()
+}
+
+// --- Gap 3: ErrIOFailure paths ---
+
+func TestPut_ReadOnlyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir)
+	require.NoError(t, err)
+
+	// Make the base directory read-only so shard creation fails.
+	require.NoError(t, os.Chmod(dir, 0500))
+	t.Cleanup(func() {
+		// Restore permissions so t.TempDir() cleanup succeeds.
+		os.Chmod(dir, 0700)
+	})
+
+	keyHash := makeKeyHash(0x01)
+	err = store.Put(keyHash, []byte("data"))
+	assert.ErrorIs(t, err, ErrIOFailure)
+}
+
+func TestGet_CorruptedFile(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir)
+	require.NoError(t, err)
+
+	keyHash := makeKeyHash(0x01)
+	require.NoError(t, store.Put(keyHash, []byte("data")))
+
+	// Make the file unreadable (permission denied).
+	path := KeyHashToPath(dir, keyHash)
+	require.NoError(t, os.Chmod(path, 0000))
+	t.Cleanup(func() {
+		os.Chmod(path, 0600)
+	})
+
+	_, err = store.Get(keyHash)
+	assert.ErrorIs(t, err, ErrIOFailure)
+}
+
+func TestNewFileStore_PathIsFile(t *testing.T) {
+	// When the base dir path is an existing regular file, MkdirAll fails.
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "notadir")
+	require.NoError(t, os.WriteFile(filePath, []byte("I am a file"), 0600))
+
+	_, err := NewFileStore(filePath)
+	assert.ErrorIs(t, err, ErrIOFailure)
+}
+
+// --- Gap 12: Double delete ---
+
+func TestDelete_DoubleDelete(t *testing.T) {
+	store := newTestStore(t)
+	keyHash := makeKeyHash(0x01)
+
+	require.NoError(t, store.Put(keyHash, []byte("data")))
+	require.NoError(t, store.Delete(keyHash))
+
+	err := store.Delete(keyHash)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+// --- Gap 4: KeyHashToPath edge cases ---
+
+func TestKeyHashToPath_AllZeros(t *testing.T) {
+	keyHash := make([]byte, 32) // all zeros
+	hexHash := hex.EncodeToString(keyHash)
+	path := KeyHashToPath("/base", keyHash)
+	expected := filepath.Join("/base", "00", hexHash)
+	assert.Equal(t, expected, path)
+}
+
+func TestKeyHashToPath_AllOnes(t *testing.T) {
+	keyHash := bytes.Repeat([]byte{0xFF}, 32) // all 0xFF
+	hexHash := hex.EncodeToString(keyHash)
+	path := KeyHashToPath("/base", keyHash)
+	expected := filepath.Join("/base", "ff", hexHash)
+	assert.Equal(t, expected, path)
+}
+
+// --- Gap 10: Size edge case with externally truncated file ---
+
+func TestSize_ZeroBytesFile(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewFileStore(dir)
+	require.NoError(t, err)
+
+	keyHash := makeKeyHash(0x01)
+	require.NoError(t, store.Put(keyHash, []byte("data")))
+
+	// Externally truncate the file to 0 bytes.
+	path := KeyHashToPath(dir, keyHash)
+	require.NoError(t, os.Truncate(path, 0))
+
+	size, err := store.Size(keyHash)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), size)
+}

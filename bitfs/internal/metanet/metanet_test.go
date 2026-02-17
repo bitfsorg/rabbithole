@@ -3,7 +3,9 @@ package metanet
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1400,4 +1402,630 @@ func TestFullWorkflow_CreateAndResolve(t *testing.T) {
 
 	// Test: NextChildIndex not reused
 	assert.Equal(t, uint32(2), docsDir.NextChildIndex)
+}
+
+// ============================================================================
+// Supplementary tests — filling critical quality gaps from AUDIT.md
+// ============================================================================
+
+// --- Priority 1: Circular link detection ---
+// TestFollowLink_CircularLinks verifies that a cycle A->B->C->A is caught
+// by the depth counter and returns ErrLinkDepthExceeded rather than looping forever.
+func TestFollowLink_CircularLinks(t *testing.T) {
+	store := newMockStore()
+
+	pkA := makePubKey(0xA1)
+	pkB := makePubKey(0xB2)
+	pkC := makePubKey(0xC3)
+
+	// A -> B -> C -> A (cycle)
+	linkA := makeLinkNode(pkA, pkB, LinkTypeSoft)
+	linkB := makeLinkNode(pkB, pkC, LinkTypeSoft)
+	linkC := makeLinkNode(pkC, pkA, LinkTypeSoft)
+	store.addNode(linkA)
+	store.addNode(linkB)
+	store.addNode(linkC)
+
+	_, err := FollowLink(store, linkA, MaxLinkDepth)
+	assert.ErrorIs(t, err, ErrLinkDepthExceeded, "circular link chain must be caught by depth counter")
+}
+
+// --- Priority 2: Hard link to directory rejection ---
+// TestAddChild_HardLinkToDirectory verifies that AddChild rejects creating
+// a hard link (non-hardened child entry) targeting a directory node.
+//
+// EXPECTED TO FAIL: The spec (section 4.3) says "only FILE nodes can be
+// hard-linked; directory hard links are forbidden," but AddChild currently
+// does NOT validate this. This test documents the gap — AddChild should
+// return ErrHardLinkToDirectory when the nodeType is NodeTypeDir and the
+// entry would create a hard link (Hardened=false).
+//
+// TODO: Implement hard link validation in AddChild.
+func TestAddChild_HardLinkToDirectory(t *testing.T) {
+	dir := makeRootDir(makePubKey(0x01))
+
+	// First add a directory child normally (hardened=true is fine)
+	childPubKey := makePubKey(0x20)
+	_, err := AddChild(dir, "subdir", NodeTypeDir, childPubKey, true)
+	require.NoError(t, err, "hardened directory child should succeed")
+
+	// Attempting to add another entry with the same PubKey as a DIR (hard link)
+	// should be rejected because hard links to directories are forbidden.
+	_, err = AddChild(dir, "subdir-link", NodeTypeDir, childPubKey, false)
+	assert.ErrorIs(t, err, ErrHardLinkToDirectory,
+		"hard links to directories should be rejected per spec section 4.3")
+}
+
+// --- Priority 3: InheritPricePerKB cycle guard ---
+// TestInheritPricePerKB_CycleGuard verifies that if a node's Parent chain
+// forms a cycle (node -> parent -> node), InheritPricePerKB does not loop
+// infinitely. Currently, the implementation has NO cycle guard; it relies
+// on the tree being well-formed. This test documents the risk.
+func TestInheritPricePerKB_CycleGuard(t *testing.T) {
+	store := newMockStore()
+
+	pkA := makePubKey(0xA1)
+	pkB := makePubKey(0xB2)
+
+	// nodeA.Parent = pkB, nodeB.Parent = pkA => cycle
+	nodeA := &Node{
+		PNode:      pkA,
+		Parent:     pkB,
+		PricePerKB: 0,
+		Metadata:   make(map[string]string),
+	}
+	nodeB := &Node{
+		PNode:      pkB,
+		Parent:     pkA,
+		PricePerKB: 0,
+		Metadata:   make(map[string]string),
+	}
+	store.addNode(nodeA)
+	store.addNode(nodeB)
+
+	// This will loop forever if there's no cycle guard.
+	// We run it in a goroutine with a timeout to avoid hanging the test suite.
+	done := make(chan struct{})
+	var price uint64
+	var err error
+	go func() {
+		price, err = InheritPricePerKB(store, nodeA)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// With the cycle guard, InheritPricePerKB should return an error
+		// after exceeding MaxLinkDepth iterations.
+		assert.Error(t, err, "InheritPricePerKB should return an error on cyclic parent chain")
+		assert.ErrorIs(t, err, ErrLinkDepthExceeded,
+			"cyclic parent chain should trigger ErrLinkDepthExceeded")
+		assert.Equal(t, uint64(0), price, "price should be 0 on error")
+	case <-time.After(2 * time.Second):
+		t.Fatal("InheritPricePerKB timed out — cycle guard not working")
+	}
+}
+
+// --- Priority 4: FollowLink exactly at MaxDepth ---
+// TestFollowLink_ExactlyAtMaxDepth verifies that a link chain of exactly 10
+// links (MaxLinkDepth) ending with a non-link node succeeds. This is the
+// boundary test for off-by-one errors.
+func TestFollowLink_ExactlyAtMaxDepth(t *testing.T) {
+	store := newMockStore()
+
+	// Create a chain of 10 links, link[0] -> link[1] -> ... -> link[9] -> file
+	// Total 10 hops = MaxLinkDepth, the file should be reached at the 10th iteration
+	filePK := makePubKey(0xFF)
+	file := makeFileNode(filePK, makePubKey(0x01), makeTxID(0xFE))
+	store.addNode(file)
+
+	// Build the chain backwards: link[9] -> file, link[8] -> link[9], etc.
+	prevTarget := filePK
+	var firstLink *Node
+	for i := 9; i >= 0; i-- {
+		pk := makePubKey(byte(0xE0 + i))
+		link := makeLinkNode(pk, prevTarget, LinkTypeSoft)
+		link.TxID = makeTxID(byte(0xD0 + i))
+		store.addNode(link)
+		prevTarget = pk
+		if i == 0 {
+			firstLink = link
+		}
+	}
+
+	// Chain of 10 links -> file: should succeed because the loop runs MaxLinkDepth
+	// iterations, and on the 10th iteration it reaches the file (non-link).
+	resolved, err := FollowLink(store, firstLink, MaxLinkDepth)
+	require.NoError(t, err, "chain of exactly MaxLinkDepth links to a file should succeed")
+	assert.Equal(t, NodeTypeFile, resolved.Type)
+	assert.Equal(t, filePK, resolved.PNode)
+}
+
+// --- Priority 5: ResolvePath — link to directory then traverse into it ---
+// TestResolvePath_LinkToDirectoryThenTraverse verifies that resolving
+// "link-to-dir/file.txt" works when link-to-dir points to a directory
+// containing file.txt.
+func TestResolvePath_LinkToDirectoryThenTraverse(t *testing.T) {
+	store := newMockStore()
+
+	rootPK := makePubKey(0x01)
+	dirPK := makePubKey(0x20)
+	filePK := makePubKey(0x30)
+	linkPK := makePubKey(0x40)
+
+	// The target directory with a file child
+	dir := makeDirNode(dirPK, rootPK, makeTxID(0x22))
+	dir.Children = []ChildEntry{
+		{Index: 0, Name: "file.txt", Type: NodeTypeFile, PubKey: filePK},
+	}
+	store.addNode(dir)
+
+	// The file inside the directory
+	file := makeFileNode(filePK, dirPK, makeTxID(0x33))
+	file.MimeType = "text/plain"
+	store.addNode(file)
+
+	// Soft link targeting the directory
+	link := makeLinkNode(linkPK, dirPK, LinkTypeSoft)
+	store.addNode(link)
+
+	// Root directory with the link as a child
+	root := makeRootDir(rootPK)
+	root.Children = []ChildEntry{
+		{Index: 0, Name: "link-to-dir", Type: NodeTypeLink, PubKey: linkPK},
+	}
+
+	// Resolve "link-to-dir/file.txt": link resolves to dir, then traverse into dir for file.txt
+	result, err := ResolvePath(store, root, []string{"link-to-dir", "file.txt"})
+	require.NoError(t, err, "link-to-dir should resolve to a directory, then find file.txt inside it")
+	assert.Equal(t, NodeTypeFile, result.Node.Type)
+	assert.Equal(t, "text/plain", result.Node.MimeType)
+	assert.Equal(t, []string{"link-to-dir", "file.txt"}, result.Path)
+}
+
+// --- Priority 6: ResolvePath — remote link error propagation ---
+// TestResolvePath_RemoteLinkError verifies that when path traversal
+// hits a remote link, ErrRemoteLinkNotSupported propagates up.
+func TestResolvePath_RemoteLinkError(t *testing.T) {
+	store := newMockStore()
+
+	rootPK := makePubKey(0x01)
+	linkPK := makePubKey(0x40)
+
+	// Remote soft link
+	link := &Node{
+		TxID:     makeTxID(0x44),
+		PNode:    linkPK,
+		Type:     NodeTypeLink,
+		LinkType: LinkTypeSoftRemote,
+		Domain:   "remote.example.com/path",
+		Metadata: make(map[string]string),
+	}
+	store.addNode(link)
+
+	root := makeRootDir(rootPK)
+	root.Children = []ChildEntry{
+		{Index: 0, Name: "remote-link", Type: NodeTypeLink, PubKey: linkPK},
+	}
+
+	_, err := ResolvePath(store, root, []string{"remote-link"})
+	assert.ErrorIs(t, err, ErrRemoteLinkNotSupported,
+		"remote link in path should propagate ErrRemoteLinkNotSupported")
+}
+
+// --- Priority 7: ResolvePath — depth exceeded through resolve ---
+// TestResolvePath_DepthExceededError verifies that when path traversal
+// encounters a link chain that exceeds max depth, ErrLinkDepthExceeded propagates.
+func TestResolvePath_DepthExceededError(t *testing.T) {
+	store := newMockStore()
+
+	rootPK := makePubKey(0x01)
+
+	// Create a chain of 12 links (exceeds MaxLinkDepth)
+	for i := 0; i < 12; i++ {
+		pk := makePubKey(byte(0xA0 + i))
+		var target []byte
+		if i < 11 {
+			target = makePubKey(byte(0xA0 + i + 1))
+		} else {
+			target = makePubKey(0xFF) // unreachable terminal
+		}
+		link := makeLinkNode(pk, target, LinkTypeSoft)
+		link.TxID = makeTxID(byte(0xA0 + i))
+		store.addNode(link)
+	}
+
+	root := makeRootDir(rootPK)
+	root.Children = []ChildEntry{
+		{Index: 0, Name: "deep-link", Type: NodeTypeLink, PubKey: makePubKey(0xA0)},
+	}
+
+	_, err := ResolvePath(store, root, []string{"deep-link"})
+	assert.ErrorIs(t, err, ErrLinkDepthExceeded,
+		"link chain exceeding MaxLinkDepth should propagate ErrLinkDepthExceeded")
+}
+
+// --- Priority 8: ResolvePath — multiple ".." ---
+// TestResolvePath_MultipleDotDot verifies that paths like "a/b/../../c"
+// resolve correctly via multiple ".." back-navigation.
+func TestResolvePath_MultipleDotDot(t *testing.T) {
+	store := newMockStore()
+
+	rootPK := makePubKey(0x01)
+	aPK := makePubKey(0x10)
+	bPK := makePubKey(0x20)
+	cPK := makePubKey(0x30)
+
+	// root has children: a (dir), c (file)
+	// a has child: b (dir)
+	aDir := makeDirNode(aPK, rootPK, makeTxID(0x10))
+	aDir.Children = []ChildEntry{
+		{Index: 0, Name: "b", Type: NodeTypeDir, PubKey: bPK},
+	}
+	store.addNode(aDir)
+
+	bDir := makeDirNode(bPK, aPK, makeTxID(0x20))
+	store.addNode(bDir)
+
+	cFile := makeFileNode(cPK, rootPK, makeTxID(0x30))
+	cFile.MimeType = "text/csv"
+	store.addNode(cFile)
+
+	root := makeRootDir(rootPK)
+	root.Children = []ChildEntry{
+		{Index: 0, Name: "a", Type: NodeTypeDir, PubKey: aPK},
+		{Index: 1, Name: "c", Type: NodeTypeFile, PubKey: cPK},
+	}
+
+	// a/b/../../c => root/c
+	result, err := ResolvePath(store, root, []string{"a", "b", "..", "..", "c"})
+	require.NoError(t, err, "a/b/../../c should resolve to root/c")
+	assert.Equal(t, NodeTypeFile, result.Node.Type)
+	assert.Equal(t, "text/csv", result.Node.MimeType)
+}
+
+// --- Priority 9: RenameChild — nil node ---
+func TestRenameChild_NilDir(t *testing.T) {
+	err := RenameChild(nil, "old", "new")
+	assert.ErrorIs(t, err, ErrNilParam,
+		"RenameChild on nil directory should return ErrNilParam")
+}
+
+// --- Priority 10: NextChildIndex — nil node ---
+func TestNextChildIndex_NilDir(t *testing.T) {
+	_, err := NextChildIndex(nil)
+	assert.ErrorIs(t, err, ErrNilParam,
+		"NextChildIndex on nil directory should return ErrNilParam")
+}
+
+// ============================================================================
+// Additional gap tests from AUDIT.md (medium/high priority)
+// ============================================================================
+
+// TestFollowLink_SoftLinkToDirectory verifies that a soft link pointing
+// to a directory node resolves correctly (not just files).
+func TestFollowLink_SoftLinkToDirectory(t *testing.T) {
+	store := newMockStore()
+
+	dirPK := makePubKey(0x42)
+	dir := makeDirNode(dirPK, makePubKey(0x01), makeTxID(0x55))
+	dir.Children = []ChildEntry{
+		{Index: 0, Name: "child.txt", Type: NodeTypeFile, PubKey: makePubKey(0x99)},
+	}
+	store.addNode(dir)
+
+	link := makeLinkNode(makePubKey(0x30), dirPK, LinkTypeSoft)
+
+	resolved, err := FollowLink(store, link, MaxLinkDepth)
+	require.NoError(t, err, "soft link to directory should resolve successfully")
+	assert.Equal(t, NodeTypeDir, resolved.Type)
+	assert.Equal(t, dirPK, resolved.PNode)
+	assert.Len(t, resolved.Children, 1)
+}
+
+// TestFollowLink_MaxDepthZero verifies that maxDepth=0 is treated as MaxLinkDepth.
+func TestFollowLink_MaxDepthZero(t *testing.T) {
+	store := newMockStore()
+
+	filePK := makePubKey(0x42)
+	file := makeFileNode(filePK, makePubKey(0x01), makeTxID(0x55))
+	store.addNode(file)
+
+	link := makeLinkNode(makePubKey(0x30), filePK, LinkTypeSoft)
+
+	// maxDepth=0 should be treated as MaxLinkDepth per the code: if maxDepth <= 0 { maxDepth = MaxLinkDepth }
+	resolved, err := FollowLink(store, link, 0)
+	require.NoError(t, err, "maxDepth=0 should default to MaxLinkDepth and resolve successfully")
+	assert.Equal(t, NodeTypeFile, resolved.Type)
+}
+
+// TestFollowLink_MaxDepthOne verifies that maxDepth=1 resolves a single link
+// but fails on a chained link.
+func TestFollowLink_MaxDepthOne(t *testing.T) {
+	store := newMockStore()
+
+	filePK := makePubKey(0x42)
+	file := makeFileNode(filePK, makePubKey(0x01), makeTxID(0x55))
+	store.addNode(file)
+
+	// Single link -> file: should succeed with maxDepth=1
+	link1 := makeLinkNode(makePubKey(0x30), filePK, LinkTypeSoft)
+	resolved, err := FollowLink(store, link1, 1)
+	require.NoError(t, err, "single link with maxDepth=1 should succeed")
+	assert.Equal(t, NodeTypeFile, resolved.Type)
+
+	// Chained: link2 -> link1 -> file: should fail with maxDepth=1
+	link1PK := makePubKey(0x30)
+	store.addNode(link1)
+	link2 := makeLinkNode(makePubKey(0x20), link1PK, LinkTypeSoft)
+
+	_, err = FollowLink(store, link2, 1)
+	assert.ErrorIs(t, err, ErrLinkDepthExceeded,
+		"chained link with maxDepth=1 should exceed depth")
+}
+
+// TestLatestVersion_AllNils verifies that a slice of all nil entries returns nil
+// without panic.
+func TestLatestVersion_AllNils(t *testing.T) {
+	result := LatestVersion([]*Node{nil, nil, nil})
+	assert.Nil(t, result, "all-nil list should return nil")
+}
+
+// TestLatestVersion_UnconfirmedVsConfirmed verifies that a confirmed node
+// (BlockHeight>0) wins over an unconfirmed node (BlockHeight=0).
+func TestLatestVersion_UnconfirmedVsConfirmed(t *testing.T) {
+	unconfirmed := &Node{BlockHeight: 0, Timestamp: 9999, TxID: makeTxID(0xFF)}
+	confirmed := &Node{BlockHeight: 100, Timestamp: 1000, TxID: makeTxID(0x01)}
+
+	result := LatestVersion([]*Node{unconfirmed, confirmed})
+	assert.Equal(t, confirmed, result,
+		"confirmed node (BlockHeight>0) should win over unconfirmed (BlockHeight=0)")
+}
+
+// TestRemoveChild_MiddlePreservesOrder verifies that removing a child from
+// the middle of the children list preserves the order of remaining entries.
+func TestRemoveChild_MiddlePreservesOrder(t *testing.T) {
+	dir := makeRootDir(makePubKey(0x01))
+	_, err := AddChild(dir, "a.txt", NodeTypeFile, makePubKey(0x10), false)
+	require.NoError(t, err)
+	_, err = AddChild(dir, "b.txt", NodeTypeFile, makePubKey(0x11), false)
+	require.NoError(t, err)
+	_, err = AddChild(dir, "c.txt", NodeTypeFile, makePubKey(0x12), false)
+	require.NoError(t, err)
+
+	err = RemoveChild(dir, "b.txt")
+	require.NoError(t, err)
+
+	assert.Len(t, dir.Children, 2)
+	assert.Equal(t, "a.txt", dir.Children[0].Name, "first child preserved")
+	assert.Equal(t, "c.txt", dir.Children[1].Name, "third child preserved after middle removal")
+	assert.Equal(t, uint32(0), dir.Children[0].Index, "first child index preserved")
+	assert.Equal(t, uint32(2), dir.Children[1].Index, "third child index preserved")
+}
+
+// TestRenameChild_PreservesFields verifies that renaming preserves all
+// non-name fields (Index, Type, PubKey, Hardened).
+func TestRenameChild_PreservesFields(t *testing.T) {
+	dir := makeRootDir(makePubKey(0x01))
+	pk := makePubKey(0x10)
+	_, err := AddChild(dir, "original.txt", NodeTypeFile, pk, true)
+	require.NoError(t, err)
+
+	// Record original values
+	origEntry, found := FindChild(dir, "original.txt")
+	require.True(t, found)
+	origIndex := origEntry.Index
+	origType := origEntry.Type
+	origPubKey := make([]byte, len(origEntry.PubKey))
+	copy(origPubKey, origEntry.PubKey)
+	origHardened := origEntry.Hardened
+
+	err = RenameChild(dir, "original.txt", "renamed.txt")
+	require.NoError(t, err)
+
+	entry, found := FindChild(dir, "renamed.txt")
+	require.True(t, found)
+	assert.Equal(t, origIndex, entry.Index, "Index should be preserved")
+	assert.Equal(t, origType, entry.Type, "Type should be preserved")
+	assert.Equal(t, origPubKey, entry.PubKey, "PubKey should be preserved")
+	assert.Equal(t, origHardened, entry.Hardened, "Hardened should be preserved")
+}
+
+// TestAddChild_NilPubKey verifies that AddChild with nil PubKey returns ErrInvalidPubKey.
+func TestAddChild_NilPubKey(t *testing.T) {
+	dir := makeRootDir(makePubKey(0x01))
+	_, err := AddChild(dir, "file.txt", NodeTypeFile, nil, false)
+	assert.ErrorIs(t, err, ErrInvalidPubKey,
+		"nil PubKey (length 0) should return ErrInvalidPubKey")
+}
+
+// TestAddChild_PubKeyCopied verifies that mutating the original PubKey slice
+// after AddChild does not affect the stored entry.
+func TestAddChild_PubKeyCopied(t *testing.T) {
+	dir := makeRootDir(makePubKey(0x01))
+	pk := makePubKey(0x10)
+	_, err := AddChild(dir, "file.txt", NodeTypeFile, pk, false)
+	require.NoError(t, err)
+
+	// Mutate the original PubKey
+	pk[0] = 0xFF
+	pk[1] = 0xFF
+
+	// Stored entry should NOT be affected
+	entry, found := FindChild(dir, "file.txt")
+	require.True(t, found)
+	assert.Equal(t, byte(0x02), entry.PubKey[0], "stored PubKey should not be affected by caller mutation")
+	assert.Equal(t, byte(0x10), entry.PubKey[1], "stored PubKey should be an independent copy")
+}
+
+// TestListDirectory_LinkNode verifies that ListDirectory on a LINK node
+// returns ErrNotDirectory.
+func TestListDirectory_LinkNode(t *testing.T) {
+	link := &Node{Type: NodeTypeLink, Metadata: make(map[string]string)}
+	_, err := ListDirectory(link)
+	assert.ErrorIs(t, err, ErrNotDirectory,
+		"ListDirectory on LINK node should return ErrNotDirectory")
+}
+
+// TestFindChild_EmptyChildren verifies that FindChild on a dir with nil
+// (empty) Children returns false without panic.
+func TestFindChild_EmptyChildren(t *testing.T) {
+	dir := &Node{Type: NodeTypeDir, Children: nil, Metadata: make(map[string]string)}
+	_, found := FindChild(dir, "anything")
+	assert.False(t, found, "FindChild on dir with nil Children should return false")
+}
+
+// TestSerializePayload_RemoteLinkWithDomain verifies that a remote link
+// with Domain field round-trips correctly through serialize/deserialize.
+func TestSerializePayload_RemoteLinkWithDomain(t *testing.T) {
+	node := &Node{
+		Version:    1,
+		Type:       NodeTypeLink,
+		Op:         OpCreate,
+		LinkTarget: makePubKey(0x42),
+		LinkType:   LinkTypeSoftRemote,
+		Domain:     "cdn.example.com/files",
+		Metadata:   make(map[string]string),
+	}
+
+	payload, err := SerializePayload(node)
+	require.NoError(t, err)
+
+	decoded := &Node{Metadata: make(map[string]string)}
+	err = deserializePayload(payload, decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, NodeTypeLink, decoded.Type)
+	assert.Equal(t, LinkTypeSoftRemote, decoded.LinkType)
+	assert.Equal(t, node.LinkTarget, decoded.LinkTarget)
+	assert.Equal(t, "cdn.example.com/files", decoded.Domain)
+}
+
+// TestResolvePath_DotAndDotDotMixed verifies that mixed "." and ".."
+// components resolve correctly, e.g., "./a/.././b" resolves to "b".
+func TestResolvePath_DotAndDotDotMixed(t *testing.T) {
+	store := newMockStore()
+
+	rootPK := makePubKey(0x01)
+	aPK := makePubKey(0x10)
+	bPK := makePubKey(0x20)
+
+	aDir := makeDirNode(aPK, rootPK, makeTxID(0x10))
+	store.addNode(aDir)
+
+	bFile := makeFileNode(bPK, rootPK, makeTxID(0x20))
+	bFile.MimeType = "text/plain"
+	store.addNode(bFile)
+
+	root := makeRootDir(rootPK)
+	root.Children = []ChildEntry{
+		{Index: 0, Name: "a", Type: NodeTypeDir, PubKey: aPK},
+		{Index: 1, Name: "b", Type: NodeTypeFile, PubKey: bPK},
+	}
+
+	// ./a/.././b => "." no-op, "a" enter dir, ".." back to root, "." no-op, "b" resolve file
+	result, err := ResolvePath(store, root, []string{".", "a", "..", ".", "b"})
+	require.NoError(t, err, "./a/.././b should resolve to b")
+	assert.Equal(t, NodeTypeFile, result.Node.Type)
+	assert.Equal(t, "text/plain", result.Node.MimeType)
+}
+
+// TestResolvePath_RootResult verifies that resolving empty path returns
+// nil Entry and nil Parent for the root node.
+func TestResolvePath_RootResult(t *testing.T) {
+	store := newMockStore()
+	root := makeRootDir(makePubKey(0x01))
+
+	result, err := ResolvePath(store, root, []string{})
+	require.NoError(t, err)
+	assert.Equal(t, root, result.Node)
+	assert.Nil(t, result.Entry, "root resolution should have nil Entry")
+	assert.Nil(t, result.Parent, "root resolution should have nil Parent")
+	assert.Empty(t, result.Path, "root resolution should have empty Path")
+}
+
+// TestValidateChildName_Unicode verifies that Unicode characters (Chinese, emoji)
+// are accepted as valid child names.
+func TestValidateChildName_Unicode(t *testing.T) {
+	tests := []struct {
+		name    string
+		wantErr bool
+	}{
+		{"文档.pdf", false},
+		{"数据目录", false},
+		{"report-2026-日本語.txt", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateChildName(tt.name)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err, "Unicode name should be accepted")
+			}
+		})
+	}
+}
+
+// TestValidateChildName_LongName verifies that a very long name is accepted
+// (no length limit in current implementation).
+func TestValidateChildName_LongName(t *testing.T) {
+	longName := strings.Repeat("a", 1000)
+	err := validateChildName(longName)
+	assert.NoError(t, err, "long name should be accepted (no length limit in code)")
+}
+
+// TestSplitPath_WhitespaceOnly verifies that SplitPath with whitespace-only
+// input treats whitespace as a valid path component.
+func TestSplitPath_WhitespaceOnly(t *testing.T) {
+	parts, err := SplitPath(" ")
+	require.NoError(t, err)
+	assert.Equal(t, []string{" "}, parts,
+		"whitespace is valid per current implementation")
+}
+
+// TestParseNodeFromPushesWithTxID_InvalidTxIDLength verifies that a TxID
+// with length != 32 is silently ignored (documents current behavior).
+func TestParseNodeFromPushesWithTxID_InvalidTxIDLength(t *testing.T) {
+	pNode := makePubKey(0x01)
+	node := &Node{
+		Version:  1,
+		Type:     NodeTypeFile,
+		Metadata: make(map[string]string),
+	}
+	payload, err := SerializePayload(node)
+	require.NoError(t, err)
+
+	pushes := [][]byte{tx.MetaFlagBytes, pNode, nil, payload}
+
+	// TxID with wrong length (16 bytes instead of 32)
+	shortTxID := make([]byte, 16)
+	for i := range shortTxID {
+		shortTxID[i] = 0xAB
+	}
+
+	parsed, err := ParseNodeFromPushesWithTxID(pushes, shortTxID)
+	require.NoError(t, err, "invalid TxID length should not cause an error")
+	assert.Nil(t, parsed.TxID, "TxID with wrong length should be silently ignored")
+}
+
+// TestFollowLink_TwoNodeCycle verifies that a simple two-node cycle (A->B->A)
+// is caught by the depth counter.
+func TestFollowLink_TwoNodeCycle(t *testing.T) {
+	store := newMockStore()
+
+	pkA := makePubKey(0xA1)
+	pkB := makePubKey(0xB2)
+
+	linkA := makeLinkNode(pkA, pkB, LinkTypeSoft)
+	linkA.TxID = makeTxID(0xA1)
+	linkB := makeLinkNode(pkB, pkA, LinkTypeSoft)
+	linkB.TxID = makeTxID(0xB2)
+	store.addNode(linkA)
+	store.addNode(linkB)
+
+	_, err := FollowLink(store, linkA, MaxLinkDepth)
+	assert.ErrorIs(t, err, ErrLinkDepthExceeded,
+		"two-node cycle A->B->A should be caught by depth counter")
 }

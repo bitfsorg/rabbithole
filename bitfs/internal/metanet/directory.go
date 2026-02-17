@@ -1,6 +1,7 @@
 package metanet
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 )
@@ -53,6 +54,16 @@ func AddChild(dirNode *Node, name string, nodeType NodeType, pubKey []byte, hard
 	for _, child := range dirNode.Children {
 		if child.Name == name {
 			return nil, fmt.Errorf("%w: %q", ErrChildExists, name)
+		}
+	}
+
+	// Reject hard links to directories (spec section 4.3).
+	// A hard link is when a new entry shares a PubKey with an existing entry.
+	if nodeType == NodeTypeDir {
+		for _, child := range dirNode.Children {
+			if bytes.Equal(child.PubKey, pubKey) {
+				return nil, fmt.Errorf("%w: cannot hard-link directories", ErrHardLinkToDirectory)
+			}
 		}
 	}
 
