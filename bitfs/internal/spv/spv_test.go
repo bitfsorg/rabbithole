@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -831,4 +833,552 @@ func TestMemTxStore_DeleteWithPubKeyIndex(t *testing.T) {
 	txs, err := store.GetTxsByPubKey(pNode)
 	require.NoError(t, err)
 	assert.Empty(t, txs)
+}
+
+// =============================================================================
+// Supplementary tests — covering gaps identified in AUDIT.md
+// =============================================================================
+
+// --- Gap 1: VerifyTransaction -- invalid proof BlockHash length (verify.go line 54) ---
+
+func TestVerifyTransaction_InvalidBlockHashLength(t *testing.T) {
+	txHash := makeTxHash(0x42)
+
+	tx := &StoredTx{
+		TxID:  txHash,
+		RawTx: []byte("tx data"),
+		Proof: &MerkleProof{
+			TxID:      txHash,
+			Index:     0,
+			Nodes:     [][]byte{makeHash(0xAA)},
+			BlockHash: []byte{0x01, 0x02, 0x03}, // 3 bytes, not 32
+		},
+	}
+
+	err := VerifyTransaction(tx, NewMemHeaderStore())
+	assert.ErrorIs(t, err, ErrInvalidHeader)
+}
+
+// --- Gap 2: VerifyTransaction -- HeaderStore returns (nil, nil) (verify.go line 62-63) ---
+
+// mockNilHeaderStore returns (nil, nil) from GetHeader to test the defensive nil check.
+type mockNilHeaderStore struct{}
+
+func (m *mockNilHeaderStore) PutHeader(_ *BlockHeader) error                { return nil }
+func (m *mockNilHeaderStore) GetHeader(_ []byte) (*BlockHeader, error)      { return nil, nil }
+func (m *mockNilHeaderStore) GetHeaderByHeight(_ uint32) (*BlockHeader, error) { return nil, nil }
+func (m *mockNilHeaderStore) GetTip() (*BlockHeader, error)                 { return nil, nil }
+func (m *mockNilHeaderStore) GetHeaderCount() (uint64, error)               { return 0, nil }
+
+func TestVerifyTransaction_HeaderStoreReturnsNilNil(t *testing.T) {
+	txHash := makeTxHash(0x42)
+
+	tx := &StoredTx{
+		TxID:  txHash,
+		RawTx: []byte("tx data"),
+		Proof: &MerkleProof{
+			TxID:      txHash,
+			Index:     0,
+			Nodes:     [][]byte{makeHash(0xAA)},
+			BlockHash: makeHash(0xBB),
+		},
+	}
+
+	err := VerifyTransaction(tx, &mockNilHeaderStore{})
+	assert.ErrorIs(t, err, ErrHeaderNotFound)
+}
+
+// --- Gap 3: VerifyTransaction -- Merkle root mismatch (wrong proof nodes) ---
+
+func TestVerifyTransaction_MerkleRootMismatch(t *testing.T) {
+	txHash := makeTxHash(0x42)
+
+	// Build a valid proof structure but use wrong proof nodes
+	// so the computed root will not match the header's MerkleRoot.
+	wrongSibling := makeHash(0xDE) // arbitrary, won't produce the right root
+
+	// Create a header with a specific MerkleRoot
+	realMerkleRoot := makeHash(0xCC)
+	header := buildTestHeader(100, makeHash(0x00), realMerkleRoot)
+
+	headerStore := NewMemHeaderStore()
+	err := headerStore.PutHeader(header)
+	require.NoError(t, err)
+
+	tx := &StoredTx{
+		TxID:  txHash,
+		RawTx: []byte("tx data"),
+		Proof: &MerkleProof{
+			TxID:      txHash,
+			Index:     0,
+			Nodes:     [][]byte{wrongSibling}, // computes to wrong root
+			BlockHash: header.Hash,
+		},
+	}
+
+	err = VerifyTransaction(tx, headerStore)
+	assert.ErrorIs(t, err, ErrMerkleProofInvalid)
+}
+
+// --- Gap 4: VerifyHeaderChain -- invalid PrevBlock length ---
+
+func TestVerifyHeaderChain_InvalidPrevBlockLength(t *testing.T) {
+	h1 := buildTestHeader(1, makeHash(0x00), makeHash(0x11))
+	h2 := &BlockHeader{
+		Version:    1,
+		PrevBlock:  []byte{0x01, 0x02, 0x03, 0x04}, // 4 bytes, not 32
+		MerkleRoot: makeHash(0x22),
+		Timestamp:  1700000001,
+		Bits:       0x1d00ffff,
+		Nonce:      99,
+		Height:     2,
+	}
+	h2.Hash = ComputeHeaderHash(h2)
+
+	err := VerifyHeaderChain([]*BlockHeader{h1, h2})
+	assert.ErrorIs(t, err, ErrInvalidHeader)
+}
+
+// --- Gap 5: VerifyHeaderChain -- empty Hash auto-recomputation ---
+
+func TestVerifyHeaderChain_EmptyHashAutoRecompute(t *testing.T) {
+	// Build h1 with all valid fields but Hash=nil.
+	// VerifyHeaderChain should recompute the hash and still validate.
+	h1 := &BlockHeader{
+		Version:    1,
+		PrevBlock:  makeHash(0x00),
+		MerkleRoot: makeHash(0x11),
+		Timestamp:  1700000000,
+		Bits:       0x1d00ffff,
+		Nonce:      12345,
+		Height:     1,
+		Hash:       nil, // intentionally nil
+	}
+
+	// Compute what the hash should be for building h2's PrevBlock
+	expectedHash := ComputeHeaderHash(h1)
+
+	h2 := buildTestHeader(2, expectedHash, makeHash(0x22))
+
+	err := VerifyHeaderChain([]*BlockHeader{h1, h2})
+	assert.NoError(t, err, "chain should validate when prev header's Hash is recomputed")
+}
+
+// --- Gap 6: VerifyHeaderChain -- invalid recomputed hash ---
+
+func TestVerifyHeaderChain_InvalidRecomputedHash(t *testing.T) {
+	// Create a header where Hash is nil and ComputeHeaderHash returns nil.
+	// ComputeHeaderHash calls SerializeHeader which returns nil for nil input.
+	// However, the header itself is not nil; we need SerializeHeader to return
+	// a non-nil result. The only way ComputeHeaderHash returns nil is if
+	// SerializeHeader returns nil, which only happens for a nil header.
+	// Since VerifyHeaderChain already checks for nil headers before
+	// computing the hash, we cannot easily trigger this path without
+	// a header that somehow produces a non-32-byte hash. Since
+	// ComputeHeaderHash always returns either nil (for nil header) or
+	// 32 bytes, the only feasible trigger is a nil first header which
+	// is caught by the nil check.
+
+	// Instead, test the case where the first header is nil and triggers
+	// ErrNilParam before the hash computation. The second header in the chain
+	// sees prev==nil and returns ErrNilParam.
+	h2 := buildTestHeader(2, makeHash(0x00), makeHash(0x22))
+
+	err := VerifyHeaderChain([]*BlockHeader{nil, h2})
+	assert.ErrorIs(t, err, ErrNilParam)
+}
+
+// --- Gap 7: PutTxWithPubKey -- nil tx ---
+
+func TestMemTxStore_PutWithPubKey_NilTx(t *testing.T) {
+	store := NewMemTxStore()
+	err := store.PutTxWithPubKey(nil, makeHash(0xAA))
+	assert.ErrorIs(t, err, ErrNilParam)
+}
+
+// --- Gap 8: PutTxWithPubKey -- invalid TxID ---
+
+func TestMemTxStore_PutWithPubKey_InvalidTxID(t *testing.T) {
+	store := NewMemTxStore()
+	tx := &StoredTx{TxID: []byte{0x01}} // 1 byte, not 32
+	err := store.PutTxWithPubKey(tx, makeHash(0xAA))
+	assert.ErrorIs(t, err, ErrInvalidTxID)
+}
+
+// --- Gap 9: PutTxWithPubKey -- empty pNode (tx stored but not indexed) ---
+
+func TestMemTxStore_PutWithPubKey_EmptyPNode(t *testing.T) {
+	store := NewMemTxStore()
+	tx := &StoredTx{TxID: makeHash(0x01), RawTx: []byte("data")}
+
+	// Store with nil pNode -- tx should be stored but not indexed
+	err := store.PutTxWithPubKey(tx, nil)
+	require.NoError(t, err)
+
+	// Tx should be retrievable by TxID
+	got, err := store.GetTx(tx.TxID)
+	require.NoError(t, err)
+	assert.Equal(t, tx, got)
+
+	// No pubkey index should exist -- there is no way to query by nil pNode
+	// (GetTxsByPubKey returns ErrNilParam for nil), so we verify the internal
+	// state is clean by querying with an arbitrary pNode.
+	txs, err := store.GetTxsByPubKey(makeHash(0xFF))
+	require.NoError(t, err)
+	assert.Nil(t, txs)
+}
+
+// --- Gap 10: BuildMerkleTree -- deep tree (8+ transactions, 3+ levels) ---
+
+func TestBuildMerkleTree_DeepTree(t *testing.T) {
+	// Build a tree with 8 transactions (3 levels: 8 -> 4 -> 2 -> 1)
+	txs := make([][]byte, 8)
+	for i := range txs {
+		txs[i] = makeTxHash(byte(i + 0x20))
+	}
+
+	tree := BuildMerkleTree(txs)
+	require.NotNil(t, tree)
+	assert.Len(t, tree, 1)
+
+	// Manually compute the expected root bottom-up
+	// Level 0 pairs
+	combine := func(a, b []byte) []byte {
+		c := make([]byte, 64)
+		copy(c[:32], a)
+		copy(c[32:], b)
+		return DoubleHash(c)
+	}
+
+	h01 := combine(txs[0], txs[1])
+	h23 := combine(txs[2], txs[3])
+	h45 := combine(txs[4], txs[5])
+	h67 := combine(txs[6], txs[7])
+
+	// Level 1 pairs
+	h0123 := combine(h01, h23)
+	h4567 := combine(h45, h67)
+
+	// Root
+	expectedRoot := combine(h0123, h4567)
+
+	assert.Equal(t, expectedRoot, tree[0])
+
+	// Also verify that ComputeMerkleRoot works correctly for a deep proof.
+	// Build proof for tx at index 5 (binary 101):
+	// Level 0: bit 0 of 5 is 1 -> tx5 is right, sibling=tx4
+	// Level 1: bit 1 of 5 is 0 -> h45 is left, sibling=h67
+	//   Wait: after level 0, the pair is h45. Index>>1 = 2, bit 0 of 2 is 0 -> h45 is left, sibling=h67
+	//   Actually, let's think about it: index=5, binary=101
+	//   Level 0: bit 0 = 1 -> sibling is txs[4]
+	//   Level 1: bit 1 = 0 -> sibling is h67
+	//   Level 2: bit 2 = 1 -> sibling is h0123
+	proofNodes := [][]byte{txs[4], h67, h0123}
+	computedRoot := ComputeMerkleRoot(txs[5], 5, proofNodes)
+	assert.Equal(t, expectedRoot, computedRoot, "Merkle proof for index 5 in 8-tx tree")
+}
+
+// --- Gap 11: DoubleHash -- known BSV genesis block hash ---
+
+func TestDoubleHash_KnownBSVGenesisBlock(t *testing.T) {
+	// The BSV (and BTC) genesis block header is 80 bytes.
+	// We construct it from known values and verify DoubleHash
+	// produces the known genesis block hash.
+	//
+	// Genesis block header fields:
+	//   Version:    1
+	//   PrevBlock:  0000...0000 (32 zero bytes)
+	//   MerkleRoot: 4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b
+	//   Timestamp:  1231006505 (0x495FAB29)
+	//   Bits:       0x1d00ffff
+	//   Nonce:      2083236893 (0x7C2BAC1D)
+	//
+	// Known genesis block hash (internal byte order, little-endian):
+	//   000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f
+
+	header := make([]byte, 80)
+
+	// Version = 1 (little-endian)
+	binary.LittleEndian.PutUint32(header[0:4], 1)
+
+	// PrevBlock = all zeros (already zero)
+
+	// MerkleRoot (little-endian byte order, as stored in the block header)
+	merkleRoot := []byte{
+		0x3b, 0xa3, 0xed, 0xfd, 0x7a, 0x7b, 0x12, 0xb2,
+		0x7a, 0xc7, 0x2c, 0x3e, 0x67, 0x76, 0x8f, 0x61,
+		0x7f, 0xc8, 0x1b, 0xc3, 0x88, 0x8a, 0x51, 0x32,
+		0x3a, 0x9f, 0xb8, 0xaa, 0x4b, 0x1e, 0x5e, 0x4a,
+	}
+	copy(header[36:68], merkleRoot)
+
+	// Timestamp = 1231006505
+	binary.LittleEndian.PutUint32(header[68:72], 1231006505)
+
+	// Bits = 0x1d00ffff
+	binary.LittleEndian.PutUint32(header[72:76], 0x1d00ffff)
+
+	// Nonce = 2083236893
+	binary.LittleEndian.PutUint32(header[76:80], 2083236893)
+
+	hash := DoubleHash(header)
+	require.Len(t, hash, 32)
+
+	// The genesis block hash in internal byte order (little-endian, as Bitcoin uses):
+	// 6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000
+	expectedHash := []byte{
+		0x6f, 0xe2, 0x8c, 0x0a, 0xb6, 0xf1, 0xb3, 0x72,
+		0xc1, 0xa6, 0xa2, 0x46, 0xae, 0x63, 0xf7, 0x4f,
+		0x93, 0x1e, 0x83, 0x65, 0xe1, 0x5a, 0x08, 0x9c,
+		0x68, 0xd6, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+
+	assert.Equal(t, expectedHash, hash, "DoubleHash of genesis block header should match known hash")
+}
+
+// --- Gap 12: VerifyMerkleProof -- invalid proof node triggers ComputeMerkleRoot nil ---
+
+func TestVerifyMerkleProof_InvalidProofNodeLength(t *testing.T) {
+	proof := &MerkleProof{
+		TxID:  makeHash(0x01),
+		Index: 0,
+		Nodes: [][]byte{{0x01, 0x02, 0x03}}, // 3 bytes, not 32
+	}
+
+	valid, err := VerifyMerkleProof(proof, makeHash(0xAA))
+	assert.False(t, valid)
+	assert.ErrorIs(t, err, ErrMerkleProofInvalid)
+}
+
+// --- Gap 13: PutTxWithPubKey -- overwrite existing (no duplicate error) ---
+
+func TestMemTxStore_PutWithPubKey_OverwriteExisting(t *testing.T) {
+	store := NewMemTxStore()
+	pNode := makeHash(0xAA)
+
+	txID := makeHash(0x01)
+	tx1 := &StoredTx{TxID: txID, RawTx: []byte("version1")}
+	tx2 := &StoredTx{TxID: txID, RawTx: []byte("version2")}
+
+	// First put succeeds
+	err := store.PutTxWithPubKey(tx1, pNode)
+	require.NoError(t, err)
+
+	// Second put with same TxID also succeeds (overwrites, no ErrDuplicateTx)
+	err = store.PutTxWithPubKey(tx2, pNode)
+	require.NoError(t, err)
+
+	// GetTx should return the second version
+	got, err := store.GetTx(txID)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("version2"), got.RawTx)
+}
+
+// --- Gap 7 (store.go): MemHeaderStore.PutHeader auto-computes hash ---
+
+func TestMemHeaderStore_PutAutoComputesHash(t *testing.T) {
+	store := NewMemHeaderStore()
+
+	h := &BlockHeader{
+		Version:    1,
+		PrevBlock:  makeHash(0x00),
+		MerkleRoot: makeHash(0x11),
+		Timestamp:  1700000000,
+		Bits:       0x1d00ffff,
+		Nonce:      42,
+		Height:     100,
+		Hash:       nil, // intentionally nil
+	}
+
+	err := store.PutHeader(h)
+	require.NoError(t, err)
+
+	// Hash should now be computed and set
+	assert.Len(t, h.Hash, 32, "PutHeader should auto-compute Hash when nil")
+
+	// Should be retrievable by the computed hash
+	got, err := store.GetHeader(h.Hash)
+	require.NoError(t, err)
+	assert.Equal(t, h, got)
+
+	// Should be retrievable by height
+	got, err = store.GetHeaderByHeight(100)
+	require.NoError(t, err)
+	assert.Len(t, got.Hash, 32)
+}
+
+// --- Gap 8 (store.go): MemHeaderStore.PutHeader with pre-set invalid hash length ---
+
+func TestMemHeaderStore_PutInvalidHashLength(t *testing.T) {
+	store := NewMemHeaderStore()
+
+	h := &BlockHeader{
+		Version:    1,
+		PrevBlock:  makeHash(0x00),
+		MerkleRoot: makeHash(0x11),
+		Timestamp:  1700000000,
+		Bits:       0x1d00ffff,
+		Nonce:      42,
+		Height:     100,
+		Hash:       []byte{0x01, 0x02, 0x03}, // 3 bytes, not 32
+	}
+
+	err := store.PutHeader(h)
+	assert.ErrorIs(t, err, ErrInvalidHeader)
+}
+
+// --- Gap 15: Concurrent access safety ---
+
+func TestMemHeaderStore_ConcurrentPutAndGet(t *testing.T) {
+	store := NewMemHeaderStore()
+	const n = 50
+
+	// Pre-build headers to avoid races on buildTestHeader
+	headers := make([]*BlockHeader, n)
+	for i := 0; i < n; i++ {
+		seed := byte(i)
+		headers[i] = buildTestHeader(uint32(i), makeHash(seed), makeHash(seed+100))
+	}
+
+	var wg sync.WaitGroup
+
+	// Concurrent puts
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = store.PutHeader(headers[idx])
+		}(i)
+	}
+	wg.Wait()
+
+	// Concurrent gets
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = store.GetHeader(headers[idx].Hash)
+			_, _ = store.GetHeaderByHeight(uint32(idx))
+			_, _ = store.GetTip()
+			_, _ = store.GetHeaderCount()
+		}(i)
+	}
+	wg.Wait()
+
+	count, err := store.GetHeaderCount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(n), count)
+}
+
+func TestMemTxStore_ConcurrentPutAndGet(t *testing.T) {
+	store := NewMemTxStore()
+	const n = 50
+
+	// Pre-build transactions
+	txs := make([]*StoredTx, n)
+	for i := 0; i < n; i++ {
+		txs[i] = &StoredTx{
+			TxID:  makeTxHash(byte(i)),
+			RawTx: []byte(fmt.Sprintf("tx%d", i)),
+		}
+	}
+
+	var wg sync.WaitGroup
+
+	// Concurrent puts
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_ = store.PutTx(txs[idx])
+		}(i)
+	}
+	wg.Wait()
+
+	// Concurrent reads and list
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, _ = store.GetTx(txs[idx].TxID)
+			_, _ = store.ListTxs()
+		}(i)
+	}
+	wg.Wait()
+
+	listed, err := store.ListTxs()
+	require.NoError(t, err)
+	assert.Len(t, listed, n)
+}
+
+// --- Edge case: DeserializeHeader with explicit nil input ---
+
+func TestDeserializeHeader_NilInput(t *testing.T) {
+	_, err := DeserializeHeader(nil)
+	assert.ErrorIs(t, err, ErrInvalidHeader)
+}
+
+// --- Edge case: ComputeMerkleRoot with high index (boundary bit-shifting) ---
+
+func TestComputeMerkleRoot_HighIndex(t *testing.T) {
+	// Build a proof for index=7 in an 8-tx block (binary 111)
+	// All 3 bits are 1, so at every level the current hash is on the right.
+	txs := make([][]byte, 8)
+	for i := range txs {
+		txs[i] = makeTxHash(byte(i + 0x40))
+	}
+
+	combine := func(a, b []byte) []byte {
+		c := make([]byte, 64)
+		copy(c[:32], a)
+		copy(c[32:], b)
+		return DoubleHash(c)
+	}
+
+	h01 := combine(txs[0], txs[1])
+	h23 := combine(txs[2], txs[3])
+	h45 := combine(txs[4], txs[5])
+	h67 := combine(txs[6], txs[7])
+	h0123 := combine(h01, h23)
+	h4567 := combine(h45, h67)
+	expectedRoot := combine(h0123, h4567)
+
+	// Proof for index=7 (binary 111):
+	// Level 0: bit 0 = 1 -> tx7 is right, sibling = tx6
+	// Level 1: bit 1 = 1 -> h67 is right, sibling = h45
+	// Level 2: bit 2 = 1 -> h4567 is right, sibling = h0123
+	proofNodes := [][]byte{txs[6], h45, h0123}
+	computedRoot := ComputeMerkleRoot(txs[7], 7, proofNodes)
+	assert.Equal(t, expectedRoot, computedRoot, "Merkle proof for index 7 (all right) in 8-tx tree")
+}
+
+// --- Edge case: MemHeaderStore height collision ---
+
+func TestMemHeaderStore_HeightCollision(t *testing.T) {
+	store := NewMemHeaderStore()
+
+	h1 := buildTestHeader(100, makeHash(0x01), makeHash(0x11))
+	h2 := buildTestHeader(100, makeHash(0x02), makeHash(0x22)) // same height, different hash
+
+	require.NoError(t, store.PutHeader(h1))
+	require.NoError(t, store.PutHeader(h2))
+
+	// Both should be retrievable by hash
+	got1, err := store.GetHeader(h1.Hash)
+	require.NoError(t, err)
+	assert.Equal(t, h1, got1)
+
+	got2, err := store.GetHeader(h2.Hash)
+	require.NoError(t, err)
+	assert.Equal(t, h2, got2)
+
+	// By height, the second one should overwrite the first
+	gotByHeight, err := store.GetHeaderByHeight(100)
+	require.NoError(t, err)
+	assert.Equal(t, h2, gotByHeight, "later PutHeader at same height should overwrite in byHeight map")
+
+	// Count should be 2 (both in byHash)
+	count, err := store.GetHeaderCount()
+	require.NoError(t, err)
+	assert.Equal(t, uint64(2), count)
 }

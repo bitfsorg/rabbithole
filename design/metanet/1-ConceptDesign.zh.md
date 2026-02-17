@@ -37,11 +37,20 @@ BitFS 与 Metanet 的关系类似于 IPFS 与 Filecoin，但**反转了 Filecoin
 
 ### 3.1 热数据自组织 (x402 正反馈)
 
-```
-文件热度高 → x402 收入高 → 更多 Node 主动缓存 → 可用性更好 → 用户体验更好
-  ^                                                              |
-  └──────────────────────────────────────────────────────────────┘
-```
+<table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
+<tr>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#eaf0f7; font-weight:600;">文件热度高</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f0f7ea; font-weight:600;">x402 收入高</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f7f0ea; font-weight:600;">更多 Node 缓存</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f5eaf7; font-weight:600;">可用性更好</td>
+</tr>
+<tr>
+<td colspan="7" style="border:1px solid #999; padding:0.3em; text-align:center; font-size:9pt; color:#555; background:#fafafa;">↻ 正反馈循环: 用户体验提升 → 文件热度更高</td>
+</tr>
+</table>
 
 不需要协议层管理副本——市场自动调节。越热门的内容越多 Node 缓存，类似传统 CDN 的缓存逻辑，但由利润而非中心化策略驱动。
 

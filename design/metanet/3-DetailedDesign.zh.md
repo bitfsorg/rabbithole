@@ -170,6 +170,8 @@ func VerifyStorageProof(
 
 ## 四、支付通道协议
 
+> **适用范围**: 本节描述的 2-of-2 多签支付通道协议适用于所有三种通道类型（BSV User↔Node 通道、MNT Owner↔Node 通道、MNT Node↔Node 通道）。三者使用相同的脚本结构和撤销逻辑，唯一区别是锁定的币种（BSV 或 MNT）和所在链（BSV 主链或 Metanet Chain）。
+
 ```
 支付通道交易结构:
 
@@ -208,11 +210,22 @@ func VerifyStorageProof(
   max_duration:      144 blocks (约 1 天, 最长通道寿命)
   dispute_window:    6 blocks (争议窗口)
   update_frequency:  每次 x402 请求
+
+Node↔Node MNT 通道结算说明:
+  - 场景: Node_A 从 Node_B 批发热门数据 (系统设计第四节 "Metanet Node 间批发")
+  - 通道位于 Metanet Chain (MNT Token), 非 BSV 主链
+  - Funding: 买方 Node_A 锁入 MNT Token
+  - 更新: 每次数据传输 (chunk 级别), 双方签署新的余额分配
+  - 结算: 通道到期或余额耗尽时, 广播最新 Commitment TX 到 Metanet Chain
+  - 定价: 由 Node_B 自行设定 (通常低于 x402 零售价, 体现批发折扣)
+  - 与 Owner↔Node 通道的区别仅在于双方角色 — 脚本结构和争议机制完全相同
 ```
 
 ---
 
 ## 五、x402 支付通道 HTTP 协议扩展
+
+> **前置依赖**: 本节是 x402 基础协议的支付通道扩展。x402 基础带宽计费规则见 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-x402-支付流程)。
 
 ```
 新增 HTTP Headers:

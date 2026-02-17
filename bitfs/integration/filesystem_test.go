@@ -4,6 +4,8 @@ package integration
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -552,6 +554,374 @@ func TestStorageListAndMultipleFiles(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, exists)
 	}
+}
+
+// --- TestDeepNestedPath (T034) ---
+
+func TestDeepNestedPath(t *testing.T) {
+	w, _, _ := createTestWallet(t, &wallet.MainNet)
+	store := newMockNodeStore()
+
+	// Build 12-level deep directory tree: /a/b/c/d/e/f/g/h/i/j/k/file.txt
+	levels := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "file.txt"}
+	depth := len(levels) // 12
+
+	// Derive keys for every level
+	// Root: vault root key
+	// Level 1..11 (dirs a..k): DeriveNodeKey(0, [1]..[1,1,...,1])
+	// Level 12 (file.txt): DeriveNodeKey(0, [1,1,...,1,1]) with one more level
+
+	rootKey, err := w.DeriveVaultRootKey(0)
+	require.NoError(t, err)
+
+	// Pre-derive all keys for the path [1,1,1,...,1] at each depth
+	type levelInfo struct {
+		key  *wallet.KeyPair
+		node *metanet.Node
+	}
+	levelInfos := make([]levelInfo, depth+1) // index 0 = root
+
+	// Root node
+	rootNode := &metanet.Node{
+		TxID:           bytes.Repeat([]byte{0x00}, 32),
+		PNode:          rootKey.PublicKey.Compressed(),
+		Type:           metanet.NodeTypeDir,
+		Op:             metanet.OpCreate,
+		NextChildIndex: 0,
+	}
+	levelInfos[0] = levelInfo{key: rootKey, node: rootNode}
+	store.AddNode(rootNode)
+
+	// Build each level
+	for i := 0; i < depth; i++ {
+		parentInfo := levelInfos[i]
+
+		// Build the file path indices (all 1's)
+		filePath := make([]uint32, i+1)
+		for j := range filePath {
+			filePath[j] = 1
+		}
+
+		childKey, err := w.DeriveNodeKey(0, filePath, nil)
+		require.NoError(t, err, "failed to derive key at depth %d", i+1)
+
+		name := levels[i]
+
+		// Determine node type
+		nodeType := metanet.NodeTypeDir
+		if i == depth-1 {
+			nodeType = metanet.NodeTypeFile
+		}
+
+		// Add child to parent
+		_, err = metanet.AddChild(parentInfo.node, name, nodeType, childKey.PublicKey.Compressed(), true)
+		require.NoError(t, err, "failed to add child %q at depth %d", name, i+1)
+
+		// Create the child node
+		childNode := &metanet.Node{
+			TxID:       bytes.Repeat([]byte{byte(i + 1)}, 32),
+			PNode:      childKey.PublicKey.Compressed(),
+			ParentTxID: parentInfo.node.TxID,
+			Type:       nodeType,
+			Op:         metanet.OpCreate,
+			Parent:     parentInfo.key.PublicKey.Compressed(),
+		}
+		if nodeType == metanet.NodeTypeDir {
+			childNode.NextChildIndex = 0
+		}
+		if nodeType == metanet.NodeTypeFile {
+			childNode.MimeType = "text/plain"
+			childNode.FileSize = 42
+		}
+
+		store.AddNode(childNode)
+		levelInfos[i+1] = levelInfo{key: childKey, node: childNode}
+	}
+
+	// 1. ResolvePath from root with full path
+	fullPath := "/" + joinPath(levels)
+	components, err := metanet.SplitPath(fullPath)
+	require.NoError(t, err)
+	assert.Len(t, components, depth)
+
+	result, err := metanet.ResolvePath(store, rootNode, components)
+	require.NoError(t, err, "should resolve 12-level deep path")
+	assert.Equal(t, levelInfos[depth].node.PNode, result.Node.PNode)
+	assert.Equal(t, metanet.NodeTypeFile, result.Node.Type)
+	assert.Equal(t, "text/plain", result.Node.MimeType)
+	assert.Equal(t, levels, result.Path)
+
+	// 2. ResolvePath with ".." at various depths
+	// /a/b/c/d/.. should resolve to /a/b/c
+	partialPath := "/a/b/c/d/.."
+	components2, err := metanet.SplitPath(partialPath)
+	require.NoError(t, err)
+	result2, err := metanet.ResolvePath(store, rootNode, components2)
+	require.NoError(t, err)
+	assert.Equal(t, levelInfos[3].node.PNode, result2.Node.PNode, ".. from d should resolve to c")
+
+	// 3. Going up all the way to root using multiple ..
+	upAll := "/a/b/c/../../.."
+	components3, err := metanet.SplitPath(upAll)
+	require.NoError(t, err)
+	result3, err := metanet.ResolvePath(store, rootNode, components3)
+	require.NoError(t, err)
+	assert.Equal(t, rootNode.PNode, result3.Node.PNode, "going up to root from c should reach root")
+
+	// 4. Resolving intermediate directory works
+	midPath := "/a/b/c/d/e/f"
+	components4, err := metanet.SplitPath(midPath)
+	require.NoError(t, err)
+	result4, err := metanet.ResolvePath(store, rootNode, components4)
+	require.NoError(t, err)
+	assert.Equal(t, levelInfos[6].node.PNode, result4.Node.PNode, "should resolve to level 6 (f)")
+	assert.Equal(t, metanet.NodeTypeDir, result4.Node.Type)
+}
+
+// joinPath concatenates path components with "/".
+func joinPath(parts []string) string {
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += "/"
+		}
+		result += p
+	}
+	return result
+}
+
+// --- TestConcurrentDirectoryIndex (T036) ---
+
+func TestConcurrentDirectoryIndex(t *testing.T) {
+	w, _, _ := createTestWallet(t, &wallet.MainNet)
+
+	rootKey, err := w.DeriveVaultRootKey(0)
+	require.NoError(t, err)
+
+	dirNode := &metanet.Node{
+		TxID:           bytes.Repeat([]byte{0x01}, 32),
+		PNode:          rootKey.PublicKey.Compressed(),
+		Type:           metanet.NodeTypeDir,
+		NextChildIndex: 0,
+	}
+
+	// 1. Add 20 children sequentially
+	for i := uint32(0); i < 20; i++ {
+		childKey, err := w.DeriveNodeKey(0, []uint32{i + 1}, nil)
+		require.NoError(t, err)
+
+		name := fmt.Sprintf("child-%d", i)
+		entry, err := metanet.AddChild(dirNode, name, metanet.NodeTypeFile, childKey.PublicKey.Compressed(), true)
+		require.NoError(t, err)
+
+		// Verify each child gets a monotonically increasing index
+		assert.Equal(t, i, entry.Index, "child %d should get index %d", i, i)
+	}
+
+	// 2. Verify NextChildIndex is 20
+	assert.Equal(t, uint32(20), dirNode.NextChildIndex,
+		"after adding 20 children, NextChildIndex should be 20")
+	assert.Len(t, dirNode.Children, 20)
+
+	// 3. Verify indices are monotonically increasing (0,1,2,...,19)
+	for i, child := range dirNode.Children {
+		assert.Equal(t, uint32(i), child.Index,
+			"child at position %d should have index %d", i, i)
+	}
+
+	// 4. Remove child at index 5 (name "child-5")
+	err = metanet.RemoveChild(dirNode, "child-5")
+	require.NoError(t, err)
+	assert.Len(t, dirNode.Children, 19)
+
+	// Verify NextChildIndex stays at 20 (indices are never reused)
+	assert.Equal(t, uint32(20), dirNode.NextChildIndex,
+		"NextChildIndex should NOT decrease after remove")
+
+	// 5. Add another child, verify it gets index 20 (not 5)
+	newChildKey, err := w.DeriveNodeKey(0, []uint32{21}, nil)
+	require.NoError(t, err)
+
+	newEntry, err := metanet.AddChild(dirNode, "child-new", metanet.NodeTypeFile, newChildKey.PublicKey.Compressed(), true)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(20), newEntry.Index,
+		"new child should get index 20, not reuse deleted index 5")
+	assert.Equal(t, uint32(21), dirNode.NextChildIndex)
+	assert.Len(t, dirNode.Children, 20)
+
+	// 6. Verify the removed child-5 is actually gone
+	_, found := metanet.FindChild(dirNode, "child-5")
+	assert.False(t, found, "removed child should not be findable")
+
+	// Verify remaining children are intact
+	_, found = metanet.FindChild(dirNode, "child-0")
+	assert.True(t, found)
+	_, found = metanet.FindChild(dirNode, "child-19")
+	assert.True(t, found)
+	_, found = metanet.FindChild(dirNode, "child-new")
+	assert.True(t, found)
+}
+
+// --- TestStorageWithAllAccessModes (T037) ---
+
+func TestStorageWithAllAccessModes(t *testing.T) {
+	tmpDir := t.TempDir()
+	fs, err := storage.NewFileStore(filepath.Join(tmpDir, "access-mode-store"))
+	require.NoError(t, err)
+
+	w, _, _ := createTestWallet(t, &wallet.MainNet)
+	nodeKey, err := w.DeriveNodeKey(0, []uint32{1}, nil)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name   string
+		access method42.Access
+	}{
+		{"Private", method42.AccessPrivate},
+		{"Free", method42.AccessFree},
+		{"Paid (via capsule)", method42.AccessPaid},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			plaintext := []byte(fmt.Sprintf("Content with %s access mode", tc.name))
+
+			// 1. Encrypt content
+			var encResult *method42.EncryptResult
+			var encErr error
+
+			switch tc.access {
+			case method42.AccessFree:
+				// Free mode: use nil private key
+				encResult, encErr = method42.Encrypt(plaintext, nil, nodeKey.PublicKey, method42.AccessFree)
+			default:
+				// Private and Paid use the same encryption (private key)
+				encResult, encErr = method42.Encrypt(plaintext, nodeKey.PrivateKey, nodeKey.PublicKey, method42.AccessPrivate)
+			}
+			require.NoError(t, encErr)
+			require.NotEmpty(t, encResult.Ciphertext)
+			require.Len(t, encResult.KeyHash, 32)
+
+			// 2. Store in FileStore
+			err := fs.Put(encResult.KeyHash, encResult.Ciphertext)
+			require.NoError(t, err)
+
+			// 3. Retrieve from FileStore
+			retrieved, err := fs.Get(encResult.KeyHash)
+			require.NoError(t, err)
+			assert.Equal(t, encResult.Ciphertext, retrieved)
+
+			// Verify storage integrity
+			exists, err := fs.Has(encResult.KeyHash)
+			require.NoError(t, err)
+			assert.True(t, exists)
+
+			// 4. Decrypt and verify
+			var decResult *method42.DecryptResult
+			var decErr error
+
+			switch tc.access {
+			case method42.AccessFree:
+				decResult, decErr = method42.Decrypt(retrieved, nil, nodeKey.PublicKey, encResult.KeyHash, method42.AccessFree)
+			case method42.AccessPaid:
+				// For Paid mode, decrypt using capsule (simulating HTLC completion)
+				capsule, err := method42.ECDH(nodeKey.PrivateKey, nodeKey.PublicKey)
+				require.NoError(t, err)
+				decResult, decErr = method42.DecryptWithCapsule(retrieved, capsule, encResult.KeyHash)
+			default:
+				decResult, decErr = method42.Decrypt(retrieved, nodeKey.PrivateKey, nodeKey.PublicKey, encResult.KeyHash, method42.AccessPrivate)
+			}
+
+			require.NoError(t, decErr)
+			assert.Equal(t, plaintext, decResult.Plaintext,
+				"decrypted content should match original for %s mode", tc.name)
+
+			// Verify key_hash integrity
+			assert.Equal(t, encResult.KeyHash, decResult.KeyHash)
+
+			// Cleanup for next iteration
+			err = fs.Delete(encResult.KeyHash)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// --- TestContentAddressedDedup (T038) ---
+
+func TestContentAddressedDedup(t *testing.T) {
+	tmpDir := t.TempDir()
+	fs, err := storage.NewFileStore(filepath.Join(tmpDir, "dedup-store"))
+	require.NoError(t, err)
+
+	w, _, _ := createTestWallet(t, &wallet.MainNet)
+	nodeKey, err := w.DeriveNodeKey(0, []uint32{1}, nil)
+	require.NoError(t, err)
+
+	plaintext := []byte("Identical content for deduplication test")
+
+	// 1. Encrypt the same plaintext twice with the same keys
+	enc1, err := method42.Encrypt(plaintext, nodeKey.PrivateKey, nodeKey.PublicKey, method42.AccessPrivate)
+	require.NoError(t, err)
+
+	enc2, err := method42.Encrypt(plaintext, nodeKey.PrivateKey, nodeKey.PublicKey, method42.AccessPrivate)
+	require.NoError(t, err)
+
+	// 2. Both should produce the same key_hash (SHA256(SHA256(plaintext)))
+	assert.Equal(t, enc1.KeyHash, enc2.KeyHash,
+		"same plaintext should produce identical key_hash")
+
+	// Verify key_hash matches manual computation
+	first := sha256.Sum256(plaintext)
+	second := sha256.Sum256(first[:])
+	assert.Equal(t, second[:], enc1.KeyHash,
+		"key_hash should be double-SHA256 of plaintext")
+
+	// 3. Ciphertext is different (random IV per encryption)
+	assert.NotEqual(t, enc1.Ciphertext, enc2.Ciphertext,
+		"different encryptions should produce different ciphertext (random IV)")
+
+	// 4. Store first
+	err = fs.Put(enc1.KeyHash, enc1.Ciphertext)
+	require.NoError(t, err)
+
+	// Store second (overwrites because same key_hash)
+	err = fs.Put(enc2.KeyHash, enc2.Ciphertext)
+	require.NoError(t, err)
+
+	// 5. FileStore should have exactly 1 entry (same key)
+	list, err := fs.List()
+	require.NoError(t, err)
+	assert.Len(t, list, 1, "content-addressed store should have exactly 1 entry for duplicate content")
+
+	// 6. The stored ciphertext should be the second one (overwrite)
+	retrieved, err := fs.Get(enc1.KeyHash)
+	require.NoError(t, err)
+	assert.Equal(t, enc2.Ciphertext, retrieved,
+		"second Put should overwrite first")
+
+	// 7. Both ciphertexts should still decrypt correctly (same AES key)
+	dec1, err := method42.Decrypt(enc1.Ciphertext, nodeKey.PrivateKey, nodeKey.PublicKey, enc1.KeyHash, method42.AccessPrivate)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, dec1.Plaintext)
+
+	dec2, err := method42.Decrypt(retrieved, nodeKey.PrivateKey, nodeKey.PublicKey, enc2.KeyHash, method42.AccessPrivate)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, dec2.Plaintext)
+
+	// 8. Different plaintext -> different key_hash -> separate entry
+	differentPlaintext := []byte("Completely different content")
+	enc3, err := method42.Encrypt(differentPlaintext, nodeKey.PrivateKey, nodeKey.PublicKey, method42.AccessPrivate)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, enc1.KeyHash, enc3.KeyHash,
+		"different plaintext should produce different key_hash")
+
+	err = fs.Put(enc3.KeyHash, enc3.Ciphertext)
+	require.NoError(t, err)
+
+	list2, err := fs.List()
+	require.NoError(t, err)
+	assert.Len(t, list2, 2, "two different contents should result in 2 entries")
 }
 
 // --- TestSplitPathEdgeCases ---

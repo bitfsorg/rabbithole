@@ -131,7 +131,7 @@ func InheritPricePerKB(store NodeStore, node *Node) (uint64, error) {
 	}
 
 	current := node
-	for {
+	for depth := 0; depth <= MaxLinkDepth; depth++ {
 		if current.PricePerKB > 0 {
 			return current.PricePerKB, nil
 		}
@@ -151,4 +151,6 @@ func InheritPricePerKB(store NodeStore, node *Node) (uint64, error) {
 
 		current = parent
 	}
+
+	return 0, fmt.Errorf("%w: price inheritance exceeded max depth", ErrLinkDepthExceeded)
 }

@@ -577,3 +577,316 @@ func TestVerifyPayment_NoMatchingOutput(t *testing.T) {
 	err = VerifyPayment(proof, inv)
 	assert.ErrorIs(t, err, ErrNoMatchingOutput)
 }
+
+// --- Supplementary Tests: VerifyPayment Edge Cases ---
+
+func TestVerifyPayment_InvalidInvoiceAddress(t *testing.T) {
+	// Build a valid transaction so we reach the address-parsing path
+	tx := transaction.NewTransaction()
+	err := tx.PayToAddress("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 1000)
+	require.NoError(t, err)
+
+	rawTx := tx.Bytes()
+
+	inv := &Invoice{
+		Price:       1000,
+		Expiry:      time.Now().Unix() + 3600,
+		PaymentAddr: "NOT_A_VALID_ADDRESS!!!",
+	}
+	proof := &PaymentProof{RawTx: rawTx}
+
+	err = VerifyPayment(proof, inv)
+	assert.ErrorIs(t, err, ErrInvalidParams)
+	assert.Contains(t, err.Error(), "invalid invoice address")
+}
+
+func TestVerifyPayment_Overpayment(t *testing.T) {
+	addr := "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+
+	// Build a transaction that pays MORE than the invoice requires
+	tx := transaction.NewTransaction()
+	err := tx.PayToAddress(addr, 2000) // pays 2000, invoice only needs 1000
+	require.NoError(t, err)
+
+	rawTx := tx.Bytes()
+
+	inv := &Invoice{
+		Price:       1000,
+		Expiry:      time.Now().Unix() + 3600,
+		PaymentAddr: addr,
+	}
+	proof := &PaymentProof{RawTx: rawTx}
+
+	err = VerifyPayment(proof, inv)
+	assert.NoError(t, err, "overpayment should be accepted")
+}
+
+func TestVerifyPayment_MultipleOutputs_OneMatches(t *testing.T) {
+	targetAddr := "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+	otherAddr := "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
+
+	// Build a transaction with multiple outputs, only one pays the target
+	tx := transaction.NewTransaction()
+	err := tx.PayToAddress(otherAddr, 500)
+	require.NoError(t, err)
+	err = tx.PayToAddress(targetAddr, 1000)
+	require.NoError(t, err)
+	err = tx.PayToAddress(otherAddr, 300)
+	require.NoError(t, err)
+
+	rawTx := tx.Bytes()
+
+	inv := &Invoice{
+		Price:       1000,
+		Expiry:      time.Now().Unix() + 3600,
+		PaymentAddr: targetAddr,
+	}
+	proof := &PaymentProof{RawTx: rawTx}
+
+	err = VerifyPayment(proof, inv)
+	assert.NoError(t, err, "should succeed when one of multiple outputs matches")
+}
+
+func TestVerifyPayment_SkipsNonP2PKH(t *testing.T) {
+	targetAddr := "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+
+	tx := transaction.NewTransaction()
+
+	// Add an OP_RETURN output (non-P2PKH) first
+	opReturnScript := &script.Script{}
+	_ = opReturnScript.AppendOpcodes(script.OpRETURN)
+	_ = opReturnScript.AppendPushData([]byte("test data"))
+	tx.AddOutput(&transaction.TransactionOutput{
+		Satoshis:      0,
+		LockingScript: opReturnScript,
+	})
+
+	// Then add a valid P2PKH output to the target address
+	err := tx.PayToAddress(targetAddr, 1000)
+	require.NoError(t, err)
+
+	rawTx := tx.Bytes()
+
+	inv := &Invoice{
+		Price:       1000,
+		Expiry:      time.Now().Unix() + 3600,
+		PaymentAddr: targetAddr,
+	}
+	proof := &PaymentProof{RawTx: rawTx}
+
+	err = VerifyPayment(proof, inv)
+	assert.NoError(t, err, "should skip OP_RETURN output and find matching P2PKH output")
+}
+
+func TestVerifyPayment_NilLockingScript(t *testing.T) {
+	targetAddr := "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
+
+	tx := transaction.NewTransaction()
+
+	// Add an output with an empty locking script (non-P2PKH, will be skipped)
+	emptyScript := &script.Script{}
+	tx.AddOutput(&transaction.TransactionOutput{
+		Satoshis:      1000,
+		LockingScript: emptyScript,
+	})
+
+	// Then add a valid P2PKH output
+	err := tx.PayToAddress(targetAddr, 1000)
+	require.NoError(t, err)
+
+	rawTx := tx.Bytes()
+
+	// Verify the transaction has the empty-script output first
+	parsedTx, err := transaction.NewTransactionFromBytes(rawTx)
+	require.NoError(t, err)
+	require.Len(t, parsedTx.Outputs, 2)
+	assert.False(t, parsedTx.Outputs[0].LockingScript.IsP2PKH(), "first output should not be P2PKH")
+
+	inv := &Invoice{
+		Price:       1000,
+		Expiry:      time.Now().Unix() + 3600,
+		PaymentAddr: targetAddr,
+	}
+	proof := &PaymentProof{RawTx: rawTx}
+
+	err = VerifyPayment(proof, inv)
+	assert.NoError(t, err, "should skip empty-script output and find matching P2PKH output")
+}
+
+// --- Supplementary Tests: BuildHTLC Validation ---
+
+func TestBuildHTLC_ContainsSellerAddr(t *testing.T) {
+	params := validHTLCParams()
+	scriptBytes, err := BuildHTLC(params)
+	require.NoError(t, err)
+
+	s := script.NewFromBytes(scriptBytes)
+	chunks, err := s.Chunks()
+	require.NoError(t, err)
+
+	// Find seller address hash (20 bytes) in the script
+	found := false
+	for _, chunk := range chunks {
+		if chunk.Data != nil && len(chunk.Data) == PubKeyHashLen {
+			match := true
+			for i := range chunk.Data {
+				if chunk.Data[i] != params.SellerAddr[i] {
+					match = false
+					break
+				}
+			}
+			if match {
+				found = true
+				break
+			}
+		}
+	}
+	assert.True(t, found, "seller address hash not found in HTLC script")
+}
+
+func TestBuildHTLC_TimeoutValueInScript(t *testing.T) {
+	params := validHTLCParams()
+	params.Timeout = 288 // 2 days in blocks
+
+	scriptBytes, err := BuildHTLC(params)
+	require.NoError(t, err)
+
+	s := script.NewFromBytes(scriptBytes)
+	chunks, err := s.Chunks()
+	require.NoError(t, err)
+
+	// The timeout value should be encoded by encodeScriptNum
+	expectedTimeout := encodeScriptNum(int64(params.Timeout))
+
+	// Find the timeout value: it should be pushed right before OP_CHECKLOCKTIMEVERIFY
+	found := false
+	for i, chunk := range chunks {
+		if chunk.Op == script.OpCHECKLOCKTIMEVERIFY && i > 0 {
+			prevChunk := chunks[i-1]
+			if prevChunk.Data != nil && len(prevChunk.Data) == len(expectedTimeout) {
+				match := true
+				for j := range prevChunk.Data {
+					if prevChunk.Data[j] != expectedTimeout[j] {
+						match = false
+						break
+					}
+				}
+				if match {
+					found = true
+				}
+			}
+			break
+		}
+	}
+	assert.True(t, found, "timeout value %d (encoded as %x) not found before OP_CHECKLOCKTIMEVERIFY in HTLC script",
+		params.Timeout, expectedTimeout)
+}
+
+// --- Supplementary Tests: ParseHTLCPreimage Edge Cases ---
+
+func TestParseHTLCPreimage_NoHTLCInput(t *testing.T) {
+	// Build a valid transaction with a standard P2PKH unlocking script
+	// (no HTLC pattern: needs OP_TRUE as last chunk)
+	tx := transaction.NewTransaction()
+
+	// Create a standard P2PKH unlocking script: <sig> <pubkey>
+	unlockScript := &script.Script{}
+	dummySig := make([]byte, 71)
+	dummySig[0] = 0x30
+	_ = unlockScript.AppendPushData(dummySig)
+	dummyPub := make([]byte, 33)
+	dummyPub[0] = 0x02
+	_ = unlockScript.AppendPushData(dummyPub)
+	// No OP_TRUE at the end -> not an HTLC pattern
+
+	dummyTxID := chainhash.DoubleHashH([]byte("dummy"))
+	input := &transaction.TransactionInput{
+		SourceTXID:      &dummyTxID,
+		SequenceNumber:  0xffffffff,
+		UnlockingScript: unlockScript,
+	}
+	tx.AddInput(input)
+
+	err := tx.PayToAddress("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 1000)
+	require.NoError(t, err)
+
+	rawTx := tx.Bytes()
+
+	_, err = ParseHTLCPreimage(rawTx)
+	assert.ErrorIs(t, err, ErrInvalidPreimage)
+	assert.Contains(t, err.Error(), "no HTLC preimage found")
+}
+
+func TestParseHTLCPreimage_ShortUnlockingScript(t *testing.T) {
+	// Build a transaction where the unlocking script has fewer than 4 chunks
+	// (a standard P2PKH unlock has only 2 chunks: <sig> <pubkey>)
+	tx := transaction.NewTransaction()
+
+	unlockScript := &script.Script{}
+	// Only 2 chunks: sig + pubkey
+	dummySig := make([]byte, 71)
+	dummySig[0] = 0x30
+	_ = unlockScript.AppendPushData(dummySig)
+	dummyPub := make([]byte, 33)
+	dummyPub[0] = 0x02
+	_ = unlockScript.AppendPushData(dummyPub)
+
+	dummyTxID := chainhash.DoubleHashH([]byte("short-unlock"))
+	input := &transaction.TransactionInput{
+		SourceTXID:      &dummyTxID,
+		SequenceNumber:  0xffffffff,
+		UnlockingScript: unlockScript,
+	}
+	tx.AddInput(input)
+
+	err := tx.PayToAddress("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 546)
+	require.NoError(t, err)
+
+	rawTx := tx.Bytes()
+
+	_, err = ParseHTLCPreimage(rawTx)
+	assert.ErrorIs(t, err, ErrInvalidPreimage)
+}
+
+// --- Supplementary Tests: CalculatePrice Boundary ---
+
+func TestCalculatePrice_LargeValues(t *testing.T) {
+	tests := []struct {
+		name       string
+		pricePerKB uint64
+		fileSize   uint64
+		want       uint64
+	}{
+		{
+			name:       "1 sat/KB for 1 GB",
+			pricePerKB: 1,
+			fileSize:   1 << 30, // 1 GiB = 1048576 KB
+			want:       1 << 20, // 1048576 satoshis
+		},
+		{
+			name:       "100 sat/KB for 100 MB",
+			pricePerKB: 100,
+			fileSize:   100 * 1024 * 1024, // 100 MiB = 102400 KB
+			want:       100 * 102400,       // 10240000 satoshis
+		},
+		{
+			name:       "max safe single product",
+			pricePerKB: 1000,
+			fileSize:   1 << 40, // 1 TiB
+			want:       1000 * (1 << 30),
+		},
+		{
+			name:       "1 sat/KB for single byte file",
+			pricePerKB: 1,
+			fileSize:   1, // 1 byte -> ceil(1/1024) = 1
+			want:       1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CalculatePrice(tt.pricePerKB, tt.fileSize)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

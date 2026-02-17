@@ -26,24 +26,26 @@
 
 ## 二、三层架构
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  Layer 1: BSV 主链                          货币: BSV    │
-│  文件所有权 · Metanet DAG · HTLC 原子交换 · x402 付费    │
-├─────────────────────────────────────────────────────────┤
-│  Layer 2: 自托管 Daemon                     无需代币     │
-│  bitfs daemon (LFCP) · 内容存储 · 直接服务              │
-├─────────────────────────────────────────────────────────┤
-│  Layer 3: Metanet Chain                     货币: MNT    │
-│  去中心化 CDN · 存储合约 · 支付通道 · 挖矿奖励          │
-└─────────────────────────────────────────────────────────┘
-```
-
-| 层级 | 职责 | 面向 | 支付方式 |
-|------|------|------|----------|
-| Layer 1 — BSV 主链 | 文件元数据、所有权证明、HTLC 交易、x402 检索费 | 终端用户、AI Agent | BSV |
-| Layer 2 — 自托管 Daemon | 本地内容存储、LFCP 直接服务、无第三方依赖 | 文件所有者 (自服务) | 无 |
-| Layer 3 — Metanet Chain | CDN 托管、节点激励、支付通道批量结算 | 内容所有者、节点运营商 | MNT |
+<table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
+<tr style="background:#eaf0f7;">
+<td style="border:1px solid #999; padding:0.5em; width:22%; font-weight:600;">Layer 1: BSV 主链</td>
+<td style="border:1px solid #999; padding:0.5em; width:38%;">文件元数据、所有权证明、HTLC 交易、x402 检索费</td>
+<td style="border:1px solid #999; padding:0.5em; width:22%;">终端用户、AI Agent</td>
+<td style="border:1px solid #999; padding:0.5em; width:18%; text-align:center;">BSV</td>
+</tr>
+<tr style="background:#f0f7ea;">
+<td style="border:1px solid #999; padding:0.5em; font-weight:600;">Layer 2: 自托管 Daemon</td>
+<td style="border:1px solid #999; padding:0.5em;">本地内容存储、LFCP 直接服务、无第三方依赖</td>
+<td style="border:1px solid #999; padding:0.5em;">文件所有者 (自服务)</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center;">无</td>
+</tr>
+<tr style="background:#f7f0ea;">
+<td style="border:1px solid #999; padding:0.5em; font-weight:600;">Layer 3: Metanet Chain</td>
+<td style="border:1px solid #999; padding:0.5em;">CDN 托管、节点激励、支付通道批量结算</td>
+<td style="border:1px solid #999; padding:0.5em;">内容所有者、节点运营商</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center;">MNT</td>
+</tr>
+</table>
 
 **数据无需跨链**：BSV 主链只存元数据 (Metanet DAG 交易)；内容数据始终在链下流转 (Daemon 或 CDN 节点)。Metanet Chain 管理经济激励，不承载文件内容。
 
@@ -78,15 +80,31 @@ libbitfs/
 
 ### 3.3 链间职责
 
-```
-终端用户/Agent ──── BSV 主链 ──── 文件元数据 + x402/HTLC 支付
-                      │
-                      │ (内容哈希引用，非跨链)
-                      │
-内容所有者 ──── Metanet Chain ──── CDN 托管合约 + MNT 结算
-                      │
-                  Metanet Node ──── 实际内容存储与检索服务
-```
+<table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
+<tr>
+<td style="border:1px solid #999; padding:0.5em; width:30%; text-align:right; background:#eaf0f7;">终端用户 / Agent</td>
+<td style="border:1px solid #999; padding:0.5em; width:10%; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; width:20%; text-align:center; background:#e8e8e8; font-weight:600;">BSV 主链</td>
+<td style="border:1px solid #999; padding:0.5em; width:10%; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; width:30%; background:#fafafa;">文件元数据 + x402/HTLC 支付</td>
+</tr>
+<tr>
+<td colspan="5" style="border:1px solid #999; padding:0.3em; text-align:center; font-size:9pt; color:#555; background:#fff;">↕ 内容哈希引用 (非跨链)</td>
+</tr>
+<tr>
+<td style="border:1px solid #999; padding:0.5em; text-align:right; background:#f7f0ea;">内容所有者</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#e8e8e8; font-weight:600;">Metanet Chain</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; background:#fafafa;">CDN 托管合约 + MNT 结算</td>
+</tr>
+<tr>
+<td colspan="2" style="border:1px solid #999; padding:0.5em; text-align:right; background:#f0f7ea;"></td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#e8e8e8; font-weight:600;">Metanet Node</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; background:#fafafa;">实际内容存储与检索服务</td>
+</tr>
+</table>
 
 ---
 

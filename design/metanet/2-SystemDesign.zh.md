@@ -73,6 +73,7 @@
 **BSV 锚定**:
 - 每 ~100 Metanet Chain 块, 将 Merkle root 写入 BSV 交易
 - `OP_RETURN <metanet_anchor_flag> <metanet_chain_merkle_root> <block_range>`
+- 锚定执行: 任何 Metanet Node 均可创建锚定交易（BSV 矿工费由提交者承担）。
 - 作用: 防止 Metanet Chain 长程攻击, 借助 BSV 的安全性
 
 ---
@@ -109,11 +110,20 @@ metanet start --mine          # Metanet Node + 矿工模式 (Layer 3, CDN + 挖�
 
 **核心机制**: Metanet Node 自发缓存热门内容, 利润驱动, 无需协议层管理。
 
-```
-文件热度高 → x402 收入高 → 更多 Metanet Node 主动缓存 → 可用性更好 → 用户体验更好
-  ↑                                                              │
-  └──────────────────────────────────────────────────────────────┘
-```
+<table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
+<tr>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#eaf0f7; font-weight:600;">文件热度高</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f0f7ea; font-weight:600;">x402 收入高</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f7f0ea; font-weight:600;">更多 Node 缓存</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f5eaf7; font-weight:600;">可用性更好</td>
+</tr>
+<tr>
+<td colspan="7" style="border:1px solid #999; padding:0.3em; text-align:center; font-size:9pt; color:#555; background:#fafafa;">↻ 正反馈循环: 用户体验提升 → 文件热度更高</td>
+</tr>
+</table>
 
 **特点**:
 - 不需要存储合约 (Metanet Node 自愿缓存)
@@ -146,6 +156,7 @@ else:
 1. Owner 选择 Metanet Node, 协商价格和期限
 2. Owner 与 Metanet Node 签存储合约 (Bitcoin Script, Metanet Chain 交易)
 3. Owner 用 ECDH 为该 Metanet Node 重新加密数据, 传输给 Metanet Node
+   注: 若 Owner 与 N 个 Node 签署合约，需分别执行 N 次独立的 ECDH 重加密和数据上传。大文件场景下此开销显著（见详细设计第三节的优化讨论）。
 4. Metanet Node 定期提交存储证明 (Merkle 挑战-响应)
 5. 合约到期: Owner 可续期或让合约过期
 ```
@@ -155,9 +166,10 @@ else:
 - 挑战确定性: `challenge_k = SHA256(contract_txid || uint32_le(k))`, k 为期数
   - 随机性来源于 contract_txid 在合约创建前不可预测
   - 不使用区块哈希作为随机源 (避免矿工操纵)
-- 合约创建时 Owner 预计算所有 N 期的 `expected_proof_hash`, 编码到合约 UTXO 链中
+- 合约创建时 Owner 预计算所有 N 期的 `expected_proof_hash`, 编码到单个 StorageDeal 交易的 N 个输出中
+- 数据分块: Owner 将文件分成固定大小的块 (默认 256KB/块)，构建 Merkle 树。合约期数等于文件的块数。
 - Metanet Node 定期提交存储证明: 根据 challenge_k 确定被挑战的数据块, 返回块数据 + Merkle proof
-- 验证者 (任何人) 可链上验证
+- 验证者 (任何人) 可验证。初期实现采用简化模式：Script 验证 `OP_SHA256(proof_data) == expected_hash`，完整 Merkle 验证在链下进行；远期可利用 BSV 大 Script 在链上完成完整 Merkle 验证（见详细设计第二节）。
 
 **副本策略**: 协议不管副本策略 — Owner 自己决定冗余度
 
@@ -198,6 +210,8 @@ revenue_share: {
 ---
 
 ## 七、x402 支付通道
+
+> **x402 基础协议**: x402 带宽计费规则、HTTP API (`POST /_bitfs/pay/{invoice_id}`)、免费配额逻辑、Invoice 验证流程等基础实现定义在 BitFS 设计文档中 — 见 [BitFS 系统设计 十三节](../bitfs/2-SystemDesign.zh.md#十三daemon-配置-lfcp) 和 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-x402-支付流程)。本节仅描述 Metanet Chain 引入的支付通道扩展。
 
 **两种支付通道**:
 

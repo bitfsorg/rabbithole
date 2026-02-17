@@ -651,6 +651,258 @@ func TestIsPubKeyHex(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// Supplementary tests: untested code paths
+// =============================================================================
+
+// --- URI Edge Cases ---
+
+func TestParseURI_CaseSensitiveScheme(t *testing.T) {
+	tests := []struct {
+		name string
+		uri  string
+	}{
+		{"all caps", "BITFS://example.com"},
+		{"mixed case", "BitFs://example.com"},
+		{"uppercase B", "Bitfs://example.com"},
+		{"uppercase trailing", "bitFS://example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseURI(tt.uri)
+			assert.Error(t, err)
+			assert.ErrorIs(t, err, ErrInvalidURI)
+		})
+	}
+}
+
+func TestParseURI_WhitespaceInURI(t *testing.T) {
+	tests := []struct {
+		name string
+		uri  string
+	}{
+		{"leading space", " bitfs://example.com"},
+		{"leading tab", "\tbitfs://example.com"},
+		{"leading newline", "\nbitfs://example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseURI(tt.uri)
+			assert.Error(t, err)
+			assert.ErrorIs(t, err, ErrInvalidURI)
+		})
+	}
+}
+
+func TestParseURI_PathWithQueryAndFragment(t *testing.T) {
+	tests := []struct {
+		name     string
+		uri      string
+		wantPath string
+	}{
+		{
+			name:     "path with query string",
+			uri:      "bitfs://alice@example.com/docs/file.pdf?version=2",
+			wantPath: "/docs/file.pdf?version=2",
+		},
+		{
+			name:     "path with fragment",
+			uri:      "bitfs://alice@example.com/docs/file.pdf#page=5",
+			wantPath: "/docs/file.pdf#page=5",
+		},
+		{
+			name:     "path with query and fragment",
+			uri:      "bitfs://alice@example.com/docs/file.pdf?v=2#page=5",
+			wantPath: "/docs/file.pdf?v=2#page=5",
+		},
+		{
+			name:     "DNSLink path with query",
+			uri:      "bitfs://example.com/file.txt?download=true",
+			wantPath: "/file.txt?download=true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := ParseURI(tt.uri)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantPath, parsed.Path)
+		})
+	}
+}
+
+func TestParseURI_PubKeyLooksLikeDNSLink(t *testing.T) {
+	// 64 hex chars (32 bytes) with 02 prefix -- NOT 66 chars, so not a pubkey.
+	// isPubKeyHex requires exactly 66 hex chars; 64 chars should fall through to DNSLink.
+	shortHex := "02" + strings.Repeat("ab", 31) // 2 + 62 = 64 hex chars (32 bytes)
+
+	parsed, err := ParseURI("bitfs://" + shortHex + "/path")
+	require.NoError(t, err)
+	assert.Equal(t, AddressDNSLink, parsed.Type, "64 hex chars (not 66) should be classified as DNSLink")
+	assert.Equal(t, shortHex, parsed.Domain)
+	assert.Equal(t, "/path", parsed.Path)
+	assert.Nil(t, parsed.PubKey)
+}
+
+// --- DNS Resolution Edge Cases ---
+
+func TestResolveDNSLinkPubKey_SkipsEmptyTXTRecords(t *testing.T) {
+	resolver := newMockDNSResolver()
+	resolver.addTXT("_bitfs_pubkey.example.com", "", "", testPubKeyHex)
+
+	pubKey, err := ResolveDNSLinkPubKeyWithResolver("example.com", resolver)
+	require.NoError(t, err)
+	assert.Len(t, pubKey, 33)
+	assert.Equal(t, byte(0x02), pubKey[0])
+}
+
+func TestResolveDNSLinkPubKey_AllEmptyTXTRecords(t *testing.T) {
+	resolver := newMockDNSResolver()
+	resolver.addTXT("_bitfs_pubkey.example.com", "", "", "")
+
+	_, err := ResolveDNSLinkPubKeyWithResolver("example.com", resolver)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrDNSLookupFailed)
+}
+
+func TestResolveDNSLinkPubKey_WhitespaceTrimming(t *testing.T) {
+	resolver := newMockDNSResolver()
+	padded := "  " + testPubKeyHex + "  "
+	resolver.addTXT("_bitfs_pubkey.example.com", padded)
+
+	pubKey, err := ResolveDNSLinkPubKeyWithResolver("example.com", resolver)
+	require.NoError(t, err)
+	assert.Len(t, pubKey, 33)
+
+	expected, _ := hex.DecodeString(testPubKeyHex)
+	assert.Equal(t, expected, pubKey)
+}
+
+func TestResolveEndpoints_SingleRecord(t *testing.T) {
+	resolver := newMockDNSResolver()
+	resolver.addSRV("bitfs", "tcp", "example.com",
+		&net.SRV{Target: "solo.example.com.", Port: 8080, Priority: 10, Weight: 100},
+	)
+
+	endpoints, err := ResolveEndpointsWithResolver("example.com", SRVBitFS, resolver)
+	require.NoError(t, err)
+	require.Len(t, endpoints, 1)
+	assert.Equal(t, "solo.example.com:8080", endpoints[0])
+}
+
+// --- Paymail Discovery Edge Cases ---
+
+func TestDiscoverCapabilities_NonStringCapabilityValue(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"bsvalias": "1.0",
+			"capabilities": map[string]interface{}{
+				"pki":          12345,                // non-string: should be skipped
+				"f12f968c92d6": true,                 // non-string: should be skipped
+				"a9f510c16bde": []string{"not", "a"}, // non-string: should be skipped
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := &mockHTTPClient{server: server}
+	caps, err := DiscoverCapabilitiesWithClient("example.com", client)
+	require.NoError(t, err, "non-string capability values should be skipped gracefully")
+	assert.Empty(t, caps.PKI, "integer PKI value should be skipped")
+	assert.Empty(t, caps.PublicProfile, "boolean public profile value should be skipped")
+	assert.Empty(t, caps.VerifyPubKey, "array verify-pubkey value should be skipped")
+}
+
+func TestDiscoverCapabilities_ConnectionRefused(t *testing.T) {
+	// Create a client whose Get always returns an error
+	client := &errorHTTPClient{err: fmt.Errorf("connection refused")}
+
+	_, err := DiscoverCapabilitiesWithClient("example.com", client)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrPaymailDiscovery)
+}
+
+// --- ResolvePKI Edge Cases ---
+
+func TestResolvePKI_PKIEndpointNon200(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/bsvalias", func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"bsvalias": "1.0",
+			"capabilities": map[string]interface{}{
+				"pki": "{server}/api/v1/bsvalias/pki/{alias}@{domain.tld}",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/api/v1/bsvalias/pki/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("not found"))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := &mockHTTPClient{server: server}
+	_, err := ResolvePKIWithClient("alice", "example.com", client)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrPKIResolution)
+}
+
+func TestResolvePKI_PKIEndpointInvalidJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/bsvalias", func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"bsvalias": "1.0",
+			"capabilities": map[string]interface{}{
+				"pki": "{server}/api/v1/bsvalias/pki/{alias}@{domain.tld}",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	})
+	mux.HandleFunc("/api/v1/bsvalias/pki/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("{garbled json!!!"))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := &mockHTTPClient{server: server}
+	_, err := ResolvePKIWithClient("alice", "example.com", client)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrPKIResolution)
+}
+
+// --- ResolveURI Edge Cases ---
+
+func TestResolveURI_DNSLink_NoSRV_Fallback(t *testing.T) {
+	resolver := newMockDNSResolver()
+	resolver.addTXT("_bitfs_pubkey.example.com", testPubKeyHex)
+	// No SRV records added -- should fall back to domain:443
+
+	pubKey, endpoints, err := ResolveURIWith("bitfs://example.com/docs", DefaultHTTPClient, resolver)
+	require.NoError(t, err)
+	assert.Len(t, pubKey, 33)
+	assert.Equal(t, []string{"example.com:443"}, endpoints,
+		"DNSLink with no SRV records should fall back to domain:443")
+}
+
+// --- Helper: error HTTP client ---
+
+// errorHTTPClient is an HTTPClient that always returns an error.
+type errorHTTPClient struct {
+	err error
+}
+
+func (e *errorHTTPClient) Get(url string) (*http.Response, error) {
+	return nil, e.err
+}
+
 func mustDecodeHex(s string) []byte {
 	b, err := hex.DecodeString(s)
 	if err != nil {

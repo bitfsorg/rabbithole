@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BitFS — Decentralized Encrypted File System on Blockchain</title>
 <meta name="description" content="A decentralized file system that maps Unix semantics onto blockchain, encrypts everything by default, and enables trustless data commerce through atomic swaps.">
-<meta name="theme-color" content="#110f0d">
+<meta name="theme-color" content="#110f0d" id="themeColor">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,6 +32,27 @@
   --b-text: #d4cdc4;
   --b-text-dim: #8a8078;
   --b-text-bright: #f0ebe5;
+
+  --b-nav-bg: rgba(17, 15, 13, 0.88);
+  --b-nav-border: rgba(46, 41, 36, 0.5);
+  --b-mobile-nav-bg: rgba(17, 15, 13, 0.96);
+}
+
+[data-theme="light"] {
+  --b-bg: #faf7f4;
+  --b-bg2: #f0ebe5;
+  --b-bg3: #e6e0d8;
+  --b-border: #d4cdc4;
+  --b-gold: #9a6e3e;
+  --b-gold-light: #b8864e;
+  --b-gold-dark: #7d5a2f;
+  --b-text: #5a534c;
+  --b-text-dim: #8a8078;
+  --b-text-bright: #1a1714;
+
+  --b-nav-bg: rgba(250, 247, 244, 0.92);
+  --b-nav-border: rgba(212, 205, 196, 0.6);
+  --b-mobile-nav-bg: rgba(250, 247, 244, 0.97);
 }
 
 html {
@@ -164,10 +185,10 @@ img { max-width: 100%; display: block; }
   left: 0;
   right: 0;
   z-index: 1000;
-  background: #110f0de0;
+  background: var(--b-nav-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(46, 41, 36, 0.5);
+  border-bottom: 1px solid var(--b-nav-border);
 }
 
 .nav-inner {
@@ -236,7 +257,7 @@ img { max-width: 100%; display: block; }
   left: 0;
   right: 0;
   bottom: 0;
-  background: #110f0df5;
+  background: var(--b-mobile-nav-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   z-index: 999;
@@ -256,6 +277,35 @@ img { max-width: 100%; display: block; }
 .nav-mobile a:hover {
   color: var(--b-text-bright);
 }
+
+/* ── Theme Toggle ── */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--b-border);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--b-text-dim);
+  transition: all 0.3s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  color: var(--b-gold);
+  border-color: var(--b-gold-dark);
+}
+
+/* In dark mode (default), show sun icon (to switch to light) */
+.theme-icon-moon { display: none; }
+.theme-icon-sun { display: block; }
+
+/* In light mode, show moon icon (to switch to dark) */
+[data-theme="light"] .theme-icon-sun { display: none; }
+[data-theme="light"] .theme-icon-moon { display: block; }
 
 
 /* ===================================================================
@@ -1114,6 +1164,9 @@ img { max-width: 100%; display: block; }
   }
 }
 </style>
+<script>
+(function(){var t=localStorage.getItem("bitfs-theme");if(!t)t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";if(t==="light")document.documentElement.setAttribute("data-theme","light");})();
+</script>
 </head>
 <body>
 
@@ -1128,6 +1181,10 @@ img { max-width: 100%; display: block; }
     <div class="nav-links">
       <a href="whitepaper/">Whitepaper</a>
       <a href="https://github.com/nicklaus4/bitfs" target="_blank" rel="noopener">GitHub</a>
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark mode">
+        <svg class="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg class="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
     </div>
     <button class="nav-hamburger" aria-label="Toggle menu" onclick="toggleMobileNav()">
       <span></span>
@@ -1140,6 +1197,10 @@ img { max-width: 100%; display: block; }
 <div class="nav-mobile" id="navMobile">
   <a href="whitepaper/" onclick="closeMobileNav()">Whitepaper</a>
   <a href="https://github.com/nicklaus4/bitfs" target="_blank" rel="noopener" onclick="closeMobileNav()">GitHub</a>
+  <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark mode">
+    <svg class="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    <svg class="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+  </button>
 </div>
 
 
@@ -1477,6 +1538,36 @@ img { max-width: 100%; display: block; }
 <script>
 (function () {
   "use strict";
+
+  // ── Theme Management ──
+  function getPreferredTheme() {
+    var stored = localStorage.getItem("bitfs-theme");
+    if (stored) return stored;
+    return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    var meta = document.getElementById("themeColor");
+    if (meta) meta.content = theme === "light" ? "#faf7f4" : "#110f0d";
+  }
+
+  window.toggleTheme = function() {
+    var current = document.documentElement.getAttribute("data-theme") || "dark";
+    var next = current === "dark" ? "light" : "dark";
+    applyTheme(next);
+    localStorage.setItem("bitfs-theme", next);
+  };
+
+  // Apply on load
+  applyTheme(getPreferredTheme());
+
+  // Listen for system theme changes
+  window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", function(e) {
+    if (!localStorage.getItem("bitfs-theme")) {
+      applyTheme(e.matches ? "light" : "dark");
+    }
+  });
 
   // ── IntersectionObserver for .reveal elements ──
   var revealElements = document.querySelectorAll(".reveal");
