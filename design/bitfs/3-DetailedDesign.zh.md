@@ -146,6 +146,8 @@ HD Seed (BIP39 助记词 + 可选 passphrase)
 | **硬链接** | 消耗 next_child_index 但不创建新 HD 密钥 (ChildEntry 复用已有 P_node) |
 | **软链接** | 消耗 next_child_index 并创建新 HD 密钥 (LINK 节点是新节点) |
 
+> **硬链接与 next_child_index 的多父目录语义**: `next_child_index` 是每个目录节点各自维护的独立计数器, 不是全局的。当文件 F 被硬链接到目录 B 时, 消耗的是目录 B 的 `next_child_index` (分配给新 ChildEntry 的 index), 而目录 A (F 的原始父目录) 的 `next_child_index` 不受影响。同一个 P_node 可出现在多个目录的 ChildEntry 中, 各自拥有不同的 index 值 (来自各自父目录的计数器)。这与 Unix inode 语义一致: index 标识"目录项在父目录中的位置", 而非文件本身的全局编号。
+
 #### HD 路径构建
 
 ```go
@@ -203,17 +205,17 @@ P_node, D_node = wallet.DeriveNodeKey(vault, filePath)
 
 FREE:
   D_node 使用标量 1
-  aes_key = KDF(ECDH(1, P_node), key_hash) = KDF(P_node, key_hash)
+  aes_key = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash)
   → P_node 通过 DNSLink 公开, 任何人可计算
 
 PRIVATE / PAID:
-  aes_key = KDF(ECDH(D_node, P_node), key_hash)
+  aes_key = KDF(ECDH(D_node, P_node).x, key_hash)
   → 仅知道 D_node 的 Owner 或通过 HTLC 获得 capsule 的 Buyer 可计算
 
 完整流程:
   1. key_hash = SHA256(SHA256(plaintext))      ← ComputeKeyHash
   2. S_node = ECDH(D_node, P_node)             ← BIP32 密钥直接参与 ECDH
-     → FREE: S_node = ECDH(1, P_node) = P_node
+     → FREE: S_node = ECDH(1, P_node) = P_node (取 .x 坐标进入 KDF)
      → PRIVATE/PAID: S_node = D_node × P_node
   3. aes_key = HKDF-SHA256(
        ikm = S_node.x,                         // 共享密钥 x 坐标 (32 bytes)
@@ -639,6 +641,11 @@ UTXO 产生: 1 content UTXO (locked to P_node)
 ```
 
 ### 14 种文件系统操作的交易组合
+
+> **多笔交易操作的中断恢复**: 部分操作 (如 `put`, `mkdir`, `mv` 跨目录) 需要 2-4 笔交易协同完成。若中途中断 (进程崩溃、网络断开), 已广播的交易不可撤销。恢复策略:
+> - **Tx 1 已广播, Tx 2+ 未广播**: 新 Metanet 节点已创建但父目录 ChildEntry 未更新 → 节点成为"孤立节点" (链上存在但目录树不可见)。Daemon 重启后检测到未完成的交易组, 自动补发剩余交易。
+> - **检测机制**: 每个多笔交易操作在 daemon.db 中记录 `pending_tx_group` (操作类型、已广播 TxID 列表、待广播交易原始数据)。操作全部完成后删除该记录。Daemon 启动时扫描 `pending_tx_group` 表, 对未完成的操作自动续发。
+> - **幂等性保证**: 每笔交易引用特定 UTXO 作为 Input, 若 UTXO 已被花费 (重复广播) 则交易自然失败, 不会产生副作用。
 
 #### 1. put (新建文件)
 
@@ -1162,7 +1169,7 @@ Script (验证逻辑):
 分片完整性:
   1. 每个 chunk 单独签名
   2. 验证: 每个 chunk 的 Rabin 签名 → 确保内容未被篡改
-  3. 重组后验证: recombination_hash == H(chunk0||chunk1||...)
+  3. 重组后验证: recombination_hash == SHA256(chunk0||chunk1||...)  ← 单次 SHA256, 对密文分片拼接
 
 Script 内验证场景:
   - 原子交换中要求内容真实性证明

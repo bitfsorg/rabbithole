@@ -11,47 +11,35 @@
 
 ---
 
-## Context
-
-BitFS 从"类网盘同步工具"重新设计为"Agent-first 的 Unix 命令行工具集"。灵感来自 Stripe 的 purl.dev -- 为 AI Agent 设计的支付 CLI。
-
-核心转变:
-- **旧设计**: 双向同步模式，本地文件夹 <-> 区块链，类网盘
-- **新设计**: 无状态查询 + 有状态管理的双模式，Unix 哲学，Agent-first
-- **本质**: 在链上实现了一个 Unix 文件系统
-
----
-
 ## 一、整体架构
 
-```
-┌───────────────────────────────────────────────────────────┐
-│                      用户 / Agent                          │
-├────────────────────┬──────────────────────────────────────┤
-│  b* 工具 (只读)      │  bitfs 命令 (读写)                    │
-│  bls, bcat, bget    │  bitfs put, mkdir, rm, mv, cp, link  │
-│  bstat, btree       │  bitfs sell, encrypt, decrypt         │
-│                    │  bitfs vault, wallet, publish, daemon  │
-│                    │  bitfs shell (FTP 风格交互 REPL)       │
-├────────────────────┴──────────────────────────────────────┤
-│                   共享核心库 (libbitfs)                      │
-│  ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌──────────────┐  │
-│  │ Metanet  │ │ Storage  │ │DNSLink/ │ │ x402/Token   │  │
-│  │ 解析器    │ │内容存储   │ │Paymail  │ │ 支付/预购     │  │
-│  │          │ │(链下/链上)│ │ 解析器   │ │              │  │
-│  ├──────────┤ ├──────────┤ ├─────────┤ ├──────────────┤  │
-│  │Method 42 │ │  SPV     │ │ Rabin   │ │ RevShare/ISO │  │
-│  │Koblitz   │ │  轻节点   │ │ 签名    │ │ 收益权证券化  │  │
-│  │加密引擎   │ │          │ │         │ │              │  │
-│  └──────────┘ └──────────┘ └─────────┘ └──────────────┘  │
-├───────────────────────────────────────────────────────────┤
-│  BSV 区块链                        │  链下内容存储          │
-│  (Metanet 元数据 + 可选数据交易)     │  Daemon (LFCP)       │
-├───────────────────────────────────────────────────────────┤
-│  Metanet Chain (去中心化 CDN) — metanet.org                 │
-│  (BSV 同构链, MNT Token, 存储合约, 支付通道)               │
-└───────────────────────────────────────────────────────────┘
-```
+<table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
+<tr><th colspan="4" style="text-align:center; background:#e8e8e8; padding:0.6em; border:1px solid #999; font-size:11pt;">用户 / Agent</th></tr>
+<tr>
+<td colspan="2" style="width:35%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>b* 工具 (只读)</strong><br>bls, bcat, bget, bstat, btree</td>
+<td colspan="2" style="width:65%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>bitfs 命令 (读写)</strong><br>put, mkdir, rm, mv, cp, link, sell, encrypt, decrypt<br>vault, wallet, publish, daemon, shell</td>
+</tr>
+<tr><th colspan="4" style="text-align:center; background:#e8e8e8; padding:0.5em; border:1px solid #999;">共享核心库 (libbitfs)</th></tr>
+<tr>
+<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Metanet 解析器</strong><br><span style="font-size:9pt; color:#555;">inode/dirent/链接</span></td>
+<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Storage</strong><br><span style="font-size:9pt; color:#555;">内容存储 (链下/链上)</span></td>
+<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>DNSLink / Paymail</strong><br><span style="font-size:9pt; color:#555;">身份解析</span></td>
+<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>x402 / Token</strong><br><span style="font-size:9pt; color:#555;">支付/预购</span></td>
+</tr>
+<tr>
+<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Method 42</strong><br><span style="font-size:9pt; color:#555;">Koblitz 加密引擎</span></td>
+<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>SPV</strong><br><span style="font-size:9pt; color:#555;">轻节点</span></td>
+<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Rabin</strong><br><span style="font-size:9pt; color:#555;">签名</span></td>
+<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>RevShare / ISO</strong><br><span style="font-size:9pt; color:#555;">收益权证券化</span></td>
+</tr>
+<tr>
+<td colspan="2" style="border:1px solid #999; padding:0.5em; background:#f5f5f5; text-align:center;"><strong>BSV 区块链</strong><br><span style="font-size:9pt; color:#555;">Metanet 元数据 + 可选数据交易</span></td>
+<td colspan="2" style="border:1px solid #999; padding:0.5em; background:#f5f5f5; text-align:center;"><strong>链下内容存储</strong><br><span style="font-size:9pt; color:#555;">Daemon (LFCP)</span></td>
+</tr>
+<tr>
+<td colspan="4" style="border:1px solid #999; padding:0.5em; background:#eaeaea; text-align:center;"><strong>Metanet Chain (去中心化 CDN)</strong> — metanet.org<br><span style="font-size:9pt; color:#555;">BSV 同构链, MNT Token, 存储合约, 支付通道</span></td>
+</tr>
+</table>
 
 ### 设计原则
 
@@ -65,46 +53,20 @@ BitFS 从"类网盘同步工具"重新设计为"Agent-first 的 Unix 命令行�
 8. **Agent-first**: Daemon (LFCP) 同时服务人类和 Agent; WebMCP (浏览器) + Content Negotiation (CLI); 402 付费墙对 Agent 是可编程支付接口
 9. **BSV Association 官方库**: 使用 `github.com/bsv-blockchain/go-sdk` 作为唯一 BSV 依赖
 10. **元数据与内容分离**: Metanet 交易只存元数据, 内容独立存储 (链下默认, 链上可选)
-11. **双重哈希**: 链上仅存 SHA256(SHA256(plaintext)), 不暴露原始数据哈希, 兼做密钥派生和内容承诺
-12. **收益权证券化**: 文件收益权可 ISO 发行、UTXO 化、自由流通, Covenant 强制分账
-13. **Paymail 身份层**: 支持 `bitfs://alias@domain/path` 寻址 (RFC 3986 userinfo), Paymail 做链下身份发现, 链上协议不变
-14. **去中心化 CDN**: Metanet Chain (metanet.org) 激励检索而非存储; Metanet Node 靠服务数据赚 x402 检索费, 热门内容自组织复制
-15. **双币种分工**: 用户使用 BSV (x402/HTLC) 支付, Owner 使用 MNT Token 支付 CDN 托管费; 普通用户不需要接触 Metanet Chain
+11. **链下传输优先**: 所有数据内容的传输均在链下进行 (Daemon/LFCP/x402); 数据可以选择永不上链, 链上仅记录元数据和内容哈希承诺
+12. **双重哈希**: 链上仅存 SHA256(SHA256(plaintext)), 不暴露原始数据哈希, 兼做密钥派生和内容承诺
+13. **收益权证券化**: 文件收益权可 ISO 发行、UTXO 化、自由流通, Covenant 强制分账
+14. **Paymail 身份层**: 支持 `bitfs://alias@domain/path` 寻址 (RFC 3986 userinfo), Paymail 做链下身份发现, 链上协议不变
+15. **去中心化 CDN**: Metanet Chain (metanet.org) 激励检索而非存储; Metanet Node 靠服务数据赚 x402 检索费, 热门内容自组织复制
+16. **双币种分工**: 用户使用 BSV (x402/HTLC) 支付, Owner 使用 MNT Token 支付 CDN 托管费; 普通用户不需要接触 Metanet Chain
+17. **链上权限记录**: 授予文件读取权限在链上记录 (Metanet 交易的 access 字段); 唯一例外是 AccessFree 模式 — 使用标量 1 作为加密私钥, 任何人可还原解密密钥, 无需链上授权记录
+18. **数据目录约定**: BSV 钱包存储于 `~/.bitfs/` (可由环境变量/配置文件/命令行覆盖); MNT 钱包存储于 `~/.metanet/`; Metanet 客户端共用 `~/.bitfs/` 中的 BSV 密钥用于支付
 
 > **两产品定位**: BitFS (bitfs.org) = 去中心化加密文件系统协议 (`bitfs` CLI); Metanet (metanet.org) = 去中心化 CDN 网络 (`metanet` CLI)。两者关系类似 IPFS + Filecoin, 共享核心 Go 库但为独立二进制。
 
 ---
-## 二、与旧设计的主要差异
 
-| 方面 | 旧设计 | 新设计 |
-|------|--------|--------|
-| 核心模式 | 双向同步 | 无状态查询 + 有状态管理 |
-| 文件系统模型 | 简单元数据 | Unix 文件系统 (inode/目录项/软硬链接) |
-| 命令风格 | bitfs file upload | bget / bitfs put |
-| 交互模式 | 无 | FTP 风格 Shell |
-| 工具数量 | 1 个 CLI | 5 个独立只读工具 + 1 个主命令 |
-| 数据验证 | 查链 | SPV (本地 tx + Merkle proof) |
-| 加密 | 可选 | Koblitz + AES-256-GCM 混合加密 (与 Bitcoin 同密码体系) |
-| 买卖 | 信任 daemon | HTLC 原子交换 + Token 批量预购 + 目录树 xpub 解锁 |
-| 共享 | Method 42 ECDH | 群签名/群加密 (POSIX ACL + BBS+) |
-| 版本控制 | 自建 | Metanet 内置 + git remote helper 集成 |
-| 多树 | 无 | Vault (BIP32 account 隔离) |
-| 内容存储 | IPFS 外部依赖 | 链下默认 (daemon/LFCP) + 链上可选 (OP_DROP 数据交易) |
-| 身份验证 | 无 | Method 42 ECDH 握手 |
-| 服务模式 | 无 | Daemon/LFCP (HTTP 服务 + HTLC + 元数据服务) |
-| 设计对象 | 人类用户 | Agent-first + 人类友好 |
-| 内容认证 | 无 | Rabin 签名 (Script 内可验证) |
-| 时间权限 | 无 | OP_CHECKLOCKTIMEVERIFY 区块高度权限 |
-| 数据压缩 | 无 | LZW/GZIP/ZSTD (属性标记) |
-| 批量购买 | 无 | Hash Chain Token 预购 |
-| 网络选择 | 无 | 种子级别网络绑定, 预设+自定义网络 |
-| 收益分配 | 无 | 收益权 UTXO 化 + Registry Covenant 自动分账 + ISO 公开发售 |
-| 身份寻址 | 无 | Paymail (alias@domain) + DNSLink + 裸公钥, 三种寻址并存 |
-| 存储激励 | 无 | Metanet Chain 去中心化 CDN (激励检索, ECDH 存储证明, 合并挖矿) |
-
----
-
-## 设计决策记录
+## 二、设计决策记录
 
 | # | 决策 | 选择 | 理由 |
 |---|------|------|------|
@@ -133,7 +95,7 @@ BitFS 从"类网盘同步工具"重新设计为"Agent-first 的 Unix 命令行�
 | 23 | 版本控制 | Metanet 内置 + git remote helper | 复用 git 生态 |
 | 24 | BSV 库 | `github.com/bsv-blockchain/go-sdk` (tx/ec/wallet/spv/script/overlay/auth) | BSV Association 官方, 功能全面 |
 | 25 | 内容存储 | 链下默认 (daemon/LFCP) + 链上可选 (OP_DROP) | 灵活, 大文件链下, 小文件可链上 |
-| 26 | 备份恢复 | 暂不设计, 用户自行备份 ~/.bitfs/ | 简化, 后续补充 |
+| 26 | 备份恢复 | 用户自行备份 ~/.bitfs/ 目录 | 简化, HD 密钥可从助记词恢复 |
 | 27 | Visitor 元数据 | daemon 为主, 第三方索引为备用降级 | SPV 模式下 Visitor 不查链 |
 | 28 | 存储证明 | 双层加密 (ECDH with provider) + Merkle 挑战 | Method 42 一石二鸟 |
 | 29 | 版本冲突 | Last-Write-Wins (区块高度/TTOR) | 确定性, Metanet 原生 |

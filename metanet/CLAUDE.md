@@ -59,7 +59,7 @@ metanet/
 | `../design/metanet/1-ConceptDesign.zh.md` | CDN model, economic design, design principles |
 | `../design/metanet/2-SystemDesign.zh.md` | Node architecture, contracts, payment channels |
 | `../design/metanet/3-DetailedDesign.zh.md` | Consensus, mining, settlement protocol details |
-| `../design/metanet/4-TestDesign.zh.md` | Test case design (12 test cases, 5 categories) |
+| `../design/metanet/4-TestDesign.zh.md` | Test case design (20 test cases, 5 categories) |
 
 ## Dependencies
 

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>$title$</title>
+<style>
+@page {
+  size: A4;
+  margin: 2.5cm 2cm 2.5cm 2cm;
+  @bottom-center {
+    content: counter(page);
+    font-size: 9pt;
+    color: #666;
+  }
+}
+
+* {
+  font-family: "Heiti SC", "PingFang SC", "Hiragino Sans GB", "Songti SC", "STSong", sans-serif;
+}
+
+body {
+  font-family: "Songti SC", "STSong", "Heiti SC", "PingFang SC", serif;
+  font-size: 11pt;
+  line-height: 1.8;
+  color: #1a1a1a;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Heiti SC", "PingFang SC", "Hiragino Sans GB", sans-serif;
+}
+
+h1 {
+  font-size: 22pt;
+  font-weight: 700;
+  margin-top: 0;
+  margin-bottom: 0.8em;
+  padding-bottom: 0.3em;
+  border-bottom: 2px solid #333;
+}
+
+h2 {
+  font-size: 16pt;
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid #ccc;
+}
+
+h3 {
+  font-size: 13pt;
+  font-weight: 600;
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+}
+
+h4 {
+  font-size: 11.5pt;
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+}
+
+p {
+  margin-top: 0.4em;
+  margin-bottom: 0.4em;
+  text-align: justify;
+}
+
+code {
+  font-family: "Menlo", "Consolas", "Heiti SC", monospace;
+  font-size: 9.5pt;
+  background-color: #f5f5f5;
+  padding: 0.15em 0.3em;
+  border-radius: 3px;
+}
+
+pre {
+  background-color: #f8f8f8;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.8em 1em;
+  font-size: 9pt;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+pre code {
+  font-family: "Menlo", "Consolas", "Heiti SC", monospace;
+  background: none;
+  padding: 0;
+  font-size: 9pt;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+  font-size: 10pt;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+
+th {
+  background-color: #f0f0f0;
+  font-family: "Heiti SC", "PingFang SC", sans-serif;
+  font-weight: 600;
+}
+
+tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+ul, ol {
+  margin-top: 0.3em;
+  margin-bottom: 0.3em;
+  padding-left: 1.5em;
+}
+
+li {
+  margin-bottom: 0.2em;
+}
+
+blockquote {
+  border-left: 3px solid #ccc;
+  margin: 0.8em 0;
+  padding: 0.3em 1em;
+  color: #555;
+  background-color: #fafafa;
+}
+
+strong { font-weight: 700; }
+
+hr {
+  border: none;
+  border-top: 1px solid #ddd;
+  margin: 1.5em 0;
+}
+
+a { color: #2563eb; text-decoration: none; }
+</style>
+</head>
+<body>
+$body$
+</body>
+</html>

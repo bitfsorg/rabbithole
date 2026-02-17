@@ -27,6 +27,26 @@
   --m-text: #d4d4d4;
   --m-text-dim: #888888;
   --m-text-bright: #ffffff;
+
+  --m-nav-bg: rgba(30, 30, 30, 0.88);
+  --m-mobile-nav-bg: rgba(30, 30, 30, 0.94);
+}
+
+[data-theme="light"] {
+  --m-bg: #f7f7f7;
+  --m-bg2: #ebebeb;
+  --m-bg3: #e0e0e0;
+  --m-border: #cccccc;
+  --m-amber: #c47a28;
+  --m-amber-light: #d4892a;
+  --m-amber-dark: #a06520;
+  --m-red: #c03020;
+  --m-text: #333333;
+  --m-text-dim: #666666;
+  --m-text-bright: #111111;
+
+  --m-nav-bg: rgba(247, 247, 247, 0.92);
+  --m-mobile-nav-bg: rgba(247, 247, 247, 0.97);
 }
 
 /* ========================================
@@ -255,7 +275,7 @@ img {
   left: 0;
   right: 0;
   z-index: 1000;
-  background: #1e1e1ee0;
+  background: var(--m-nav-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid transparent;
@@ -329,6 +349,35 @@ img {
   margin: 5px 0;
   transition: transform 0.3s ease, opacity 0.3s ease;
 }
+
+/* -- Theme Toggle -- */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--m-border);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--m-text-dim);
+  transition: all 0.3s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  color: var(--m-amber);
+  border-color: var(--m-amber-dark);
+}
+
+/* In dark mode (default), show sun icon (to switch to light) */
+.theme-icon-moon { display: none; }
+.theme-icon-sun { display: block; }
+
+/* In light mode, show moon icon (to switch to dark) */
+[data-theme="light"] .theme-icon-sun { display: none; }
+[data-theme="light"] .theme-icon-moon { display: block; }
 
 /* ========================================
    02. HERO
@@ -1063,7 +1112,7 @@ img {
     top: 64px;
     left: 0;
     right: 0;
-    background: #1e1e1ef0;
+    background: var(--m-mobile-nav-bg);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     flex-direction: column;
@@ -1216,6 +1265,9 @@ img {
   }
 }
 </style>
+<script>
+(function(){var t=localStorage.getItem("metanet-theme");if(!t)t=window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";if(t==="light")document.documentElement.setAttribute("data-theme","light");})();
+</script>
 </head>
 <body>
 
@@ -1233,6 +1285,10 @@ img {
       <a href="#token">Token</a>
       <a href="#docs">Docs</a>
       <a href="https://github.com" target="_blank" rel="noopener">GitHub</a>
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme" title="Toggle light/dark mode">
+        <svg class="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg class="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
     </div>
     <button class="nav-hamburger" id="navHamburger" aria-label="Toggle navigation">
       <span></span>
@@ -1556,6 +1612,34 @@ img {
      JAVASCRIPT
      ======================================== -->
 <script>
+// ── Theme Management ──
+function getPreferredTheme() {
+  var stored = localStorage.getItem("metanet-theme");
+  if (stored) return stored;
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+}
+
+window.toggleTheme = function() {
+  var current = document.documentElement.getAttribute("data-theme") || "dark";
+  var next = current === "dark" ? "light" : "dark";
+  applyTheme(next);
+  localStorage.setItem("metanet-theme", next);
+};
+
+// Apply on load
+applyTheme(getPreferredTheme());
+
+// Listen for system theme changes
+window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", function(e) {
+  if (!localStorage.getItem("metanet-theme")) {
+    applyTheme(e.matches ? "light" : "dark");
+  }
+});
+
 (function() {
   'use strict';
 

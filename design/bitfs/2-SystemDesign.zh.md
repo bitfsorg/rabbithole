@@ -315,6 +315,7 @@ message BitFSPayload {
   // field 5 reserved (was encrypted_hash, 已移除 — 内容寻址由 key_hash 承担)
   uint64 file_size = 6;              // 原始文件大小 (bytes)
   bytes key_hash = 7;                // SHA256(SHA256(plaintext)) — 密钥派生 + 内容承诺 (双重哈希, 不暴露原始数据哈希)
+                                     // 目录节点的 key_hash 为空 (nil)——目录不包含数据内容，仅通过 Metanet 交易链维护子节点列表。
 
   // 访问控制
   Access access = 8;                 // PRIVATE / FREE / PAID
@@ -365,7 +366,7 @@ message BitFSPayload {
   // 内容分片 (链上大文件)
   uint32 chunk_index = 30;                 // 本 chunk 序号 (0-based)
   uint32 total_chunks = 31;                // 总 chunk 数 (0 = 非分片)
-  bytes recombination_hash = 32;           // H(chunk0 || chunk1 || ...) 完整性校验
+  bytes recombination_hash = 32;           // SHA256(chunk0 || chunk1 || ...) 单次哈希, 对加密后的密文分片按序拼接计算
 
   // Rabin 签名 (内容认证)
   bytes rabin_signature = 33;              // Rabin 签名 (S, U) 序列化
@@ -402,8 +403,8 @@ message BitFSPayload {
 
 加密体系: Koblitz (secp256k1 ECC) 加密对称密钥 + AES-256-GCM 加密内容 (详见第五节)。
 
-- **FREE**: ECDH(D_node=1, P_node) trick → S_k = KDF(ECDH(1, P_node), key_hash) 可公开计算, AES-GCM(content, S_k), P_node 通过 DNSLink 公开
-- **PAID**: aes_key = KDF(ECDH(D_node, P_node), key_hash) — 与 PRIVATE 同密钥基础, 买家通过 HTLC/Token 获取 capsule → 还原 aes_key, AES-GCM(content, aes_key); CDN 带宽费另行通过 x402 收取
+- **FREE**: ECDH(D_node=1, P_node) trick → S_k = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) 可公开计算, AES-GCM(content, S_k), P_node 通过 DNSLink 公开
+- **PAID**: aes_key = KDF(ECDH(D_node, P_node).x, key_hash) — 与 PRIVATE 同密钥基础, 买家通过 HTLC/Token 获取 capsule → 还原 aes_key, AES-GCM(content, aes_key); CDN 带宽费另行通过 x402 收取
 - **PRIVATE**: ECDH(D_node, P_node) → 仅 Owner 可解密, Protobuf 内部加密 (encrypted=true, private_key_hash + private_file_index 明文, enc_payload 加密)
   - private_key_hash + private_file_index 在明文中供钱包恢复: aes_key = KDF(ECDH(D_node, P_node), key_hash)
   - 解密后的 enc_payload 包含完整 Protobuf (mime_type, file_size, timestamp 等)
@@ -432,7 +433,7 @@ message BitFSPayload {
 | 类型 | DNSLink | P_node | 元数据 | 内容 | 解密密钥 |
 |------|---------|--------|--------|------|---------|
 | **私有** | 无 | 不公开 | Protobuf 内部加密 (encrypted=true) | 加密 | 仅 Owner (D_node → S_k) |
-| **公开免费** | 有 | 公开 | 明文 | 加密(D_node=1) | 任何人: aes_key = KDF(ECDH(1, P_node), key_hash) |
+| **公开免费** | 有 | 公开 | 明文 | 加密(D_node=1) | 任何人: aes_key = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) |
 | **公开付费** | 有 | 公开 | 明文(含价格) | 加密 | 购买后通过 Token/HTLC 获取 S_k |
 
 ### 加密体系 (Koblitz + AES-256-GCM 混合, 与 Bitcoin 同密码体系)
@@ -455,6 +456,8 @@ message BitFSPayload {
 
 完整加密流程:
   1. 双哈希: key_hash = SHA256(SHA256(plaintext))
+     注: plaintext 为文件原始内容 (加密前), 非序列化后的 Protobuf payload。
+     三种模式 (FREE/PAID/PRIVATE) 均以相同方式计算 key_hash。
   2. ECDH 直接使用 D_node: point = ECDH(D_node, P_recipient)
   3. 对称密钥: aes_key = KDF(point, key_hash)
      KDF = HKDF-SHA256(ikm=point.x, salt=key_hash, info="bitfs-method42")
@@ -494,7 +497,7 @@ ECDH 直接使用 D_node (BIP32 节点密钥), key_hash 移到 KDF 阶段:
 
 - **key_hash 双重用途**: key_hash = SHA256(SHA256(plaintext)) 同时用于 (1) KDF 密钥派生的 salt 参数, 和 (2) 内容完整性承诺 (下载后验证)。不再需要单独的 encrypted_hash 字段 — 链下内容寻址是 daemon 内部实现细节。
 
-- **免费数据**: D_node=1 技巧 — aes_key = KDF(ECDH(1, P_node), key_hash) = KDF(P_node, key_hash), P_node 通过 DNSLink 公开 → 任何人可计算
+- **免费数据**: D_node=1 技巧 — aes_key = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash), P_node 通过 DNSLink 公开 → 任何人可计算
 - **私有/付费数据**: ECDH 直接使用 D_node — aes_key = KDF(ECDH(D_node, P_node), key_hash)
 
 ### 私有数据的隐私保护
@@ -726,7 +729,7 @@ Visitor 从任何来源获取数据后, 必须完成以下校验链才能信任�
 
 ### 恢复
 
-`bitfs wallet restore` 恢复 HD 密钥，tx 数据需从备份恢复 (用户自行备份 ~/.bitfs/ 目录)。暂不设计专门的 tx 备份机制。
+`bitfs wallet restore` 恢复 HD 密钥，tx 数据需从用户备份恢复 (`~/.bitfs/` 目录)。系统不包含自动 tx 备份机制。
 
 ---
 
@@ -989,7 +992,7 @@ Buyer 和 Seller 建立连接时，使用 Method 42 ECDH 进行双向身份验�
    IF (SHA256(preimage) == capsule_hash AND Sig(seller))  → seller 可领取
    ELSE IF (timeout expired AND Sig(buyer))               → buyer 可退款
 
-7. Buyer 广播 HTLC 交易 (htlc_tx 为必填字段)
+7. Buyer 广播 HTLC 交易, 并将 htlc_tx (交易 ID) 发送给 Seller
 
 8. Seller 验证 HTLC 交易已在链上 (mempool 或已确认) 后, 揭示 capsule (preimage) 领取付款
    → capsule 作为 preimage 出现在链上
@@ -1004,7 +1007,7 @@ Buyer 和 Seller 建立连接时，使用 Method 42 ECDH 进行双向身份验�
 > **原子性间隙**: Buyer 广播 HTLC 后、Seller 返回 capsule 前存在竞态窗口。
 > 若 Seller 崩溃, Buyer 需等待 HTLC 超时 (默认 144 块, 约 24 小时) 后退款。
 > **缓解**: Seller daemon 应监听 mempool, 确认 HTLC 交易存在后自动揭示 capsule,
-> 无需依赖 Buyer 的显式通知。htlc_tx 字段为必填, Seller 必须验证链上交易后再返回 capsule。
+> 无需依赖 Buyer 的显式通知。htlc_tx 是 HTLC 握手协议中交换的参数 (非 Protobuf 持久化字段), Seller 必须验证链上交易后再返回 capsule。
 
 ### Token 批量购买系统 (Hash Chain)
 
@@ -1257,16 +1260,17 @@ OP_DUP OP_HASH160 <H160(P)> OP_EQUALVERIFY OP_CHECKSIG
 ### 重组
 
 ```
-客户端按 chunk_index 顺序拼接: decrypted = chunk_0 || chunk_1 || ... || chunk_{N-1}
-验证: SHA256(SHA256(plaintext)) == key_hash
-验证: H(chunk_0 || chunk_1 || ...) == recombination_hash
+客户端按 chunk_index 顺序拼接密文: ciphertext = chunk_0 || chunk_1 || ... || chunk_{N-1}
+验证: SHA256(ciphertext) == recombination_hash    ← 单次 SHA256, 先验证密文完整性
+解密: plaintext = AES-256-GCM.Open(ciphertext, sym_key)
+验证: SHA256(SHA256(plaintext)) == key_hash       ← 双哈希, 验证明文内容承诺
 ```
 
 ### Protobuf 字段
 
 - `chunk_index` (field 30): 本 chunk 序号 (0-based)
 - `total_chunks` (field 31): 总 chunk 数 (0 = 非分片)
-- `recombination_hash` (field 32): H(所有 chunk 拼接) 完整性校验
+- `recombination_hash` (field 32): SHA256(chunk_0 || chunk_1 || ... || chunk_{N-1}), 单次 SHA256, 对加密后的密文分片按序拼接计算
 - `content_txids` (field 28): 所有数据交易 TxID 列表
 
 ---
@@ -1697,6 +1701,12 @@ Daemon 作为 **LFCP (Local Full-Copy Peer)**, 是 Owner 节点数据的本地�
 4. **HTLC/Token 处理** -- 处理 sell/buy: 握手 → 提供 capsule_hash → 揭示 capsule 领款; Token 批量购买
 5. **WebMCP + Agent 支持** -- 为浏览器 Agent 和 CLI Agent 提供自描述接口
 6. **公开内容镜像** -- 任何第三方可运行 LFCP 缓存公开内容, 通过 SRV DNS 记录加入 CDN 负载均衡
+
+> **Daemon 重启行为**: Daemon 状态持久化于 `~/.bitfs/daemon.db`, 重启后自动恢复:
+> - **未完成的交易组**: 扫描 `pending_tx_group` 表, 自动续发中断的多笔交易操作 (见详细设计四-B)。
+> - **活跃 session**: Method 42 握手 session 存储在 daemon.db 中, 重启后仍有效 (受 TTL 约束)。
+> - **x402 计费状态**: 按 IP 的每日带宽用量记录持久化, 重启不影响配额计算。
+> - **进行中的请求**: 重启时所有进行中的 HTTP 请求会被中断 (客户端收到连接断开)。客户端应自行重试, 所有 API 端点均为幂等操作。
 
 ### HTTP API
 
@@ -2491,11 +2501,7 @@ Alice 的目录                               Bob 的目录
 
 ## 二十三、bsync / bput — 同步与上传
 
-### 设计背景
-
-旧设计以"双向同步"为核心范式；新设计转为"无状态查询 + 有状态管理"的 Unix 工具集。bsync 将同步能力作为**工具集中的一个工具**回归，而非核心模式。bput 则是 bget 的写入对偶。
-
-两者均为 b\* 命令，Agent-first 设计（非交互，JSON 输出，可管道组合）。Shell 交互模式中的 put/mput 命令面向人类用户。
+bsync 和 bput 是 b\* 工具集中的同步工具，Agent-first 设计（非交互，JSON 输出，可管道组合）。bsync 负责目录级同步，bput 是 bget 的写入对偶。Shell 交互模式中的 put/mput 命令面向人类用户。
 
 ### rsync → bsync 映射
 

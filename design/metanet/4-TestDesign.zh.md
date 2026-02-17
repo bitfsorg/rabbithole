@@ -31,11 +31,11 @@
 | # | 类别 | 设计参照 | 代码文件 | 目标 |
 |---|------|---------|---------|------|
 | T1 | 存储合约 | 系统设计五, 详细设计一 | `metanet_chain/storage_deal_test.go` | 2 |
-| T2 | 存储证明 | 系统设计五, 详细设计二 | `metanet_chain/storage_proof_test.go` | 3 |
-| T3 | ECDH 双层加密 | 系统设计五, 详细设计三 | `metanet_chain/ecdh_test.go` | 1 |
-| T4 | 支付与检索 | 系统设计七, 详细设计四-五 | `metanet_chain/payment_test.go` | 4 |
+| T2 | 存储证明 | 系统设计五, 详细设计二 | `metanet_chain/storage_proof_test.go` | 5 |
+| T3 | ECDH 双层加密 | 系统设计五, 详细设计三 | `metanet_chain/ecdh_test.go` | 4 |
+| T4 | 支付与检索 | 系统设计七, 详细设计四-五 | `metanet_chain/payment_test.go` | 7 |
 | T5 | 合并挖矿与热数据 | 系统设计二, 详细设计七 | `metanet_chain/mining_test.go` | 2 |
-| | **合计** | | | **12** |
+| | **合计** | | | **20** |
 
 ---
 
@@ -61,6 +61,8 @@
 | T2.1 | Metanet Node 提交正确 Merkle proof | Metanet Node 持有正确数据 | 构建 StorageProof 交易 → Script 执行 | Script 验证通过 (chunk_data + merkle_siblings → merkle_root 匹配), Metanet Node 领取该期奖励 | [unit] |
 | T2.2 | Metanet Node 提交错误 proof | Metanet Node 伪造数据 | 构建错误 StorageProof → Script 执行 | Script 验证失败, merkle_root 不匹配, UTXO 不可花费 | [security] |
 | T2.3 | Metanet Node 提交其他 chunk 的 proof | Metanet Node 持有数据但提交错误 chunk | chunk_index 与挑战不匹配 | 验证失败, chunk_index 对应的 expected_proof_hash 不匹配 | [security] |
+| T2.4 | 过期证明期提交 | 合约第 k 期已过期 | Metanet Node 在第 k+2 期提交第 k 期的 proof | UTXO 已过时间锁, 该期奖励归 Owner 回收 | [edge] |
+| T2.5 | 边界 chunk index | 文件仅 1 个 chunk | challenge 指向 chunk_index=0 | Merkle proof 为空 (root = chunk hash), 验证通过 | [edge] |
 
 ---
 
@@ -72,6 +74,9 @@
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
 | T3.1 | ECDH 双层加密 | Owner 有加密文件, Metanet Node 已注册 | Owner ECDH 重加密 → Metanet Node 接收 | Provider 密文 != Owner 密文, Metanet Node 无法解密原始内容 (仅持有外层密钥), Owner 可通过两层密钥解密 | [unit] |
+| T3.2 | 外层密钥独立性 | 同一文件重加密给不同 Metanet Node | Owner ECDH 重加密 → Node_A, 同一文件 → Node_B | Node_A 和 Node_B 的外层密文不同, 互相无法解密对方的副本 | [property] |
+| T3.3 | Metanet Node 无法解密内层 | Metanet Node 持有外层密钥 | Metanet Node 尝试用外层密钥解密原始内容 | 解密失败, 仅能解密外层得到 Owner 密文, 无法进一步解密 | [security] |
+| T3.4 | 错误 Node 密钥拒绝 | Node_A 的密钥 | 尝试解密发给 Node_B 的重加密数据 | 外层解密失败, AES-GCM tag 校验不通过 | [security] |
 
 ---
 
@@ -86,6 +91,9 @@
 | T4.2 | Token 支付通道: 开启 | Owner 与 Metanet Node 协商 | 创建 2-of-2 多签 funding 交易 | funding 交易正确创建, 双方各持一份签名 | [unit] |
 | T4.3 | Token 支付通道: 更新 | 通道已开启 | 双方签署新状态 | sequence_number 递增, 新余额分配正确, 旧状态作废 | [unit] |
 | T4.4 | Token 支付通道: 正常关闭 | 通道有多次状态更新 | 双方协商关闭 | 最终余额按最新状态正确分配, 无需等待时间锁 | [unit] |
+| T4.5 | 旧状态惩罚 | 通道有多次更新, 一方持有旧 Commitment TX | 恶意方广播旧版本 (sequence_number < latest) | 另一方在 dispute_window 内用 revocation_key 提交惩罚交易, 恶意方损失全部通道余额 | [security] |
+| T4.6 | 通道容量耗尽 | 通道余额接近 0 | 继续请求数据 | 返回 402 + X-Channel-Balance: 0 + X-Channel-TopUp-Required: true, 提示开新通道 | [edge] |
+| T4.7 | Node↔Node MNT 批发通道 | 两个 Metanet Node | Node_A 向 Node_B 开 MNT 通道, 批量购买热门数据 | 通道在 Metanet Chain 上创建, chunk 级别更新余额, 结算后双方 MNT 余额正确 | [integration] |
 
 ---
 
