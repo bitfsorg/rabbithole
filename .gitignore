@@ -5,3 +5,12 @@
 node_modules/
 *.out
 .sisyphus/
+
+# Go build artifacts
+bitfs/bitfs
+bitfs/bls
+bitfs/bcat
+bitfs/bget
+bitfs/bstat
+bitfs/btree
+metanet/metanet
