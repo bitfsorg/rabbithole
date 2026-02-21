@@ -47,7 +47,8 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 		capsuleHash = hex.EncodeToString(h[:])
 	}
 
-	// Derive a payment address from the node's public key.
+	// TODO(payment): Replace with real BSV P2PKH address derived from node's public key.
+	// This is a placeholder format for development; real addresses use Base58Check encoding.
 	paymentAddr := ""
 	if len(node.PNode) > 0 {
 		paymentAddr = fmt.Sprintf("1BitFS%s", hex.EncodeToString(node.PNode[:8]))
@@ -163,12 +164,12 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read the HTLC transaction from the request body.
+	defer func() { _ = r.Body.Close() }()
 	htlcBody, err := io.ReadAll(io.LimitReader(r.Body, maxHTLCBodySize))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
 		return
 	}
-	defer func() { _ = r.Body.Close() }()
 
 	// Require a non-empty transaction body.
 	if len(htlcBody) == 0 {
@@ -178,11 +179,6 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Real HTLC transaction verification will be added in a future task.
 	// For now, accept any non-empty body as a valid payment.
-
-	// Mark the invoice as paid.
-	d.invoicesMu.Lock()
-	invoice.Paid = true
-	d.invoicesMu.Unlock()
 
 	// Retrieve the encrypted content from the store.
 	if len(invoice.KeyHash) == 0 {
@@ -206,6 +202,11 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Mark the invoice as paid only after content is successfully retrieved.
+	d.invoicesMu.Lock()
+	invoice.Paid = true
+	d.invoicesMu.Unlock()
+
 	// Return the capsule (hex-encoded encrypted content).
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -213,7 +214,4 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		"capsule":    hex.EncodeToString(data),
 		"paid":       true,
 	})
-
-	// Suppress unused variable warning for htlcBody.
-	_ = htlcBody
 }
