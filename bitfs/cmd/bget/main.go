@@ -15,8 +15,11 @@ import (
 	"path"
 	"time"
 
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/tongxiaofeng/libbitfs/method42"
 	"github.com/tongxiaofeng/libbitfs/paymail"
+	"github.com/tongxiaofeng/libbitfs/x402"
 )
 
 func main() {
@@ -30,6 +33,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	output := fs.String("o", "", "output filename")
 	fs.StringVar(output, "output", "", "output filename")
 	buy := fs.Bool("buy", false, "attempt to purchase paid content")
+	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
 	version := fs.Bool("version", false, "show version-specific content")
 	host := fs.String("host", "http://localhost:8080", "daemon URL")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
@@ -101,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "free":
 		return downloadContent(c, meta, *output, stdout, stderr)
 	case "paid":
-		return handlePaid(meta, *buy, stderr)
+		return handlePaid(c, meta, *buy, *walletKey, *output, stdout, stderr)
 	case "private":
 		fmt.Fprintf(stderr, "bget: private content cannot be accessed remotely\n")
 		return 6
@@ -166,15 +170,158 @@ func deriveFilename(uriPath string) string {
 }
 
 // handlePaid handles paid content access (with or without --buy).
-func handlePaid(meta *client.MetaResponse, buy bool, stderr io.Writer) int {
-	if buy {
-		// TODO: Implement HTLC purchase flow (Phase 3).
-		fmt.Fprintf(stderr, "bget: purchase flow not yet implemented\n")
+func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, outputName string, stdout, stderr io.Writer) int {
+	if !buy {
+		fmt.Fprintf(stderr, "bget: content requires payment: %d sat/KB (%d bytes)\nUse --buy to purchase\n",
+			meta.PricePerKB, meta.FileSize)
 		return 5
 	}
-	fmt.Fprintf(stderr, "bget: content requires payment: %d sat/KB (%d bytes)\nUse --buy to purchase\n",
-		meta.PricePerKB, meta.FileSize)
-	return 5
+
+	// Validate wallet key is provided.
+	if walletKey == "" {
+		fmt.Fprintf(stderr, "bget: --wallet-key is required for purchases\n")
+		return 6
+	}
+
+	// Parse the hex-encoded private key.
+	keyBytes, err := hex.DecodeString(walletKey)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid wallet key hex: %v\n", err)
+		return 6
+	}
+
+	// Accept 32-byte raw scalar or 33-byte compressed key (strip prefix).
+	switch len(keyBytes) {
+	case 32:
+		// raw scalar, use as-is
+	case 33:
+		// compressed pubkey format: strip the 02/03 prefix
+		keyBytes = keyBytes[1:]
+	default:
+		fmt.Fprintf(stderr, "bget: wallet key must be 32 or 33 bytes, got %d\n", len(keyBytes))
+		return 6
+	}
+
+	privKey, _ := ec.PrivateKeyFromBytes(keyBytes)
+	if privKey == nil {
+		fmt.Fprintf(stderr, "bget: failed to parse wallet key\n")
+		return 6
+	}
+
+	// Validate that meta has a TxID for the purchase invoice.
+	if meta.TxID == "" {
+		fmt.Fprintf(stderr, "bget: paid content has no invoice txid\n")
+		return 5
+	}
+
+	// Step 1: Get buy info (capsule_hash, price, payment_addr).
+	buyInfo, err := c.GetBuyInfo(meta.TxID)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: get buy info: %v\n", err)
+		return handleError(err, stderr)
+	}
+
+	// Decode capsule hash from hex.
+	capsuleHash, err := hex.DecodeString(buyInfo.CapsuleHash)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid capsule hash hex: %v\n", err)
+		return 5
+	}
+
+	// Decode payment address (hex-encoded 20-byte pubkey hash).
+	sellerAddr, err := hex.DecodeString(buyInfo.PaymentAddr)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid payment address hex: %v\n", err)
+		return 5
+	}
+
+	// Step 2: Build HTLC transaction.
+	htlcRaw, err := x402.BuildHTLC(&x402.HTLCParams{
+		BuyerPubKey: privKey.PubKey().Compressed(),
+		SellerAddr:  sellerAddr,
+		CapsuleHash: capsuleHash,
+		Amount:      buyInfo.Price,
+		Timeout:     x402.DefaultHTLCTimeout,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: build HTLC: %v\n", err)
+		return 5
+	}
+
+	// Step 3: Submit HTLC to get the capsule.
+	capsuleResp, err := c.SubmitHTLC(meta.TxID, htlcRaw)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: submit HTLC: %v\n", err)
+		return handleError(err, stderr)
+	}
+
+	// Decode capsule from hex.
+	capsule, err := hex.DecodeString(capsuleResp.Capsule)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid capsule hex: %v\n", err)
+		return 5
+	}
+
+	// Step 4: Fetch encrypted content.
+	if meta.KeyHash == "" {
+		fmt.Fprintf(stderr, "bget: no content hash available\n")
+		return 1
+	}
+
+	reader, err := c.GetData(meta.KeyHash)
+	if err != nil {
+		return handleError(err, stderr)
+	}
+	defer reader.Close()
+
+	ciphertext, err := io.ReadAll(reader)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: read content: %v\n", err)
+		return 4
+	}
+
+	// Decode keyHash from hex.
+	keyHashBytes, err := hex.DecodeString(meta.KeyHash)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid key hash hex: %v\n", err)
+		return 5
+	}
+
+	// Step 5: Decrypt with capsule.
+	result, err := method42.DecryptWithCapsule(ciphertext, capsule, keyHashBytes)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: decrypt: %v\n", err)
+		return 5
+	}
+
+	// Step 6: Write decrypted content to file.
+	filename := outputName
+	if filename == "" {
+		filename = deriveFilename(meta.Path)
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: cannot create file %q: %v\n", filename, err)
+		return 1
+	}
+
+	n, err := file.Write(result.Plaintext)
+	if err != nil {
+		file.Close()
+		os.Remove(filename)
+		fmt.Fprintf(stderr, "bget: write error: %v\n", err)
+		return 1
+	}
+
+	if err := file.Close(); err != nil {
+		os.Remove(filename)
+		fmt.Fprintf(stderr, "bget: close error: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "Downloaded %d bytes to %s\n", n, filename)
+	return 0
 }
 
 // handleError maps client errors to exit codes and prints a message.

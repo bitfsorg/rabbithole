@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,9 +14,11 @@ import (
 	"strings"
 	"testing"
 
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/tongxiaofeng/libbitfs/method42"
 )
 
 // testPubKey is a well-known compressed public key hex (33 bytes, prefix 02).
@@ -46,6 +49,25 @@ func serveJSON(w http.ResponseWriter, v interface{}) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// newFullMockDaemon creates an httptest.Server that serves /_bitfs/meta/,
+// /_bitfs/data/, and /_bitfs/buy/ requests for testing the purchase flow.
+func newFullMockDaemon(t *testing.T,
+	metaHandler func(w http.ResponseWriter, r *http.Request),
+	dataHandler func(w http.ResponseWriter, r *http.Request),
+	buyHandler func(w http.ResponseWriter, r *http.Request),
+) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", metaHandler)
+	if dataHandler != nil {
+		mux.HandleFunc("/_bitfs/data/", dataHandler)
+	}
+	if buyHandler != nil {
+		mux.HandleFunc("/_bitfs/buy/", buyHandler)
+	}
+	return httptest.NewServer(mux)
 }
 
 // ---------------------------------------------------------------------------
@@ -204,7 +226,7 @@ func TestPaid_WithoutBuy_ReturnsExit5(t *testing.T) {
 	assert.Empty(t, stdout.String())
 }
 
-func TestPaid_WithBuy_ReturnsExit5_NotImplemented(t *testing.T) {
+func TestPaid_WithBuy_MissingWalletKey(t *testing.T) {
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
 			serveJSON(w, client.MetaResponse{
@@ -223,9 +245,210 @@ func TestPaid_WithBuy_ReturnsExit5_NotImplemented(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--buy", "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
-	assert.Equal(t, 5, code, "paid with --buy should exit 5 (not yet implemented)")
-	assert.Contains(t, stderr.String(), "purchase flow not yet implemented")
+	assert.Equal(t, 6, code, "--buy without --wallet-key should exit 6")
+	assert.Contains(t, stderr.String(), "--wallet-key is required")
 	assert.Empty(t, stdout.String())
+}
+
+func TestPaid_WithBuy_InvalidWalletKey(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      testPubKey,
+				Type:       "file",
+				Path:       "/premium.pdf",
+				FileSize:   5242880,
+				Access:     "paid",
+				PricePerKB: 100,
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	tests := []struct {
+		name      string
+		walletKey string
+		wantMsg   string
+	}{
+		{"not hex", "zzzz", "invalid wallet key hex"},
+		{"wrong length", "aabbcc", "wallet key must be 32 or 33 bytes"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"--buy", "--wallet-key", tt.walletKey, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+
+			assert.Equal(t, 6, code, "invalid wallet key should exit 6")
+			assert.Contains(t, stderr.String(), tt.wantMsg)
+			assert.Empty(t, stdout.String())
+		})
+	}
+}
+
+func TestPaid_WithBuy_MissingTxID(t *testing.T) {
+	// Generate a valid buyer key.
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      testPubKey,
+				Type:       "file",
+				Path:       "/premium.pdf",
+				FileSize:   5242880,
+				Access:     "paid",
+				PricePerKB: 100,
+				TxID:       "", // No TxID
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+
+	assert.Equal(t, 5, code, "missing txid should exit 5")
+	assert.Contains(t, stderr.String(), "no invoice txid")
+	assert.Empty(t, stdout.String())
+}
+
+func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
+	// Generate key pairs.
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	// Encrypt test content using buyer's pubkey so capsule-based decryption works.
+	// For paid content, the daemon re-encrypts with ECDH(D_node, P_buyer).
+	plaintext := []byte("paid premium content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, buyerPriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	// Compute capsule = ECDH(D_node, P_buyer).x
+	capsule, err := method42.ComputeCapsule(nodePriv, buyerPriv.PubKey())
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	// Use a fake 20-byte seller address.
+	sellerAddr := hex.EncodeToString(make([]byte, 20))
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      testPubKey,
+				Type:       "file",
+				Path:       "/premium.pdf",
+				FileSize:   uint64(len(plaintext)),
+				Access:     "paid",
+				PricePerKB: 100,
+				TxID:       "abc123txid",
+				KeyHash:    keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex,
+					Price:       1000,
+					PaymentAddr: sellerAddr,
+				})
+				return
+			}
+			// POST: Submit HTLC fails with server error.
+			http.Error(w, "payment processing failed", http.StatusInternalServerError)
+		},
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+
+	assert.Equal(t, 4, code, "submit HTLC failure should exit 4 (server error)")
+	assert.Contains(t, stderr.String(), "server error")
+	assert.Empty(t, stdout.String())
+}
+
+func TestPaid_WithBuy_Success(t *testing.T) {
+	// Generate key pairs.
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	// Encrypt test content using buyer's pubkey so capsule-based decryption works.
+	// For paid content, the daemon re-encrypts with ECDH(D_node, P_buyer).
+	plaintext := []byte("Hello, this is paid premium content!")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, buyerPriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	// Compute capsule = ECDH(D_node, P_buyer).x
+	capsule, err := method42.ComputeCapsule(nodePriv, buyerPriv.PubKey())
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	// Use a fake 20-byte seller address.
+	sellerAddr := hex.EncodeToString(make([]byte, 20))
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      testPubKey,
+				Type:       "file",
+				Path:       "/premium.txt",
+				MimeType:   "text/plain",
+				FileSize:   uint64(len(plaintext)),
+				Access:     "paid",
+				PricePerKB: 50,
+				TxID:       "invoice123",
+				KeyHash:    keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			// Return the encrypted ciphertext.
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				// Return buy info.
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex,
+					Price:       1000,
+					PaymentAddr: sellerAddr,
+				})
+				return
+			}
+			// POST: Return the capsule.
+			serveJSON(w, client.CapsuleResponse{
+				Capsule: capsuleHex,
+			})
+		},
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "successful purchase should exit 0; stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, plaintext, stdout.Bytes(), "decrypted content should match original plaintext")
 }
 
 // ---------------------------------------------------------------------------
