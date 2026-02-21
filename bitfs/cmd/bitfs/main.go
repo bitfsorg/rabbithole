@@ -63,6 +63,8 @@ func run(args []string) int {
 		return runEncrypt(cmdArgs)
 	case "publish":
 		return runPublish(cmdArgs)
+	case "unpublish":
+		return runUnpublish(cmdArgs)
 	case "daemon":
 		return runDaemon(cmdArgs)
 	case "shell":
@@ -112,6 +114,7 @@ Trading Commands:
 
 Publishing Commands:
   publish        Bind a domain via DNSLink
+  unpublish      Remove a domain binding
 
 Daemon Commands:
   daemon start   Start the daemon
