@@ -26,6 +26,11 @@ func (d *Daemon) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /_bitfs/data/{hash}", wrap(d.handleData))
 	mux.HandleFunc("GET /_bitfs/meta/{pnode}/{path...}", wrap(d.handleMeta))
 
+	// x402 Buy endpoints
+	mux.HandleFunc("GET /_bitfs/buy/{txid}", wrap(d.handleGetBuyInfo))
+	mux.HandleFunc("POST /_bitfs/buy/{txid}", wrap(d.handleSubmitHTLC))
+	mux.HandleFunc("OPTIONS /_bitfs/buy/{txid}", wrap(d.handleOptions))
+
 	// Paymail/BSV Alias
 	mux.HandleFunc("GET /.well-known/bsvalias", wrap(d.handleBSVAlias))
 
@@ -226,19 +231,6 @@ func (d *Daemon) serveMarkdown(w http.ResponseWriter, node *NodeInfo) {
 func (d *Daemon) serveJSON(w http.ResponseWriter, node *NodeInfo) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(node)
-}
-
-// servePaidContent returns 402 Payment Required for paid content.
-func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Price-Per-KB", fmt.Sprintf("%d", node.PricePerKB))
-	w.Header().Set("X-File-Size", fmt.Sprintf("%d", node.FileSize))
-	w.WriteHeader(http.StatusPaymentRequired)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"error":        "payment required",
-		"price_per_kb": node.PricePerKB,
-		"file_size":    node.FileSize,
-	})
 }
 
 // negotiateContentType determines the best content type from the Accept header.

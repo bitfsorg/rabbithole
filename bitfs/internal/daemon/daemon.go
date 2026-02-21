@@ -186,6 +186,10 @@ type Daemon struct {
 	sessions   map[string]*Session
 	sessionsMu sync.RWMutex
 
+	// Invoice management
+	invoices   map[string]*InvoiceRecord
+	invoicesMu sync.RWMutex
+
 	// Rate limiting
 	rateLimiter *rateLimiter
 }
@@ -208,6 +212,7 @@ func New(config *Config, wallet WalletService, store ContentStore, metanet Metan
 		store:    store,
 		metanet:  metanet,
 		sessions: make(map[string]*Session),
+		invoices: make(map[string]*InvoiceRecord),
 	}
 
 	// Initialize rate limiter
