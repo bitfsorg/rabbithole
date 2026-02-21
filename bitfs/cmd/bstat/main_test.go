@@ -7,272 +7,504 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"os"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tongxiaofeng/bitfs/internal/client"
 )
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// testPubKey is a well-known compressed public key hex (33 bytes, prefix 02).
+const testPubKey = "02b4632d08485ff1df2db55b9dafd23347d1c47a457072a1e87be26896549a8737"
 
-func captureStdout(t *testing.T, fn func()) string {
+func makeURI(path string) string {
+	if path == "" || path == "/" {
+		return "bitfs://" + testPubKey
+	}
+	return "bitfs://" + testPubKey + path
+}
+
+// newMockDaemon creates an httptest.Server that serves /_bitfs/meta/ requests.
+func newMockDaemon(t *testing.T, handler func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
 	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stdout = w
-
-	fn()
-
-	w.Close()
-	os.Stdout = old
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	return buf.String()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", handler)
+	return httptest.NewServer(mux)
 }
 
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stderr
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stderr = w
-
-	fn()
-
-	w.Close()
-	os.Stderr = old
-
-	var buf bytes.Buffer
-	buf.ReadFrom(r)
-	return buf.String()
+// serveJSON is a helper that writes a JSON response.
+func serveJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // ---------------------------------------------------------------------------
-// Exit code tests
+// Default human-readable output — file node
 // ---------------------------------------------------------------------------
 
-func TestNoArgs(t *testing.T) {
-	code := run(nil)
-	assert.Equal(t, 2, code, "no args should return usage error")
+func TestDefaultOutput_FileNode(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:    testPubKey,
+			Type:     "file",
+			Path:     "/hello.txt",
+			MimeType: "text/plain",
+			FileSize: 1234,
+			KeyHash:  "abcdef1234567890",
+			Access:   "free",
+			TxID:     "deadbeef",
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+
+	out := stdout.String()
+	assert.Contains(t, out, "Path: /hello.txt")
+	assert.Contains(t, out, "Type: file")
+	assert.Contains(t, out, "Owner: "+testPubKey)
+	assert.Contains(t, out, "Access: free")
+	assert.Contains(t, out, "MIME: text/plain")
+	assert.Contains(t, out, "Size: 1.2 KB")
+	assert.Contains(t, out, "Hash: abcdef1234567890")
+	assert.Contains(t, out, "TxID: deadbeef")
+	// Files should NOT show Children count.
+	assert.NotContains(t, out, "Children:")
 }
 
-func TestEmptyArgs(t *testing.T) {
-	code := run([]string{})
-	assert.Equal(t, 2, code)
+func TestDefaultOutput_FileNode_MinimalFields(t *testing.T) {
+	// When optional fields are empty/zero, they should be omitted.
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:  testPubKey,
+			Type:   "file",
+			Path:   "/empty.bin",
+			Access: "private",
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/empty.bin")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code)
+	out := stdout.String()
+	assert.Contains(t, out, "Path: /empty.bin")
+	assert.Contains(t, out, "Type: file")
+	assert.Contains(t, out, "Access: private")
+	// Optional fields should be absent.
+	assert.NotContains(t, out, "MIME:")
+	assert.NotContains(t, out, "Size:")
+	assert.NotContains(t, out, "Hash:")
+	assert.NotContains(t, out, "TxID:")
+	assert.NotContains(t, out, "PriceKB:")
+}
+
+// ---------------------------------------------------------------------------
+// Default human-readable output — directory node
+// ---------------------------------------------------------------------------
+
+func TestDefaultOutput_DirectoryNode(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:  testPubKey,
+			Type:   "dir",
+			Path:   "/docs",
+			Access: "free",
+			Children: []client.ChildEntry{
+				{Name: "readme.md", Type: "file"},
+				{Name: "images", Type: "dir"},
+				{Name: "notes.txt", Type: "file"},
+			},
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/docs")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+
+	out := stdout.String()
+	assert.Contains(t, out, "Path: /docs")
+	assert.Contains(t, out, "Type: dir")
+	assert.Contains(t, out, "Children: 3")
+	// Directories should NOT show Size or Hash.
+	assert.NotContains(t, out, "Size:")
+	assert.NotContains(t, out, "Hash:")
+}
+
+func TestDefaultOutput_EmptyDirectory(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:    testPubKey,
+			Type:     "dir",
+			Path:     "/empty",
+			Access:   "free",
+			Children: []client.ChildEntry{},
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/empty")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code)
+	assert.Contains(t, stdout.String(), "Children: 0")
+}
+
+// ---------------------------------------------------------------------------
+// Default output — paid file with price
+// ---------------------------------------------------------------------------
+
+func TestDefaultOutput_PaidFile(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:      testPubKey,
+			Type:       "file",
+			Path:       "/premium.pdf",
+			MimeType:   "application/pdf",
+			FileSize:   5242880,
+			Access:     "paid",
+			PricePerKB: 100,
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code)
+	out := stdout.String()
+	assert.Contains(t, out, "Access: paid")
+	assert.Contains(t, out, "PriceKB: 100 sat")
+	assert.Contains(t, out, "Size: 5.0 MB")
+}
+
+// ---------------------------------------------------------------------------
+// JSON output
+// ---------------------------------------------------------------------------
+
+func TestJSONOutput_FileNode(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:    testPubKey,
+			Type:     "file",
+			Path:     "/image.png",
+			MimeType: "image/png",
+			FileSize: 51200,
+			KeyHash:  "abc123",
+			Access:   "free",
+			TxID:     "tx999",
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/image.png")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+
+	var got client.MetaResponse
+	err := json.Unmarshal(stdout.Bytes(), &got)
+	require.NoError(t, err, "output should be valid JSON")
+	assert.Equal(t, "file", got.Type)
+	assert.Equal(t, "/image.png", got.Path)
+	assert.Equal(t, uint64(51200), got.FileSize)
+	assert.Equal(t, "image/png", got.MimeType)
+	assert.Equal(t, "abc123", got.KeyHash)
+	assert.Equal(t, "tx999", got.TxID)
+}
+
+func TestJSONOutput_DirectoryNode(t *testing.T) {
+	meta := client.MetaResponse{
+		PNode:  testPubKey,
+		Type:   "dir",
+		Path:   "/projects",
+		Access: "free",
+		Children: []client.ChildEntry{
+			{Name: "alpha", Type: "dir"},
+			{Name: "notes.md", Type: "file"},
+		},
+	}
+
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, meta)
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/projects")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code)
+	assert.Empty(t, stderr.String())
+
+	var got client.MetaResponse
+	err := json.Unmarshal(stdout.Bytes(), &got)
+	require.NoError(t, err)
+	assert.Equal(t, "dir", got.Type)
+	assert.Equal(t, "/projects", got.Path)
+	assert.Len(t, got.Children, 2)
+	assert.Equal(t, "alpha", got.Children[0].Name)
+}
+
+func TestJSONOutput_IsValidJSON(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:  testPubKey,
+			Type:   "dir",
+			Path:   "/",
+			Access: "free",
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	run([]string{"--json", "--host", srv.URL, makeURI("/")}, &stdout, &stderr)
+
+	assert.True(t, json.Valid(stdout.Bytes()), "output should be valid JSON")
+}
+
+// ---------------------------------------------------------------------------
+// --versions flag
+// ---------------------------------------------------------------------------
+
+func TestVersionsFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--versions", makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "versions should exit 0")
+	assert.Contains(t, stderr.String(), "version listing not yet supported")
+	assert.Empty(t, stdout.String())
+}
+
+func TestVersionsFlag_NoURIRequired(t *testing.T) {
+	// --versions should work even without a URI argument (it exits before URI parsing).
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--versions"}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "versions should exit 0 even without URI")
+	assert.Contains(t, stderr.String(), "version listing not yet supported")
+}
+
+// ---------------------------------------------------------------------------
+// Missing/invalid arguments
+// ---------------------------------------------------------------------------
+
+func TestMissingURIArgument(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{}, &stdout, &stderr)
+
+	assert.Equal(t, 6, code, "missing URI should exit 6")
+	assert.Contains(t, stderr.String(), "Usage:")
+	assert.Empty(t, stdout.String())
+}
+
+func TestMissingURIArgument_NilArgs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run(nil, &stdout, &stderr)
+
+	assert.Equal(t, 6, code, "nil args should exit 6")
+	assert.Contains(t, stderr.String(), "Usage:")
 }
 
 func TestInvalidURI(t *testing.T) {
-	code := run([]string{"https://example.com/file"})
-	assert.Equal(t, 2, code, "non-bitfs URI should return error")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"http://not-a-bitfs-uri"}, &stdout, &stderr)
+
+	assert.Equal(t, 6, code, "invalid URI should exit 6")
+	assert.Contains(t, stderr.String(), "bstat:")
+	assert.Empty(t, stdout.String())
 }
 
 func TestEmptyURI(t *testing.T) {
-	code := run([]string{""})
-	assert.Equal(t, 2, code)
-}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{""}, &stdout, &stderr)
 
-func TestValidPaymailURI(t *testing.T) {
-	code := run([]string{"bitfs://alice@example.com/readme.txt"})
-	assert.Equal(t, 0, code)
-}
-
-func TestValidDNSLinkURI(t *testing.T) {
-	code := run([]string{"bitfs://example.com/readme.txt"})
-	assert.Equal(t, 0, code)
-}
-
-func TestValidPubKeyURI(t *testing.T) {
-	code := run([]string{"bitfs://02a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2/file.txt"})
-	assert.Equal(t, 0, code)
+	assert.Equal(t, 6, code, "empty URI should exit 6")
 }
 
 // ---------------------------------------------------------------------------
-// Usage error stderr output
+// Paymail / DNSLink not supported
 // ---------------------------------------------------------------------------
 
-func TestNoArgsStderr(t *testing.T) {
-	out := captureStderr(t, func() {
-		run(nil)
-	})
-	assert.Contains(t, out, "Usage:")
-	assert.Contains(t, out, "bstat")
+func TestPaymailNotSupported(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"bitfs://alice@example.com/docs"}, &stdout, &stderr)
+
+	assert.Equal(t, 6, code, "paymail should exit 6")
+	assert.Contains(t, stderr.String(), "paymail/dnslink resolution not yet supported")
+	assert.Empty(t, stdout.String())
 }
 
-func TestInvalidURIStderr(t *testing.T) {
-	out := captureStderr(t, func() {
-		run([]string{"garbage"})
-	})
-	assert.Contains(t, out, "Error:")
-}
+func TestDNSLinkNotSupported(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"bitfs://example.com/docs"}, &stdout, &stderr)
 
-// ---------------------------------------------------------------------------
-// Default text output
-// ---------------------------------------------------------------------------
-
-func TestDefaultOutputPaymail(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"bitfs://alice@example.com/readme.txt"})
-		assert.Equal(t, 0, code)
-	})
-	assert.Contains(t, out, "Would show metadata")
-	assert.Contains(t, out, "Paymail")
-	assert.Contains(t, out, "/readme.txt")
-}
-
-func TestDefaultOutputDNSLink(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"bitfs://example.com/info.json"})
-		assert.Equal(t, 0, code)
-	})
-	assert.Contains(t, out, "DNSLink")
-	assert.Contains(t, out, "/info.json")
-}
-
-func TestDefaultOutputPubKey(t *testing.T) {
-	uri := "bitfs://02a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2/config.yaml"
-	out := captureStdout(t, func() {
-		code := run([]string{uri})
-		assert.Equal(t, 0, code)
-	})
-	assert.Contains(t, out, "PubKey")
-	assert.Contains(t, out, "/config.yaml")
+	assert.Equal(t, 6, code, "dnslink should exit 6")
+	assert.Contains(t, stderr.String(), "paymail/dnslink resolution not yet supported")
 }
 
 // ---------------------------------------------------------------------------
-// --json output
+// Error handling / exit codes
 // ---------------------------------------------------------------------------
 
-func TestJSONOutputPaymail(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"--json", "bitfs://alice@example.com/readme.txt"})
-		assert.Equal(t, 0, code)
+func TestNotFoundError(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no such path", http.StatusNotFound)
 	})
-	var result map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(out)), &result))
-	assert.Equal(t, "bstat", result["command"])
-	assert.Equal(t, "bitfs://alice@example.com/readme.txt", result["uri"])
-	assert.Equal(t, "Paymail", result["type"])
-	assert.Equal(t, "/readme.txt", result["path"])
-	assert.Equal(t, "stub", result["status"])
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/nonexistent")}, &stdout, &stderr)
+
+	assert.Equal(t, 2, code, "not found should exit 2")
+	assert.Contains(t, stderr.String(), "not found")
+	assert.Empty(t, stdout.String())
 }
 
-func TestJSONOutputDNSLink(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"--json", "bitfs://example.com/data"})
-		assert.Equal(t, 0, code)
-	})
-	var result map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(out)), &result))
-	assert.Equal(t, "bstat", result["command"])
-	assert.Equal(t, "DNSLink", result["type"])
-	assert.Equal(t, "/data", result["path"])
+func TestNetworkError(t *testing.T) {
+	// Use a host that is guaranteed to refuse connections.
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", "http://127.0.0.1:1", "--timeout", "1s", makeURI("/")}, &stdout, &stderr)
+
+	assert.Equal(t, 4, code, "network error should exit 4")
+	assert.Contains(t, stderr.String(), "network error")
+	assert.Empty(t, stdout.String())
 }
 
-func TestJSONOutputPubKey(t *testing.T) {
-	uri := "bitfs://03b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5/key.pem"
-	out := captureStdout(t, func() {
-		code := run([]string{"--json", uri})
-		assert.Equal(t, 0, code)
+func TestServerError(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal failure", http.StatusInternalServerError)
 	})
-	var result map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(out)), &result))
-	assert.Equal(t, "PubKey", result["type"])
-	assert.Equal(t, "/key.pem", result["path"])
-}
+	defer srv.Close()
 
-func TestJSONOutputIsValidJSON(t *testing.T) {
-	out := captureStdout(t, func() {
-		run([]string{"--json", "bitfs://example.com/file"})
-	})
-	assert.True(t, json.Valid([]byte(strings.TrimSpace(out))))
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/")}, &stdout, &stderr)
+
+	assert.Equal(t, 4, code, "server error should exit 4")
+	assert.Contains(t, stderr.String(), "server error")
 }
 
 // ---------------------------------------------------------------------------
-// URI edge cases
+// Default path resolution
 // ---------------------------------------------------------------------------
 
-func TestURIWithoutPath(t *testing.T) {
-	code := run([]string{"bitfs://example.com"})
-	assert.Equal(t, 0, code)
-}
-
-func TestURIRootPath(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"--json", "bitfs://example.com/"})
-		assert.Equal(t, 0, code)
+func TestDefaultPathIsRoot(t *testing.T) {
+	var requestedPath string
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		prefix := fmt.Sprintf("/_bitfs/meta/%s/", testPubKey)
+		requestedPath = r.URL.Path[len(prefix)-1:] // keep leading /
+		serveJSON(w, client.MetaResponse{
+			PNode:  testPubKey,
+			Type:   "dir",
+			Path:   "/",
+			Access: "free",
+		})
 	})
-	var result map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(out)), &result))
-	assert.Equal(t, "/", result["path"])
-}
+	defer srv.Close()
 
-func TestURIDeepPath(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"--json", "bitfs://alice@example.com/a/b/c/stats.json"})
-		assert.Equal(t, 0, code)
-	})
-	var result map[string]interface{}
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(out)), &result))
-	assert.Equal(t, "/a/b/c/stats.json", result["path"])
-}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, "bitfs://" + testPubKey}, &stdout, &stderr)
 
-func TestMalformedPaymailURI(t *testing.T) {
-	code := run([]string{"bitfs://@example.com/file"})
-	assert.Equal(t, 2, code)
-}
-
-func TestMalformedPaymailNoDomain(t *testing.T) {
-	code := run([]string{"bitfs://alice@/file"})
-	assert.Equal(t, 2, code)
+	assert.Equal(t, 0, code, "stderr: %s", stderr.String())
+	assert.Equal(t, "/", requestedPath)
 }
 
 // ---------------------------------------------------------------------------
-// Flag parsing edge cases
+// Flag edge cases
 // ---------------------------------------------------------------------------
 
 func TestUnknownFlag(t *testing.T) {
-	code := run([]string{"--unknown", "bitfs://example.com/file"})
-	assert.Equal(t, 2, code)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--unknown", makeURI("/")}, &stdout, &stderr)
+
+	assert.Equal(t, 6, code)
 }
 
-func TestFlagsAfterURI(t *testing.T) {
-	out := captureStdout(t, func() {
-		code := run([]string{"bitfs://example.com/file", "--json"})
-		assert.Equal(t, 0, code)
-	})
-	assert.Contains(t, out, "Would show metadata")
+func TestInvalidTimeout(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--timeout", "notaduration", makeURI("/")}, &stdout, &stderr)
+
+	assert.Equal(t, 6, code)
+	assert.Contains(t, stderr.String(), "invalid timeout")
 }
 
 // ---------------------------------------------------------------------------
-// Address type detection
+// formatSize unit tests
 // ---------------------------------------------------------------------------
 
-func TestAddressTypeDetection(t *testing.T) {
+func TestFormatSize(t *testing.T) {
 	tests := []struct {
-		name     string
-		uri      string
-		wantType string
+		bytes    uint64
+		expected string
 	}{
-		{"paymail", "bitfs://carol@example.com/file", "Paymail"},
-		{"dnslink", "bitfs://example.com/file", "DNSLink"},
-		{"pubkey 02", "bitfs://02a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2/file", "PubKey"},
-		{"pubkey 03", "bitfs://03b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5/file", "PubKey"},
+		{0, "0"},
+		{512, "512 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KB"},
+		{1234, "1.2 KB"},
+		{1536, "1.5 KB"},
+		{1048576, "1.0 MB"},
+		{5242880, "5.0 MB"},
+		{1073741824, "1.0 GB"},
+		{1099511627776, "1.0 TB"},
 	}
+
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out := captureStdout(t, func() {
-				code := run([]string{"--json", tt.uri})
-				assert.Equal(t, 0, code)
-			})
-			var result map[string]interface{}
-			require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(out)), &result))
-			assert.Equal(t, tt.wantType, result["type"])
+		t.Run(fmt.Sprintf("%d", tt.bytes), func(t *testing.T) {
+			assert.Equal(t, tt.expected, formatSize(tt.bytes))
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Output label alignment
+// ---------------------------------------------------------------------------
+
+func TestOutputLabelsAreRightAligned(t *testing.T) {
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:    testPubKey,
+			Type:     "file",
+			Path:     "/test.txt",
+			MimeType: "text/plain",
+			FileSize: 1024,
+			Access:   "free",
+		})
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/test.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code)
+
+	// Split output into lines, filtering out empty trailing lines.
+	allLines := strings.Split(stdout.String(), "\n")
+	var lines []string
+	for _, line := range allLines {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	require.NotEmpty(t, lines)
+	// All colon positions should be at the same column.
+	for _, line := range lines {
+		colonIdx := strings.Index(line, ":")
+		require.NotEqual(t, -1, colonIdx, "line should contain colon: %q", line)
+		// The colon should be at position 8 (0-indexed) for all labels.
+		assert.Equal(t, 8, colonIdx, "colon should be at column 8 in line: %q", line)
 	}
 }
