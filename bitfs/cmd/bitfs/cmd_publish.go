@@ -14,7 +14,8 @@ import (
 )
 
 // runPublish handles the "bitfs publish" command.
-// Binds a domain to a vault's root via DNSLink.
+// With a domain argument, it binds that domain to a vault via DNSLink.
+// Without arguments, it lists all existing publish bindings with verification status.
 func runPublish(args []string) int {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
 	vault := fs.String("vault", "", "vault name")
@@ -25,19 +26,25 @@ func runPublish(args []string) int {
 		return exitUsageError
 	}
 
-	if fs.NArg() < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: bitfs publish <domain> [--vault N]\n")
-		return exitUsageError
-	}
-
-	domain := fs.Arg(0)
-
 	eng, err := engine.New(*dataDir, *password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
 	defer eng.Close()
+
+	// No domain argument: list all bindings.
+	if fs.NArg() < 1 {
+		result, err := eng.Publish(&engine.PublishOpts{})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return exitError
+		}
+		fmt.Println(result.Message)
+		return exitSuccess
+	}
+
+	domain := fs.Arg(0)
 
 	vaultIdx, err := eng.ResolveVaultIndex(*vault)
 	if err != nil {

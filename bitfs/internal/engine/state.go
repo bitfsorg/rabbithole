@@ -15,9 +15,10 @@ import (
 // LocalState tracks Metanet nodes and UTXOs created locally.
 // Persisted as JSON at {dataDir}/nodes.json.
 type LocalState struct {
-	Nodes   map[string]*NodeState `json:"nodes"`    // key: pubkey hex (compressed)
-	UTXOs   []*UTXOState          `json:"utxos"`    // tracked unspent outputs
-	RootTxID map[uint32]string    `json:"root_txid"` // vault index → root TxID hex
+	Nodes           map[string]*NodeState `json:"nodes"`             // key: pubkey hex (compressed)
+	UTXOs           []*UTXOState          `json:"utxos"`             // tracked unspent outputs
+	RootTxID        map[uint32]string     `json:"root_txid"`         // vault index → root TxID hex
+	PublishBindings []*PublishBinding      `json:"publish_bindings"`  // domain → vault bindings
 
 	mu   sync.Mutex `json:"-"`
 	path string     `json:"-"` // file path for persistence
@@ -63,13 +64,22 @@ type UTXOState struct {
 	Spent        bool   `json:"spent"`
 }
 
+// PublishBinding tracks a domain-to-vault DNSLink binding.
+type PublishBinding struct {
+	Domain     string `json:"domain"`
+	VaultIndex uint32 `json:"vault_index"`
+	PubKeyHex  string `json:"pubkey"`
+	Verified   bool   `json:"verified"`
+}
+
 // NewLocalState creates a new empty local state.
 func NewLocalState(path string) *LocalState {
 	return &LocalState{
-		Nodes:    make(map[string]*NodeState),
-		UTXOs:    make([]*UTXOState, 0),
-		RootTxID: make(map[uint32]string),
-		path:     path,
+		Nodes:           make(map[string]*NodeState),
+		UTXOs:           make([]*UTXOState, 0),
+		RootTxID:        make(map[uint32]string),
+		PublishBindings: make([]*PublishBinding, 0),
+		path:            path,
 	}
 }
 
@@ -96,6 +106,9 @@ func LoadLocalState(path string) (*LocalState, error) {
 	}
 	if state.RootTxID == nil {
 		state.RootTxID = make(map[uint32]string)
+	}
+	if state.PublishBindings == nil {
+		state.PublishBindings = make([]*PublishBinding, 0)
 	}
 	state.path = path
 	return &state, nil
@@ -176,6 +189,56 @@ func (s *LocalState) FindNodeByPath(path string) *NodeState {
 		}
 	}
 	return nil
+}
+
+// GetPublishBinding returns the publish binding for a domain, or nil if not found.
+func (s *LocalState) GetPublishBinding(domain string) *PublishBinding {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, b := range s.PublishBindings {
+		if b.Domain == domain {
+			return b
+		}
+	}
+	return nil
+}
+
+// SetPublishBinding adds or updates a publish binding for a domain.
+func (s *LocalState) SetPublishBinding(binding *PublishBinding) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, b := range s.PublishBindings {
+		if b.Domain == binding.Domain {
+			s.PublishBindings[i] = binding
+			return
+		}
+	}
+	s.PublishBindings = append(s.PublishBindings, binding)
+}
+
+// ListPublishBindings returns a deep copy of all publish bindings.
+func (s *LocalState) ListPublishBindings() []*PublishBinding {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*PublishBinding, len(s.PublishBindings))
+	for i, b := range s.PublishBindings {
+		cp := *b
+		out[i] = &cp
+	}
+	return out
+}
+
+// RemovePublishBinding removes the publish binding for a domain.
+func (s *LocalState) RemovePublishBinding(domain string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, b := range s.PublishBindings {
+		if b.Domain == domain {
+			s.PublishBindings = append(s.PublishBindings[:i], s.PublishBindings[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 // TxIDBytes converts a hex TxID string to 32 bytes.

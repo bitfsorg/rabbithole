@@ -394,10 +394,21 @@ func TestPublishStub(t *testing.T) {
 	}
 }
 
-func TestPublishNoArgs(t *testing.T) {
-	code := runPublish(nil)
-	if code != exitUsageError {
-		t.Errorf("runPublish (no args) returned %d, want %d", code, exitUsageError)
+func TestPublishNoArgs_NoWallet(t *testing.T) {
+	// With no domain but no valid wallet, should fail with wallet error.
+	dir := t.TempDir()
+	code := runPublish([]string{"--datadir", dir})
+	if code != exitWalletError {
+		t.Errorf("runPublish (no domain, no wallet) returned %d, want %d", code, exitWalletError)
+	}
+}
+
+func TestPublishNoArgs_ListsBindings(t *testing.T) {
+	// With a valid wallet but no domain, publish lists bindings.
+	dataDir := initTestWallet(t)
+	code := runPublish([]string{"--datadir", dataDir, "--password", "testpass"})
+	if code != exitSuccess {
+		t.Errorf("runPublish (no domain) returned %d, want %d", code, exitSuccess)
 	}
 }
 

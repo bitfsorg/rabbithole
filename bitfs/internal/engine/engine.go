@@ -20,6 +20,7 @@ type Engine struct {
 	Store   *storage.FileStore
 	State   *LocalState
 	DataDir string
+	DNS     DNSResolver // injectable for testing; nil uses default net.LookupTXT
 }
 
 // Result holds the output of an engine operation.
