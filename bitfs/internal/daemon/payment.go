@@ -193,7 +193,7 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		Expiry:      invoice.Expiry.Unix(),
 	}
 	if err := x402.VerifyPayment(proof, inv); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", fmt.Sprintf("Payment verification failed: %v", err))
+		writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", "Payment verification failed")
 		return
 	}
 

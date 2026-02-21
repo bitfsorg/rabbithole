@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 )
 
 // DNSResolver is an interface for DNS TXT record lookups.
@@ -159,9 +161,15 @@ func lookupBitfsPubkey(resolver DNSResolver, domain string) (string, error) {
 			pubHex := strings.TrimPrefix(record, "bitfs=")
 			pubHex = strings.TrimSpace(pubHex)
 			if len(pubHex) == 66 { // compressed pubkey = 33 bytes = 66 hex chars
-				if _, hexErr := hex.DecodeString(pubHex); hexErr == nil {
-					return pubHex, nil
+				pubBytes, hexErr := hex.DecodeString(pubHex)
+				if hexErr != nil {
+					continue
 				}
+				// Validate that the bytes represent a valid secp256k1 point.
+				if _, ecErr := ec.PublicKeyFromBytes(pubBytes); ecErr != nil {
+					continue
+				}
+				return pubHex, nil
 			}
 		}
 	}

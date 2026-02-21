@@ -129,6 +129,13 @@ func (d *Daemon) handleRootOrPath(w http.ResponseWriter, r *http.Request) {
 	if path == "" {
 		path = "/"
 	}
+
+	// Reject path traversal attempts.
+	if containsPathTraversal(path) {
+		writeJSONError(w, http.StatusBadRequest, "INVALID_PATH", "Path must not contain '..' segments")
+		return
+	}
+
 	d.serveWithContentNegotiation(w, r, path)
 }
 
@@ -183,7 +190,7 @@ func (d *Daemon) serveBasicInfo(w http.ResponseWriter, r *http.Request, path str
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = fmt.Fprintf(w, `<!DOCTYPE html>
 <html><head><title>BitFS</title></head>
-<body><h1>BitFS LFCP Node</h1><p>Path: %s</p></body></html>`, path)
+<body><h1>BitFS LFCP Node</h1><p>Path: %s</p></body></html>`, htmlEscape(path))
 	case "text/markdown":
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		_, _ = fmt.Fprintf(w, "# BitFS LFCP Node\n\nPath: %s\n", path)
@@ -204,12 +211,14 @@ func (d *Daemon) serveHTML(w http.ResponseWriter, node *NodeInfo) {
 		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><head><title>BitFS Directory</title></head><body>`)
 		_, _ = fmt.Fprintf(w, `<h1>Directory</h1><ul>`)
 		for _, child := range node.Children {
-			_, _ = fmt.Fprintf(w, `<li><a href="%s">%s</a> (%s)</li>`, child.Name, child.Name, child.Type)
+			escapedName := htmlEscape(child.Name)
+			escapedType := htmlEscape(child.Type)
+			_, _ = fmt.Fprintf(w, `<li><a href="%s">%s</a> (%s)</li>`, escapedName, escapedName, escapedType)
 		}
 		_, _ = fmt.Fprint(w, `</ul></body></html>`)
 	} else {
 		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><head><title>BitFS File</title></head><body>`)
-		_, _ = fmt.Fprintf(w, `<h1>%s</h1><p>Type: %s, Size: %d bytes</p>`, node.MimeType, node.Type, node.FileSize)
+		_, _ = fmt.Fprintf(w, `<h1>%s</h1><p>Type: %s, Size: %d bytes</p>`, htmlEscape(node.MimeType), htmlEscape(node.Type), node.FileSize)
 		_, _ = fmt.Fprint(w, `</body></html>`)
 	}
 }

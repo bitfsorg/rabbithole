@@ -24,6 +24,16 @@ import (
 // testPubKey is a well-known compressed public key hex (33 bytes, prefix 02).
 const testPubKey = "02b4632d08485ff1df2db55b9dafd23347d1c47a457072a1e87be26896549a8737"
 
+// testKeyHash returns a valid 64-hex-char hash for testing (32 bytes).
+func testKeyHash(suffix string) string {
+	base := strings.Repeat("ab", 32) // 64 hex chars
+	// Replace the last len(suffix) chars with suffix for uniqueness.
+	if len(suffix) <= len(base) {
+		return base[:len(base)-len(suffix)] + suffix
+	}
+	return base
+}
+
 func makeURI(path string) string {
 	if path == "" || path == "/" {
 		return "bitfs://" + testPubKey
@@ -85,13 +95,13 @@ func TestFreeContent_OutputToStdout(t *testing.T) {
 				Path:     "/hello.txt",
 				MimeType: "text/plain",
 				FileSize: uint64(len(content)),
-				KeyHash:  "abc123hash",
+				KeyHash:  testKeyHash("aa"),
 				Access:   "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			// Verify the data endpoint was called with the correct hash.
-			assert.True(t, strings.HasSuffix(r.URL.Path, "/abc123hash"),
+			assert.True(t, strings.HasSuffix(r.URL.Path, "/"+testKeyHash("aa")),
 				"data request should include key_hash; got %s", r.URL.Path)
 			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = w.Write(content)
@@ -122,7 +132,7 @@ func TestFreeContent_BinaryData(t *testing.T) {
 				Path:     "/binary.dat",
 				MimeType: "application/octet-stream",
 				FileSize: uint64(len(content)),
-				KeyHash:  "binhash456",
+				KeyHash:  testKeyHash("bb"),
 				Access:   "free",
 			})
 		},
@@ -147,7 +157,7 @@ func TestFreeContent_EmptyFile(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/empty.txt",
-				KeyHash: "emptyhash",
+				KeyHash: testKeyHash("cc"),
 				Access:  "free",
 			})
 		},
@@ -559,7 +569,7 @@ func TestDataEndpoint_ServerError(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/fail.txt",
-				KeyHash: "failhash",
+				KeyHash: testKeyHash("dd"),
 				Access:  "free",
 			})
 		},
@@ -584,7 +594,7 @@ func TestDataEndpoint_NotFound(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/missing-data.txt",
-				KeyHash: "nosuchhash",
+				KeyHash: testKeyHash("ee"),
 				Access:  "free",
 			})
 		},
@@ -696,7 +706,7 @@ func TestFreeContent_LargeFile(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/large.bin",
-				KeyHash: "largehash",
+				KeyHash: testKeyHash("ff"),
 				Access:  "free",
 			})
 		},
@@ -729,7 +739,7 @@ func TestFreeContent_DataEndpointCalled(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/tracked.txt",
-				KeyHash: "trackhash",
+				KeyHash: testKeyHash("11"),
 				Access:  "free",
 			})
 		},
@@ -762,7 +772,7 @@ func TestFreeContent_WriteError(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/werror.txt",
-				KeyHash: "werrorhash",
+				KeyHash: testKeyHash("22"),
 				Access:  "free",
 			})
 		},

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -242,6 +243,19 @@ func (d *Daemon) Start() error {
 
 	if d.running {
 		return ErrAlreadyRunning
+	}
+
+	// Validate TLS cert/key files exist before attempting to start.
+	if d.config.TLS.Enabled {
+		if d.config.TLS.CertFile == "" || d.config.TLS.KeyFile == "" {
+			return fmt.Errorf("daemon: TLS enabled but cert or key path is empty")
+		}
+		if _, err := os.Stat(d.config.TLS.CertFile); err != nil {
+			return fmt.Errorf("daemon: TLS cert file not accessible: %w", err)
+		}
+		if _, err := os.Stat(d.config.TLS.KeyFile); err != nil {
+			return fmt.Errorf("daemon: TLS key file not accessible: %w", err)
+		}
 	}
 
 	d.running = true

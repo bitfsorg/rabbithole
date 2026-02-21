@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"text/template"
 )
 
 // randRead is a variable to allow test injection.
@@ -82,6 +83,12 @@ func (d *Daemon) handleMeta(w http.ResponseWriter, r *http.Request) {
 		path = "/" + path
 	}
 
+	// Reject path traversal attempts.
+	if containsPathTraversal(path) {
+		writeJSONError(w, http.StatusBadRequest, "INVALID_PATH", "Path must not contain '..' segments")
+		return
+	}
+
 	// Check that the Metanet service is available.
 	if d.metanet == nil {
 		writeJSONError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Metanet service is not available")
@@ -148,4 +155,20 @@ type metaNodeResponse struct {
 type metaChildResponse struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+}
+
+// containsPathTraversal returns true if the path contains ".." segments
+// that could allow directory traversal attacks.
+func containsPathTraversal(path string) bool {
+	for _, segment := range strings.Split(path, "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// htmlEscape escapes a string for safe inclusion in HTML output.
+func htmlEscape(s string) string {
+	return template.HTMLEscapeString(s)
 }

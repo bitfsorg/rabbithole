@@ -100,7 +100,7 @@ func TestLookupBitfsPubkey_NoRecords(t *testing.T) {
 }
 
 func TestLookupBitfsPubkey_WhitespaceHandling(t *testing.T) {
-	pubHex := "03" + strings.Repeat("cd", 32) // 66 hex chars
+	pubHex := "03" + strings.Repeat("ff", 32) // 66 hex chars, valid secp256k1 point
 	dns := newMockDNS()
 	dns.records["_bitfs.example.com"] = []string{
 		"  bitfs=" + pubHex + "  ", // whitespace around record

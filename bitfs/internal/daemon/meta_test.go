@@ -284,3 +284,119 @@ func TestHandleMeta_InternalError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.Contains(t, w.Body.String(), "INTERNAL_ERROR")
 }
+
+// --- Input validation tests (Task 20: security audit) ---
+
+// TestHandleMeta_PathTraversal verifies that ".." segments in paths are rejected.
+// Note: we call handleMeta directly because Go's HTTP mux normalizes ".." in URLs
+// before the handler sees them. In production, a reverse proxy or raw TCP client
+// could send un-normalized paths, so the handler-level check is still valuable.
+func TestHandleMeta_PathTraversal(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"simple traversal", "../etc/passwd"},
+		{"mid-path traversal", "docs/../../../etc/shadow"},
+		{"double dot only", ".."},
+		{"nested traversal", "a/b/../../c/../../../etc/hosts"},
+		{"trailing traversal", "docs/.."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build request with SetPathValue to simulate router-extracted path values,
+			// bypassing HTTP mux's URL normalization.
+			req := httptest.NewRequest("GET", "/_bitfs/meta/"+validPnode()+"/placeholder", nil)
+			req.SetPathValue("pnode", validPnode())
+			req.SetPathValue("path", tt.path)
+			w := httptest.NewRecorder()
+			d.handleMeta(w, req)
+
+			assert.Equal(t, http.StatusBadRequest, w.Code, "path %q should be rejected", tt.path)
+			assert.Contains(t, w.Body.String(), "INVALID_PATH")
+		})
+	}
+}
+
+// TestHandleMeta_PathTraversal_Allowed verifies that legitimate paths with dots are NOT rejected.
+func TestHandleMeta_PathTraversal_Allowed(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+
+	// Register nodes for the valid paths (after "/" prepend).
+	paths := []string{
+		"file..name",
+		"dir.with.dots/file.txt",
+		".hidden",
+		"...triple",
+	}
+	for _, p := range paths {
+		meta.nodes["/"+p] = &NodeInfo{
+			PNode:  validPnodeBytes(),
+			Type:   "file",
+			Access: "free",
+		}
+	}
+
+	for _, p := range paths {
+		t.Run(p, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/_bitfs/meta/"+validPnode()+"/placeholder", nil)
+			req.SetPathValue("pnode", validPnode())
+			req.SetPathValue("path", p)
+			w := httptest.NewRecorder()
+			d.handleMeta(w, req)
+
+			// Should NOT be 400 — these are legitimate paths.
+			assert.NotEqual(t, http.StatusBadRequest, w.Code, "path %q should be allowed", p)
+		})
+	}
+}
+
+// TestContainsPathTraversal is a unit test for the containsPathTraversal helper.
+func TestContainsPathTraversal(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{"/normal/path", false},
+		{"/.hidden/file", false},
+		{"/file..name", false},
+		{"/...triple", false},
+		{"/..", true},
+		{"/a/../b", true},
+		{"/../etc/passwd", true},
+		{"/a/b/../../c", true},
+		{"..", true},
+		{"a/../../b", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := containsPathTraversal(tt.path)
+			assert.Equal(t, tt.expected, got, "containsPathTraversal(%q)", tt.path)
+		})
+	}
+}
+
+// TestHtmlEscape verifies the htmlEscape helper escapes dangerous characters.
+func TestHtmlEscape(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"hello", "hello"},
+		{"<script>alert(1)</script>", "&lt;script&gt;alert(1)&lt;/script&gt;"},
+		{`"quoted"`, "&#34;quoted&#34;"},
+		{"a&b", "a&amp;b"},
+		{"safe/path.txt", "safe/path.txt"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := htmlEscape(tt.input)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}

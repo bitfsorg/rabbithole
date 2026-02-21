@@ -6,6 +6,7 @@ package client
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,6 +99,11 @@ func (c *Client) WithTimeout(d time.Duration) *Client {
 // GetMeta retrieves node metadata from the daemon.
 // Endpoint: GET /_bitfs/meta/{pnode}/{path}
 func (c *Client) GetMeta(pnode, path string) (*MetaResponse, error) {
+	// Validate pnode is a 66-char hex string (33-byte compressed pubkey).
+	if err := validateHex(pnode, 33, "pnode"); err != nil {
+		return nil, err
+	}
+
 	// URL-encode each path segment to handle spaces, #, ?, etc.
 	segments := strings.Split(path, "/")
 	for i, s := range segments {
@@ -127,6 +133,11 @@ func (c *Client) GetMeta(pnode, path string) (*MetaResponse, error) {
 // The caller is responsible for closing the returned ReadCloser.
 // Endpoint: GET /_bitfs/data/{hash}
 func (c *Client) GetData(hash string) (io.ReadCloser, error) {
+	// Validate hash is a 64-char hex string (32-byte SHA256).
+	if err := validateHex(hash, 32, "hash"); err != nil {
+		return nil, err
+	}
+
 	url := fmt.Sprintf("%s/_bitfs/data/%s", c.BaseURL, hash)
 
 	resp, err := c.HTTPClient.Get(url)
@@ -224,4 +235,15 @@ func checkStatus(resp *http.Response) error {
 // wrapNetworkError wraps a network-level error with ErrNetwork.
 func wrapNetworkError(err error) error {
 	return fmt.Errorf("%w: %v", ErrNetwork, err)
+}
+
+// validateHex validates that s is a valid hex string decoding to exactly expectedBytes bytes.
+func validateHex(s string, expectedBytes int, name string) error {
+	if len(s) != expectedBytes*2 {
+		return fmt.Errorf("client: %s must be %d hex characters, got %d", name, expectedBytes*2, len(s))
+	}
+	if _, err := hex.DecodeString(s); err != nil {
+		return fmt.Errorf("client: invalid %s hex: %w", name, err)
+	}
+	return nil
 }

@@ -5,12 +5,23 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// testPnode returns a valid 66-hex-char compressed public key for testing.
+func testPnode() string {
+	return "02" + strings.Repeat("ab", 32)
+}
+
+// testHash returns a valid 64-hex-char hash for testing.
+func testHash() string {
+	return strings.Repeat("ab", 32)
+}
 
 // --- New() and configuration tests ---
 
@@ -41,8 +52,9 @@ func TestWithTimeout(t *testing.T) {
 // --- GetMeta tests ---
 
 func TestGetMeta_Success(t *testing.T) {
+	pnode := testPnode()
 	meta := MetaResponse{
-		PNode:    "02abababababababababababababababababababababababababababababababababab",
+		PNode:    pnode,
 		Type:     "file",
 		Path:     "docs/readme.txt",
 		MimeType: "text/plain",
@@ -53,14 +65,14 @@ func TestGetMeta_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "GET", r.Method)
-		assert.Equal(t, "/_bitfs/meta/02abab/docs/readme.txt", r.URL.Path)
+		assert.Equal(t, "/_bitfs/meta/"+pnode+"/docs/readme.txt", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(meta)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL)
-	got, err := c.GetMeta("02abab", "docs/readme.txt")
+	got, err := c.GetMeta(pnode, "docs/readme.txt")
 	require.NoError(t, err)
 
 	assert.Equal(t, meta.PNode, got.PNode)
@@ -72,8 +84,9 @@ func TestGetMeta_Success(t *testing.T) {
 }
 
 func TestGetMeta_WithChildren(t *testing.T) {
+	pnode := "03" + strings.Repeat("ab", 32)
 	meta := MetaResponse{
-		PNode:  "03abab",
+		PNode:  pnode,
 		Type:   "dir",
 		Path:   "/",
 		Access: "free",
@@ -90,7 +103,7 @@ func TestGetMeta_WithChildren(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	got, err := c.GetMeta("03abab", "/")
+	got, err := c.GetMeta(pnode, "/")
 	require.NoError(t, err)
 
 	assert.Len(t, got.Children, 2)
@@ -106,7 +119,7 @@ func TestGetMeta_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	_, err := c.GetMeta("02abab", "nonexistent")
+	_, err := c.GetMeta(testPnode(), "nonexistent")
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
@@ -120,7 +133,7 @@ func TestGetMeta_PaymentRequired(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	_, err := c.GetMeta("02abab", "premium/video.mp4")
+	_, err := c.GetMeta(testPnode(), "premium/video.mp4")
 	assert.ErrorIs(t, err, ErrPaymentRequired)
 }
 
@@ -132,14 +145,14 @@ func TestGetMeta_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	_, err := c.GetMeta("02abab", "path")
+	_, err := c.GetMeta(testPnode(), "path")
 	assert.ErrorIs(t, err, ErrServer)
 }
 
 func TestGetMeta_NetworkError(t *testing.T) {
 	c := New("http://127.0.0.1:1") // nothing listening on port 1
 	c = c.WithTimeout(100 * time.Millisecond)
-	_, err := c.GetMeta("02abab", "path")
+	_, err := c.GetMeta(testPnode(), "path")
 	assert.ErrorIs(t, err, ErrNetwork)
 }
 
@@ -147,17 +160,18 @@ func TestGetMeta_NetworkError(t *testing.T) {
 
 func TestGetData_Success(t *testing.T) {
 	content := []byte("encrypted file content here")
+	hash := testHash()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "GET", r.Method)
-		assert.Equal(t, "/_bitfs/data/aabbccdd", r.URL.Path)
+		assert.Equal(t, "/_bitfs/data/"+hash, r.URL.Path)
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Write(content)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL)
-	rc, err := c.GetData("aabbccdd")
+	rc, err := c.GetData(hash)
 	require.NoError(t, err)
 	defer rc.Close()
 
@@ -174,7 +188,7 @@ func TestGetData_NotFound(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	_, err := c.GetData("deadbeef")
+	_, err := c.GetData(strings.Repeat("de", 32))
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
@@ -185,14 +199,14 @@ func TestGetData_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	_, err := c.GetData("aabb")
+	_, err := c.GetData(strings.Repeat("aa", 32))
 	assert.ErrorIs(t, err, ErrServer)
 }
 
 func TestGetData_NetworkError(t *testing.T) {
 	c := New("http://127.0.0.1:1")
 	c = c.WithTimeout(100 * time.Millisecond)
-	_, err := c.GetData("aabbccdd")
+	_, err := c.GetData(testHash())
 	assert.ErrorIs(t, err, ErrNetwork)
 }
 
@@ -325,7 +339,7 @@ func TestCheckStatus_TooManyRequests(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	_, err := c.GetMeta("pnode", "path")
+	_, err := c.GetMeta(testPnode(), "path")
 	assert.Error(t, err)
 	// 429 is mapped to ErrServer (retryable server-side error)
 	assert.ErrorIs(t, err, ErrServer)
@@ -334,8 +348,9 @@ func TestCheckStatus_TooManyRequests(t *testing.T) {
 // --- Edge cases ---
 
 func TestGetMeta_SpecialCharsInPath(t *testing.T) {
+	pnode := testPnode()
 	meta := MetaResponse{
-		PNode:  "02abab",
+		PNode:  pnode,
 		Type:   "file",
 		Path:   "docs/my file#1.txt",
 		Access: "free",
@@ -345,31 +360,30 @@ func TestGetMeta_SpecialCharsInPath(t *testing.T) {
 		// Each path segment should be individually URL-encoded.
 		// "my file#1.txt" -> "my%20file%231.txt"
 		// Use RequestURI which preserves the raw percent-encoded form.
-		assert.Equal(t, "/_bitfs/meta/02abab/docs/my%20file%231.txt", r.RequestURI)
+		assert.Equal(t, "/_bitfs/meta/"+pnode+"/docs/my%20file%231.txt", r.RequestURI)
 		// The server should decode the path correctly.
-		assert.Equal(t, "/_bitfs/meta/02abab/docs/my file#1.txt", r.URL.Path)
+		assert.Equal(t, "/_bitfs/meta/"+pnode+"/docs/my file#1.txt", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(meta)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL)
-	got, err := c.GetMeta("02abab", "docs/my file#1.txt")
+	got, err := c.GetMeta(pnode, "docs/my file#1.txt")
 	require.NoError(t, err)
 	assert.Equal(t, "docs/my file#1.txt", got.Path)
 }
 
 func TestGetMeta_EmptyPath(t *testing.T) {
+	pnode := testPnode()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Path should be /_bitfs/meta/pnode/ (trailing slash for empty path)
-		assert.Equal(t, "/_bitfs/meta/pnode/", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(MetaResponse{PNode: "pnode", Type: "dir", Access: "free"})
+		json.NewEncoder(w).Encode(MetaResponse{PNode: pnode, Type: "dir", Access: "free"})
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL)
-	got, err := c.GetMeta("pnode", "")
+	got, err := c.GetMeta(pnode, "")
 	require.NoError(t, err)
 	assert.Equal(t, "dir", got.Type)
 }
@@ -388,7 +402,7 @@ func TestGetData_LargeBody(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	rc, err := c.GetData("somehash")
+	rc, err := c.GetData(testHash())
 	require.NoError(t, err)
 	defer rc.Close()
 
@@ -406,7 +420,7 @@ func TestGetMeta_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	_, err := c.GetMeta("pnode", "path")
+	_, err := c.GetMeta(testPnode(), "path")
 	assert.Error(t, err)
 	// Should not be a sentinel error — it's a decode error
 	assert.NotErrorIs(t, err, ErrNotFound)
@@ -435,4 +449,104 @@ func TestSubmitHTLC_InvalidJSON(t *testing.T) {
 	c := New(srv.URL)
 	_, err := c.SubmitHTLC("txid", []byte("tx"))
 	assert.Error(t, err)
+}
+
+// --- Input validation tests (Task 20: security audit) ---
+
+// TestValidateHex verifies the hex validation helper directly.
+func TestValidateHex(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		expectedBytes int
+		fieldName     string
+		wantErr       bool
+		errContains   string
+	}{
+		{"valid 32 bytes", strings.Repeat("ab", 32), 32, "hash", false, ""},
+		{"valid 33 bytes", "02" + strings.Repeat("ab", 32), 33, "pnode", false, ""},
+		{"too short", "aabb", 32, "hash", true, "must be 64 hex characters"},
+		{"too long", strings.Repeat("ab", 33), 32, "hash", true, "must be 64 hex characters"},
+		{"odd length", strings.Repeat("a", 63), 32, "hash", true, "must be 64 hex characters"},
+		{"not hex", strings.Repeat("zz", 32), 32, "hash", true, "invalid hash hex"},
+		{"empty string", "", 32, "hash", true, "must be 64 hex characters"},
+		{"mixed case valid", strings.Repeat("Ab", 32), 32, "hash", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateHex(tt.input, tt.expectedBytes, tt.fieldName)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestGetMeta_InvalidPnode verifies client-side pnode validation rejects bad inputs
+// before making any HTTP request.
+func TestGetMeta_InvalidPnode(t *testing.T) {
+	// Use a server that would panic if called — ensuring we never reach it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP request should not have been made")
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+
+	tests := []struct {
+		name  string
+		pnode string
+	}{
+		{"too short", "02abab"},
+		{"too long", "02" + strings.Repeat("ab", 33)},
+		{"not hex", strings.Repeat("zz", 33)},
+		{"empty", ""},
+		{"wrong length 32 bytes", strings.Repeat("ab", 32)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := c.GetMeta(tt.pnode, "some/path")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "client:")
+			assert.Contains(t, err.Error(), "pnode")
+		})
+	}
+}
+
+// TestGetData_InvalidHash verifies client-side hash validation rejects bad inputs
+// before making any HTTP request.
+func TestGetData_InvalidHash(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("HTTP request should not have been made")
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+
+	tests := []struct {
+		name string
+		hash string
+	}{
+		{"too short", "aabb"},
+		{"too long", strings.Repeat("ab", 33)},
+		{"not hex", strings.Repeat("zz", 32)},
+		{"empty", ""},
+		{"wrong length 33 bytes", strings.Repeat("ab", 33)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := c.GetData(tt.hash)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "client:")
+			assert.Contains(t, err.Error(), "hash")
+		})
+	}
 }
