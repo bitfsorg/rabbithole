@@ -7,6 +7,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -77,15 +79,11 @@ func TestFreeContent_DefaultFilename(t *testing.T) {
 	)
 	defer srv.Close()
 
-	// Change to temp dir so the default filename is created there.
 	tmpDir := t.TempDir()
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(tmpDir))
-	defer func() { _ = os.Chdir(origDir) }()
+	outFile := filepath.Join(tmpDir, "hello.txt")
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
 
 	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	assert.Empty(t, stderr.String())
@@ -93,7 +91,7 @@ func TestFreeContent_DefaultFilename(t *testing.T) {
 	assert.Contains(t, stdout.String(), "hello.txt")
 
 	// Verify file was created with correct contents.
-	data, err := os.ReadFile(filepath.Join(tmpDir, "hello.txt"))
+	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
 	assert.Equal(t, content, data)
 }
@@ -338,13 +336,10 @@ func TestMissingKeyHash(t *testing.T) {
 	defer srv.Close()
 
 	tmpDir := t.TempDir()
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(tmpDir))
-	defer func() { _ = os.Chdir(origDir) }()
+	outFile := filepath.Join(tmpDir, "broken.txt")
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--host", srv.URL, makeURI("/broken.txt")}, &stdout, &stderr)
+	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/broken.txt")}, &stdout, &stderr)
 
 	assert.NotEqual(t, 0, code, "missing key_hash should be an error")
 	assert.Contains(t, stderr.String(), "no content hash")
@@ -376,18 +371,15 @@ func TestDefaultFilename_RootPath(t *testing.T) {
 	defer srv.Close()
 
 	tmpDir := t.TempDir()
-	origDir, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(tmpDir))
-	defer func() { _ = os.Chdir(origDir) }()
+	outFile := filepath.Join(tmpDir, "download.dat")
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--host", srv.URL, makeURI("/")}, &stdout, &stderr)
+	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/")}, &stdout, &stderr)
 
 	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	assert.Contains(t, stdout.String(), "download.dat")
 
-	data, err := os.ReadFile(filepath.Join(tmpDir, "download.dat"))
+	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
 	assert.Equal(t, content, data)
 }
@@ -669,4 +661,67 @@ func TestFreeContent_ByteCountInMessage(t *testing.T) {
 
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout.String(), "Downloaded 20 bytes")
+}
+
+// ---------------------------------------------------------------------------
+// Partial file cleanup on download failure
+// ---------------------------------------------------------------------------
+
+func TestPartialFileCleanup_OnWriteError(t *testing.T) {
+	// Create a custom server that sends partial data then kills the connection.
+	// This simulates a mid-stream network failure so io.Copy returns an error.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	// Serve meta endpoint normally, data endpoint via raw conn.
+	metaMux := http.NewServeMux()
+	metaMux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:   testPubKey,
+			Type:    "file",
+			Path:    "/partial.bin",
+			KeyHash: "partialhash",
+			Access:  "free",
+		})
+	})
+	metaMux.HandleFunc("/_bitfs/data/", func(w http.ResponseWriter, r *http.Request) {
+		// Advertise a large Content-Length but send only a few bytes,
+		// then close connection — io.Copy sees unexpected EOF.
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", "100000")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			_, _ = w.Write([]byte("partial"))
+			f.Flush()
+		}
+		// Hijack the connection and close it abruptly.
+		if hj, ok := w.(http.Hijacker); ok {
+			conn, _, _ := hj.Hijack()
+			if conn != nil {
+				conn.Close()
+			}
+		}
+	})
+
+	srv := &httptest.Server{
+		Listener: listener,
+		Config:   &http.Server{Handler: metaMux},
+	}
+	srv.Start()
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "partial.bin")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/partial.bin")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code, "mid-stream failure should return non-zero exit code")
+	assert.Contains(t, stderr.String(), "write error",
+		"stderr should contain write error message")
+
+	// The critical assertion: partial file must not remain on disk.
+	_, statErr := os.Stat(outFile)
+	assert.True(t, os.IsNotExist(statErr),
+		fmt.Sprintf("partial file should be removed on failure, but got: %v", statErr))
 }

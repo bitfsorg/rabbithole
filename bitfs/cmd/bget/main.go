@@ -136,11 +136,18 @@ func downloadContent(c *client.Client, meta *client.MetaResponse, outputName str
 		fmt.Fprintf(stderr, "bget: cannot create file %q: %v\n", filename, err)
 		return 1
 	}
-	defer file.Close()
 
 	n, err := io.Copy(file, reader)
 	if err != nil {
+		file.Close()
+		os.Remove(filename)
 		fmt.Fprintf(stderr, "bget: write error: %v\n", err)
+		return 1
+	}
+
+	if err := file.Close(); err != nil {
+		os.Remove(filename)
+		fmt.Fprintf(stderr, "bget: close error: %v\n", err)
 		return 1
 	}
 
