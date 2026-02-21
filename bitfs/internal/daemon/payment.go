@@ -8,11 +8,14 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/tongxiaofeng/libbitfs/x402"
 )
 
 // InvoiceRecord tracks a pending or completed content purchase.
 type InvoiceRecord struct {
 	ID          string    `json:"invoice_id"`
+	TotalPrice  uint64    `json:"total_price"`
 	NodePNode   []byte    `json:"-"`
 	KeyHash     []byte    `json:"-"`
 	PricePerKB  uint64    `json:"price_per_kb"`
@@ -31,20 +34,15 @@ const maxHTLCBodySize = 1 << 20
 
 // servePaidContent returns 402 Payment Required for paid content,
 // generating and storing an invoice for the purchase flow.
+// Uses libbitfs/x402 for invoice creation, price calculation, and HTTP headers.
 func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
-	// Generate a random invoice ID (16 bytes = 32 hex chars).
-	idBytes := make([]byte, 16)
-	if _, err := randRead(idBytes); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to generate invoice ID")
-		return
-	}
-	invoiceID := hex.EncodeToString(idBytes)
-
 	// Compute capsule hash as SHA256 of the key hash.
-	capsuleHash := ""
+	var capsuleHashBytes []byte
+	capsuleHashHex := ""
 	if len(node.KeyHash) > 0 {
 		h := sha256.Sum256(node.KeyHash)
-		capsuleHash = hex.EncodeToString(h[:])
+		capsuleHashBytes = h[:]
+		capsuleHashHex = hex.EncodeToString(capsuleHashBytes)
 	}
 
 	// TODO(payment): Replace with real BSV P2PKH address derived from node's public key.
@@ -54,40 +52,46 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 		paymentAddr = fmt.Sprintf("1BitFS%s", hex.EncodeToString(node.PNode[:8]))
 	}
 
-	// Determine invoice expiry.
-	expiry := DefaultInvoiceExpiry
+	// Determine invoice TTL in seconds.
+	ttlSeconds := int64(DefaultInvoiceExpiry / time.Second)
 	if d.config.X402.InvoiceExpiry > 0 {
-		expiry = time.Duration(d.config.X402.InvoiceExpiry) * time.Second
+		ttlSeconds = d.config.X402.InvoiceExpiry
 	}
 
-	invoice := &InvoiceRecord{
-		ID:          invoiceID,
+	// Create invoice via libbitfs/x402.
+	inv := x402.NewInvoice(node.PricePerKB, node.FileSize, paymentAddr, capsuleHashBytes, ttlSeconds)
+
+	// Convert x402.Invoice to daemon's InvoiceRecord for internal state management.
+	record := &InvoiceRecord{
+		ID:          inv.ID,
+		TotalPrice:  inv.Price,
 		NodePNode:   node.PNode,
 		KeyHash:     node.KeyHash,
-		PricePerKB:  node.PricePerKB,
-		FileSize:    node.FileSize,
-		PaymentAddr: paymentAddr,
-		CapsuleHash: capsuleHash,
-		Expiry:      time.Now().Add(expiry),
+		PricePerKB:  inv.PricePerKB,
+		FileSize:    inv.FileSize,
+		PaymentAddr: inv.PaymentAddr,
+		CapsuleHash: capsuleHashHex,
+		Expiry:      time.Unix(inv.Expiry, 0),
 		Paid:        false,
 	}
 
 	// Store the invoice.
 	d.invoicesMu.Lock()
-	d.invoices[invoiceID] = invoice
+	d.invoices[inv.ID] = record
 	d.invoicesMu.Unlock()
 
-	// Return 402 with invoice details.
+	// Set x402 HTTP headers and return 402 status via libbitfs/x402.
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Price-Per-KB", fmt.Sprintf("%d", node.PricePerKB))
-	w.Header().Set("X-File-Size", fmt.Sprintf("%d", node.FileSize))
-	w.WriteHeader(http.StatusPaymentRequired)
+	x402.SetPaymentHeaders(w, x402.PaymentHeadersFromInvoice(inv))
+
+	// Return JSON body with invoice details.
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"error":        "payment required",
-		"invoice_id":   invoiceID,
-		"price_per_kb": node.PricePerKB,
-		"file_size":    node.FileSize,
-		"payment_addr": paymentAddr,
+		"invoice_id":   inv.ID,
+		"total_price":  inv.Price,
+		"price_per_kb": inv.PricePerKB,
+		"file_size":    inv.FileSize,
+		"payment_addr": inv.PaymentAddr,
 	})
 }
 
@@ -122,6 +126,7 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"invoice_id":   invoice.ID,
+		"total_price":  invoice.TotalPrice,
 		"capsule_hash": invoice.CapsuleHash,
 		"price_per_kb": invoice.PricePerKB,
 		"file_size":    invoice.FileSize,
@@ -177,8 +182,20 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Real HTLC transaction verification will be added in a future task.
-	// For now, accept any non-empty body as a valid payment.
+	// Verify the payment transaction using libbitfs/x402.
+	proof := &x402.PaymentProof{RawTx: htlcBody}
+	inv := &x402.Invoice{
+		ID:          invoice.ID,
+		Price:       invoice.TotalPrice,
+		PricePerKB:  invoice.PricePerKB,
+		FileSize:    invoice.FileSize,
+		PaymentAddr: invoice.PaymentAddr,
+		Expiry:      invoice.Expiry.Unix(),
+	}
+	if err := x402.VerifyPayment(proof, inv); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", fmt.Sprintf("Payment verification failed: %v", err))
+		return
+	}
 
 	// Retrieve the encrypted content from the store.
 	if len(invoice.KeyHash) == 0 {

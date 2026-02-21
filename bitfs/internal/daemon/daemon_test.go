@@ -1335,8 +1335,12 @@ func TestPaidContent_PriceHeaders(t *testing.T) {
 	d.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusPaymentRequired, w.Code)
+	// x402 standard headers set by libbitfs/x402.SetPaymentHeaders.
 	assert.Equal(t, "100", w.Header().Get("X-Price-Per-KB"))
 	assert.Equal(t, "2048", w.Header().Get("X-File-Size"))
+	assert.Equal(t, "200", w.Header().Get("X-Price")) // ceil(100 * 2048 / 1024) = 200
+	assert.NotEmpty(t, w.Header().Get("X-Invoice-Id"))
+	assert.NotEmpty(t, w.Header().Get("X-Expiry"))
 }
 
 func TestHTTPTestServer_BSVAlias(t *testing.T) {
