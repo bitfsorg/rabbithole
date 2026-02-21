@@ -5,6 +5,7 @@ package integration
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,10 @@ func (m *mockWalletService) DeriveNodePubKey(vaultIndex uint32, filePath []uint3
 
 func (m *mockWalletService) GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error) {
 	return m.privKey, m.pubKey, nil
+}
+
+func (m *mockWalletService) GetVaultPubKey(alias string) (string, error) {
+	return "", fmt.Errorf("not implemented in mock")
 }
 
 // --- Mock content store for daemon ---

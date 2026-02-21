@@ -25,6 +25,9 @@ type WalletService interface {
 	// GetSellerKeyPair returns the seller's key pair for the daemon.
 	// Returns (privateKey, publicKey) for the default vault root.
 	GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error)
+
+	// GetVaultPubKey resolves a vault alias to its compressed hex public key.
+	GetVaultPubKey(alias string) (string, error)
 }
 
 // ContentStore defines the content storage interface needed by the daemon.

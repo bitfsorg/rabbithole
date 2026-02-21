@@ -27,6 +27,9 @@ type mockWallet struct {
 	privKey *ec.PrivateKey
 	pubKey  *ec.PublicKey
 	err     error
+
+	// vaultKeys maps alias names to compressed hex public keys for GetVaultPubKey.
+	vaultKeys map[string]string
 }
 
 func newMockWallet(t *testing.T) *mockWallet {
@@ -34,8 +37,9 @@ func newMockWallet(t *testing.T) *mockWallet {
 	priv, err := ec.NewPrivateKey()
 	require.NoError(t, err)
 	return &mockWallet{
-		privKey: priv,
-		pubKey:  priv.PubKey(),
+		privKey:   priv,
+		pubKey:    priv.PubKey(),
+		vaultKeys: make(map[string]string),
 	}
 }
 
@@ -51,6 +55,17 @@ func (m *mockWallet) GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error) {
 		return nil, nil, m.err
 	}
 	return m.privKey, m.pubKey, nil
+}
+
+func (m *mockWallet) GetVaultPubKey(alias string) (string, error) {
+	if m.err != nil {
+		return "", m.err
+	}
+	key, ok := m.vaultKeys[alias]
+	if !ok {
+		return "", fmt.Errorf("vault not found: %s", alias)
+	}
+	return key, nil
 }
 
 // mockStore implements ContentStore for testing.

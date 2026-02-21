@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"encoding/hex"
+
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
 	"github.com/tongxiaofeng/libbitfs/metanet"
@@ -33,6 +35,19 @@ func (a *WalletAdapter) GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error
 		return nil, nil, err
 	}
 	return kp.PrivateKey, kp.PublicKey, nil
+}
+
+// GetVaultPubKey implements daemon.WalletService.
+func (a *WalletAdapter) GetVaultPubKey(alias string) (string, error) {
+	vaultIdx, err := a.engine.ResolveVaultIndex(alias)
+	if err != nil {
+		return "", err
+	}
+	kp, err := a.engine.Wallet.DeriveVaultRootKey(vaultIdx)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(kp.PublicKey.Compressed()), nil
 }
 
 // StoreAdapter implements daemon.ContentStore using the engine's file store.

@@ -43,6 +43,14 @@ func (s *testWalletService) GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, e
 	return kp.PrivateKey, kp.PublicKey, nil
 }
 
+func (s *testWalletService) GetVaultPubKey(alias string) (string, error) {
+	kp, err := s.w.DeriveVaultRootKey(0)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(kp.PublicKey.Compressed()), nil
+}
+
 // testMetanetService implements daemon.MetanetService with a path->NodeInfo map.
 type testMetanetService struct {
 	nodes map[string]*daemon.NodeInfo
