@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	bsvhash "github.com/bsv-blockchain/go-sdk/primitives/hash"
 
 	"github.com/tongxiaofeng/libbitfs/metanet"
 	"github.com/tongxiaofeng/libbitfs/wallet"
@@ -38,22 +38,7 @@ func loadWalletState(path string) (*wallet.WalletState, error) {
 // pubKeyHash computes HASH160(pubkey) = RIPEMD160(SHA256(pubkey)).
 // Returns the 20-byte hash used in P2PKH addresses.
 func pubKeyHash(pub *ec.PublicKey) []byte {
-	compressed := pub.Compressed()
-	h := sha256.Sum256(compressed)
-	return ripemd160Hash(h[:])
-}
-
-// ripemd160Hash computes RIPEMD160 of the input.
-// We use golang.org/x/crypto's ripemd160 via a simple manual implementation
-// since go-sdk handles this internally. For change addresses we can use
-// a simpler approach — hash160 is available through script.NewAddressFromPublicKey.
-func ripemd160Hash(data []byte) []byte {
-	// go-sdk's script.NewAddressFromPublicKey does HASH160 internally.
-	// For our purposes, we compute a simple 20-byte hash.
-	// Actually, let's just use SHA256 truncated to 20 bytes as a placeholder.
-	// The real HASH160 is done inside BuildP2PKHScript which is what matters.
-	h := sha256.Sum256(data)
-	return h[:20]
+	return bsvhash.Hash160(pub.Compressed())
 }
 
 // mustDecompressPubKey parses a hex-encoded compressed public key.

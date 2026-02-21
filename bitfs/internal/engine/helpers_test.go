@@ -3,6 +3,10 @@ package engine
 import (
 	"testing"
 
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	bsvhash "github.com/bsv-blockchain/go-sdk/primitives/hash"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/libbitfs/metanet"
 )
 
@@ -199,4 +203,44 @@ func TestMustDecompressPubKey(t *testing.T) {
 	if mustDecompressPubKey("000000000000000000000000000000000000000000000000000000000000000000") != nil {
 		t.Error("mustDecompressPubKey(zero key) expected nil")
 	}
+}
+
+func TestPubKeyHash_MatchesGoSDK(t *testing.T) {
+	// Generate a random key and verify our pubKeyHash matches go-sdk's Hash160.
+	privKey, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+
+	pub := privKey.PubKey()
+	got := pubKeyHash(pub)
+
+	// go-sdk's canonical Hash160 = RIPEMD160(SHA256(data))
+	want := bsvhash.Hash160(pub.Compressed())
+
+	assert.Equal(t, want, got, "pubKeyHash must match go-sdk Hash160")
+	assert.Len(t, got, 20, "HASH160 output must be 20 bytes")
+}
+
+func TestPubKeyHash_Deterministic(t *testing.T) {
+	// Same key must produce the same hash every time.
+	privKey, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+
+	pub := privKey.PubKey()
+	h1 := pubKeyHash(pub)
+	h2 := pubKeyHash(pub)
+
+	assert.Equal(t, h1, h2, "pubKeyHash must be deterministic")
+}
+
+func TestPubKeyHash_DifferentKeys(t *testing.T) {
+	// Different keys must produce different hashes.
+	priv1, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	priv2, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+
+	h1 := pubKeyHash(priv1.PubKey())
+	h2 := pubKeyHash(priv2.PubKey())
+
+	assert.NotEqual(t, h1, h2, "different keys must produce different hashes")
 }
