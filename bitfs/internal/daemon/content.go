@@ -1,12 +1,14 @@
 package daemon
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // randRead is a variable to allow test injection.
@@ -89,7 +91,17 @@ func (d *Daemon) handleMeta(w http.ResponseWriter, r *http.Request) {
 	// Resolve the path via the Metanet service.
 	node, err := d.metanet.GetNodeByPath(path)
 	if err != nil {
-		writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Path not found")
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Path not found")
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to resolve path")
+		}
+		return
+	}
+
+	// Validate that the resolved node's PNode matches the URL pnode.
+	if !bytes.Equal(node.PNode, pnodeBytes) {
+		writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Path not found for this pnode")
 		return
 	}
 

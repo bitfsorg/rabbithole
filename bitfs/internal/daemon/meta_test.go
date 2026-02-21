@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -239,4 +240,47 @@ func TestHandleMeta_EmptyPath(t *testing.T) {
 	// With the {path...} wildcard and trailing slash, the path value should be empty
 	// which gets prepended to "/"
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// TestHandleMeta_PnodeMismatch verifies that handleMeta returns 404 when the
+// resolved node's PNode does not match the pnode in the URL.
+func TestHandleMeta_PnodeMismatch(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+
+	// Register a node with a different pnode than what we'll request.
+	differentPnode := make([]byte, 33)
+	differentPnode[0] = 0x03
+	for i := 1; i < 33; i++ {
+		differentPnode[i] = 0xcc
+	}
+
+	meta.nodes["/mismatch.txt"] = &NodeInfo{
+		PNode:  differentPnode,
+		Type:   "file",
+		Access: "free",
+	}
+
+	// Request with validPnode(), but the node has a different pnode.
+	req := httptest.NewRequest("GET", "/_bitfs/meta/"+validPnode()+"/mismatch.txt", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "NOT_FOUND")
+}
+
+// TestHandleMeta_InternalError verifies that handleMeta returns 500 for
+// non-"not found" errors from the Metanet service.
+func TestHandleMeta_InternalError(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+
+	// Set a generic error that is not a "not found" error.
+	meta.err = fmt.Errorf("database connection failed")
+
+	req := httptest.NewRequest("GET", "/_bitfs/meta/"+validPnode()+"/anypath", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "INTERNAL_ERROR")
 }
