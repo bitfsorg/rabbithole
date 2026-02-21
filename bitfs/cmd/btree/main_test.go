@@ -110,7 +110,7 @@ func TestSimpleTree_OneLevel(t *testing.T) {
 	assert.Contains(t, out, "\u251c\u2500\u2500 world.txt")
 	assert.Contains(t, out, "\u2514\u2500\u2500 docs/")
 	// Summary line
-	assert.Contains(t, out, "1 directories, 2 files")
+	assert.Contains(t, out, "1 directory, 2 files")
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ func TestDepthLimited_OnlyDirectChildren(t *testing.T) {
 	// Should NOT contain deep.txt since depth is 1.
 	assert.NotContains(t, out, "deep.txt")
 	// Summary still counts the directory even if not recursed.
-	assert.Contains(t, out, "1 directories, 1 file")
+	assert.Contains(t, out, "1 directory, 1 file")
 }
 
 func TestDepthLimited_DepthTwo(t *testing.T) {

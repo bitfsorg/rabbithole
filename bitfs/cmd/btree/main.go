@@ -120,7 +120,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Print tree-style output.
 	fmt.Fprintln(stdout, root.Name)
 	printTree(stdout, root.Children, "")
-	fmt.Fprintf(stdout, "\n%d directories, %d files\n", dirs, files)
+	dirWord := "directories"
+	if dirs == 1 {
+		dirWord = "directory"
+	}
+	fileWord := "files"
+	if files == 1 {
+		fileWord = "file"
+	}
+	fmt.Fprintf(stdout, "\n%d %s, %d %s\n", dirs, dirWord, files, fileWord)
 	return 0
 }
 
