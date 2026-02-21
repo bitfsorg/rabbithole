@@ -131,19 +131,12 @@ func outputLong(meta *client.MetaResponse, w io.Writer) int {
 	}
 
 	for _, child := range meta.Children {
-		size := "-"
-		access := "-"
-		if meta.Type == "dir" {
-			// Children in a directory listing only have name and type.
-			// Size and access are not available in ChildEntry.
-			access = "-"
-			size = "-"
-		}
+		// ChildEntry only has name and type; size/access unavailable.
 		name := child.Name
 		if child.Type == "dir" {
 			name += "/"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", child.Type, access, size, name)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", child.Type, "-", "-", name)
 	}
 	return 0
 }
