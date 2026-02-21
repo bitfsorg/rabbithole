@@ -463,9 +463,18 @@ func TestDataEndpoint_KeyHashHeader(t *testing.T) {
 // --- Meta Endpoint Tests ---
 
 func TestMetaEndpoint_Success(t *testing.T) {
-	d, _, _, _ := newTestDaemon(t)
+	d, _, _, meta := newTestDaemon(t)
 	pnode := strings.Repeat("02", 1) + strings.Repeat("ab", 32) // 66 hex chars
+	pnodeBytes, _ := hex.DecodeString(pnode)
 	path := "docs/file.txt"
+
+	meta.nodes["/"+path] = &NodeInfo{
+		PNode:    pnodeBytes,
+		Type:     "file",
+		MimeType: "text/plain",
+		FileSize: 42,
+		Access:   "free",
+	}
 
 	req := httptest.NewRequest("GET", "/_bitfs/meta/"+pnode+"/"+path, nil)
 	w := httptest.NewRecorder()
@@ -1164,9 +1173,16 @@ func TestDataEndpoint_ContentLength(t *testing.T) {
 }
 
 func TestMetaEndpoint_WithPath(t *testing.T) {
-	d, _, _, _ := newTestDaemon(t)
+	d, _, _, meta := newTestDaemon(t)
 	pnode := "02" + strings.Repeat("ab", 32)
+	pnodeBytes, _ := hex.DecodeString(pnode)
 	path := "deep/nested/path"
+
+	meta.nodes["/"+path] = &NodeInfo{
+		PNode:  pnodeBytes,
+		Type:   "file",
+		Access: "free",
+	}
 
 	req := httptest.NewRequest("GET", "/_bitfs/meta/"+pnode+"/"+path, nil)
 	w := httptest.NewRecorder()

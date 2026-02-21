@@ -3,6 +3,7 @@ package daemon
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -74,6 +75,65 @@ func (d *Daemon) handleMeta(w http.ResponseWriter, r *http.Request) {
 
 	path := r.PathValue("path")
 
+	// Prepend "/" to path if missing.
+	if path == "" || path[0] != '/' {
+		path = "/" + path
+	}
+
+	// Check that the Metanet service is available.
+	if d.metanet == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Metanet service is not available")
+		return
+	}
+
+	// Resolve the path via the Metanet service.
+	node, err := d.metanet.GetNodeByPath(path)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Path not found")
+		return
+	}
+
+	// Build the JSON response.
+	resp := metaNodeResponse{
+		PNode:    hex.EncodeToString(node.PNode),
+		Path:     path,
+		Type:     node.Type,
+		Access:   node.Access,
+		MimeType: node.MimeType,
+		FileSize: node.FileSize,
+	}
+	if len(node.KeyHash) > 0 {
+		resp.KeyHash = hex.EncodeToString(node.KeyHash)
+	}
+	if node.PricePerKB > 0 {
+		resp.PricePerKB = node.PricePerKB
+	}
+	if node.Type == "dir" && len(node.Children) > 0 {
+		resp.Children = make([]metaChildResponse, len(node.Children))
+		for i, c := range node.Children {
+			resp.Children[i] = metaChildResponse{Name: c.Name, Type: c.Type}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, `{"pnode":%q,"path":%q,"status":"ok"}`, pnode, path)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// metaNodeResponse is the JSON response structure for handleMeta.
+type metaNodeResponse struct {
+	PNode      string              `json:"pnode"`
+	Path       string              `json:"path"`
+	Type       string              `json:"type"`
+	Access     string              `json:"access"`
+	MimeType   string              `json:"mime_type,omitempty"`
+	FileSize   uint64              `json:"file_size,omitempty"`
+	KeyHash    string              `json:"key_hash,omitempty"`
+	PricePerKB uint64              `json:"price_per_kb,omitempty"`
+	Children   []metaChildResponse `json:"children,omitempty"`
+}
+
+// metaChildResponse is a child entry in the metaNodeResponse.
+type metaChildResponse struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
