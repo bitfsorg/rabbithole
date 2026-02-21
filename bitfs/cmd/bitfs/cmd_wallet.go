@@ -104,11 +104,17 @@ func runWalletInit(args []string) int {
 	// Get password.
 	pass := *password
 	if pass == "" {
-		pass = "bitfs" // Default password for dev; production would prompt
+		var promptErr error
+		pass, promptErr = promptPasswordConfirm()
+		if promptErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", promptErr)
+			return exitWalletError
+		}
 	}
 
-	// Encrypt and store seed.
+	// Encrypt and store seed, then zero password.
 	encrypted, err := wallet.EncryptSeed(seed, pass)
+	zeroString(&pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to encrypt seed: %v\n", err)
 		return exitWalletError
@@ -189,10 +195,16 @@ func runWalletShow(args []string) int {
 
 	pass := *password
 	if pass == "" {
-		pass = "bitfs"
+		var promptErr error
+		pass, promptErr = promptPassword("Enter wallet password: ")
+		if promptErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", promptErr)
+			return exitWalletError
+		}
 	}
 
 	seed, err := wallet.DecryptSeed(encrypted, pass)
+	zeroString(&pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to decrypt wallet: %v\n", err)
 		return exitWalletError
@@ -274,10 +286,15 @@ func loadWalletFromDataDir(dataDir, password string) (*wallet.Wallet, *wallet.Wa
 
 	pass := password
 	if pass == "" {
-		pass = "bitfs"
+		var promptErr error
+		pass, promptErr = promptPassword("Enter wallet password: ")
+		if promptErr != nil {
+			return nil, nil, fmt.Errorf("password prompt: %w", promptErr)
+		}
 	}
 
 	seed, err := wallet.DecryptSeed(encrypted, pass)
+	zeroString(&pass)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decrypt wallet: %w", err)
 	}
