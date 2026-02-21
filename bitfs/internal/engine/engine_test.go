@@ -268,15 +268,15 @@ func TestMove_NodeNotFound(t *testing.T) {
 	}
 }
 
-func TestMove_CrossDirectory(t *testing.T) {
+func TestMove_CrossDirectory_SourceNotFound(t *testing.T) {
 	eng := initTestEngine(t)
 
 	_, err := eng.Move(&MoveOpts{VaultIndex: 0, SrcPath: "/dir1/file", DstPath: "/dir2/file"})
 	if err == nil {
-		t.Error("Cross-directory move should fail")
+		t.Error("Cross-directory move with missing source should fail")
 	}
-	if !strings.Contains(err.Error(), "cross-directory") {
-		t.Errorf("error should mention cross-directory, got: %v", err)
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error should mention 'not found', got: %v", err)
 	}
 }
 
