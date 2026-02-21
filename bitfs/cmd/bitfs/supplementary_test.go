@@ -148,35 +148,7 @@ func TestSellZeroPrice(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. PathToIndices additional cases
-// ---------------------------------------------------------------------------
-
-func TestPathToIndices_RootOnly(t *testing.T) {
-	indices := pathToIndices("/")
-	if len(indices) != 0 {
-		t.Errorf("pathToIndices('/') = %d indices, want 0", len(indices))
-	}
-}
-
-func TestPathToIndices_TrailingSlash(t *testing.T) {
-	withSlash := pathToIndices("/docs/")
-	withoutSlash := pathToIndices("/docs")
-	if len(withSlash) != len(withoutSlash) {
-		t.Errorf("pathToIndices('/docs/') = %d indices, pathToIndices('/docs') = %d; want same",
-			len(withSlash), len(withoutSlash))
-	}
-}
-
-func TestPathToIndices_DeepPath(t *testing.T) {
-	// 10+ levels: /a/b/c/d/e/f/g/h/i/j/k = 11 components
-	indices := pathToIndices("/a/b/c/d/e/f/g/h/i/j/k")
-	if len(indices) != 11 {
-		t.Errorf("pathToIndices (11 levels) = %d indices, want 11", len(indices))
-	}
-}
-
-// ---------------------------------------------------------------------------
-// 6. Vault operations
+// 5. Vault operations
 // ---------------------------------------------------------------------------
 
 func TestVaultCreateMultiple(t *testing.T) {

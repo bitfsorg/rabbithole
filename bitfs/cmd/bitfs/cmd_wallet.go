@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/tongxiaofeng/libbitfs/config"
 	"github.com/tongxiaofeng/libbitfs/wallet"
@@ -313,18 +312,4 @@ func resolveVaultIndex(w *wallet.Wallet, state *wallet.WalletState, vaultName st
 		return 0, err
 	}
 	return vault.AccountIndex, nil
-}
-
-// pathToIndices converts a filesystem path like "/docs/readme.txt" into
-// a stub representation. In a full implementation this would resolve via
-// Metanet DAG lookups. For now it returns sequential indices.
-func pathToIndices(path string) []uint32 {
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	indices := make([]uint32, 0, len(parts))
-	for i, p := range parts {
-		if p != "" {
-			indices = append(indices, uint32(i))
-		}
-	}
-	return indices
 }

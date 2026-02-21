@@ -500,26 +500,3 @@ func TestVaultUnknownSubcommand(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// pathToIndices tests
-// ---------------------------------------------------------------------------
-
-func TestPathToIndices(t *testing.T) {
-	tests := []struct {
-		path string
-		want int // expected number of indices
-	}{
-		{"/docs", 1},
-		{"/docs/readme.txt", 2},
-		{"/a/b/c/d", 4},
-		{"/", 0},
-		{"", 0},
-	}
-
-	for _, tc := range tests {
-		indices := pathToIndices(tc.path)
-		if len(indices) != tc.want {
-			t.Errorf("pathToIndices(%q) = %d indices, want %d", tc.path, len(indices), tc.want)
-		}
-	}
-}
