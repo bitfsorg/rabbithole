@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -51,13 +52,6 @@ type MetaResponse struct {
 type ChildEntry struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
-}
-
-// PaymentInfo holds payment details from a 402 response.
-type PaymentInfo struct {
-	PricePerKB uint64 `json:"price_per_kb"`
-	FileSize   uint64 `json:"file_size"`
-	InvoiceID  string `json:"invoice_id,omitempty"`
 }
 
 // BuyInfo holds purchase information for a paid file.
@@ -104,9 +98,15 @@ func (c *Client) WithTimeout(d time.Duration) *Client {
 // GetMeta retrieves node metadata from the daemon.
 // Endpoint: GET /_bitfs/meta/{pnode}/{path}
 func (c *Client) GetMeta(pnode, path string) (*MetaResponse, error) {
-	url := fmt.Sprintf("%s/_bitfs/meta/%s/%s", c.BaseURL, pnode, path)
+	// URL-encode each path segment to handle spaces, #, ?, etc.
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	escapedPath := strings.Join(segments, "/")
+	reqURL := fmt.Sprintf("%s/_bitfs/meta/%s/%s", c.BaseURL, pnode, escapedPath)
 
-	resp, err := c.HTTPClient.Get(url)
+	resp, err := c.HTTPClient.Get(reqURL)
 	if err != nil {
 		return nil, wrapNetworkError(err)
 	}

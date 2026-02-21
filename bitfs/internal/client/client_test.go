@@ -333,6 +333,32 @@ func TestCheckStatus_TooManyRequests(t *testing.T) {
 
 // --- Edge cases ---
 
+func TestGetMeta_SpecialCharsInPath(t *testing.T) {
+	meta := MetaResponse{
+		PNode:  "02abab",
+		Type:   "file",
+		Path:   "docs/my file#1.txt",
+		Access: "free",
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Each path segment should be individually URL-encoded.
+		// "my file#1.txt" -> "my%20file%231.txt"
+		// Use RequestURI which preserves the raw percent-encoded form.
+		assert.Equal(t, "/_bitfs/meta/02abab/docs/my%20file%231.txt", r.RequestURI)
+		// The server should decode the path correctly.
+		assert.Equal(t, "/_bitfs/meta/02abab/docs/my file#1.txt", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(meta)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	got, err := c.GetMeta("02abab", "docs/my file#1.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "docs/my file#1.txt", got.Path)
+}
+
 func TestGetMeta_EmptyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Path should be /_bitfs/meta/pnode/ (trailing slash for empty path)
