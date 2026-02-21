@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
@@ -43,6 +44,7 @@ func runShell(args []string) int {
 	fmt.Printf("BitFS Shell (vault %d). Type 'help' for commands, 'quit' to exit.\n", vaultIdx)
 
 	cwd := "/"
+	localCwd, _ := os.Getwd()
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -78,6 +80,23 @@ func runShell(args []string) int {
 				}
 				target = cleanPath(target)
 				cwd = target
+			}
+		case "lcd":
+			if len(cmdArgs) == 0 {
+				fmt.Println(localCwd)
+			} else {
+				target := cmdArgs[0]
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(localCwd, target)
+				}
+				target = filepath.Clean(target)
+				info, err := os.Stat(target)
+				if err != nil || !info.IsDir() {
+					fmt.Fprintf(os.Stderr, "Error: %s is not a directory\n", target)
+					continue
+				}
+				localCwd = target
+				fmt.Printf("Local directory: %s\n", localCwd)
 			}
 		case "ls":
 			dir := cwd
@@ -204,8 +223,9 @@ func runShell(args []string) int {
 func shellHelp() {
 	fmt.Println(`Available commands:
   ls [path]                List directory contents
-  cd [path]                Change directory
-  pwd                      Print working directory
+  cd [path]                Change remote directory
+  lcd [path]               Change local directory (or print current)
+  pwd                      Print remote working directory
   mkdir <path>             Create directory
   put <local> <remote>     Upload file
   rm <path>                Remove file/directory
