@@ -6,49 +6,290 @@
 package main
 
 import (
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path"
+	"strings"
+	"time"
 
+	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs/paymail"
 )
 
 func main() {
-	os.Exit(run(os.Args[1:]))
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("btree", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
 	jsonOut := fs.Bool("json", false, "JSON output")
-	depth := fs.Int("depth", 0, "max depth (0 = unlimited)")
+	depth := fs.Int("d", 0, "max depth (0 = unlimited)")
+	fs.IntVar(depth, "depth", 0, "max depth (0 = unlimited)")
+	host := fs.String("host", "http://localhost:8080", "daemon URL")
+	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
 
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return 6
 	}
 
 	if fs.NArg() < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: btree [--json] [--depth N] <bitfs-uri>\n")
-		return 2
+		fmt.Fprintf(stderr, "Usage: btree [--json] [-d|--depth N] [--host URL] [--timeout DURATION] <bitfs-uri>\n")
+		return 6
 	}
 
 	uri := fs.Arg(0)
 	parsed, err := paymail.ParseURI(uri)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 2
+		fmt.Fprintf(stderr, "btree: %v\n", err)
+		return 6
 	}
 
+	// Resolve pnode from parsed URI.
+	var pnode string
+	switch parsed.Type {
+	case paymail.AddressPubKey:
+		pnode = hex.EncodeToString(parsed.PubKey)
+	case paymail.AddressPaymail, paymail.AddressDNSLink:
+		fmt.Fprintf(stderr, "btree: paymail/dnslink resolution not yet supported\n")
+		return 6
+	default:
+		fmt.Fprintf(stderr, "btree: unknown address type\n")
+		return 6
+	}
+
+	// Build client.
+	c := client.New(*host)
+	if *timeout != "" {
+		d, err := time.ParseDuration(*timeout)
+		if err != nil {
+			fmt.Fprintf(stderr, "btree: invalid timeout %q: %v\n", *timeout, err)
+			return 6
+		}
+		c = c.WithTimeout(d)
+	}
+
+	// Determine the path to query. Default to root "/" if none specified.
+	uriPath := parsed.Path
+	if uriPath == "" {
+		uriPath = "/"
+	}
+
+	meta, err := c.GetMeta(pnode, uriPath)
+	if err != nil {
+		return handleError(err, stderr)
+	}
+
+	// If root target is a file (not a directory), print single file info.
+	if meta.Type != "dir" {
+		if *jsonOut {
+			node := treeNode{
+				Name:   path.Base(meta.Path),
+				Type:   meta.Type,
+				Access: meta.Access,
+				Size:   meta.FileSize,
+			}
+			if meta.PricePerKB > 0 {
+				node.PricePerKB = meta.PricePerKB
+			}
+			return outputJSON(node, stdout, stderr)
+		}
+		name := meta.Path
+		if name == "" || name == "/" {
+			name = meta.PNode
+		}
+		fmt.Fprintf(stdout, "%s (%s)\n", name, formatFileAnnotation(meta.Access, meta.FileSize, meta.PricePerKB))
+		fmt.Fprintf(stdout, "\n0 directories, 1 file\n")
+		return 0
+	}
+
+	// Build full tree recursively.
+	var dirs, files int
+	root := buildTree(c, pnode, meta, *depth, 1, &dirs, &files)
+
 	if *jsonOut {
-		fmt.Printf(`{"command":"btree","uri":%q,"type":%q,"path":%q,"depth":%d,"status":"stub"}`, uri, parsed.Type.String(), parsed.Path, *depth)
-		fmt.Println()
-	} else {
-		fmt.Printf("Would show tree for %s\n", uri)
-		fmt.Printf("  Address type: %s\n", parsed.Type.String())
-		fmt.Printf("  Path:         %s\n", parsed.Path)
-		if *depth > 0 {
-			fmt.Printf("  Max depth:    %d\n", *depth)
+		return outputJSON(root, stdout, stderr)
+	}
+
+	// Print tree-style output.
+	fmt.Fprintln(stdout, root.Name)
+	printTree(stdout, root.Children, "")
+	fmt.Fprintf(stdout, "\n%d directories, %d files\n", dirs, files)
+	return 0
+}
+
+// treeNode represents a node in the tree structure used for both
+// text and JSON output.
+type treeNode struct {
+	Name       string     `json:"name"`
+	Type       string     `json:"type"`
+	Access     string     `json:"access,omitempty"`
+	Size       uint64     `json:"size,omitempty"`
+	PricePerKB uint64     `json:"price_per_kb,omitempty"`
+	Children   []treeNode `json:"children,omitempty"`
+}
+
+// buildTree recursively builds a treeNode from a MetaResponse that is a directory.
+func buildTree(c *client.Client, pnode string, meta *client.MetaResponse, maxDepth, currentDepth int, dirs, files *int) treeNode {
+	name := path.Base(meta.Path)
+	if meta.Path == "/" || meta.Path == "" {
+		name = "/"
+	}
+
+	root := treeNode{
+		Name: name,
+		Type: "dir",
+	}
+
+	for _, child := range meta.Children {
+		if child.Type == "dir" {
+			*dirs++
+
+			// If depth-limited, show directory without recursing.
+			if maxDepth > 0 && currentDepth >= maxDepth {
+				root.Children = append(root.Children, treeNode{
+					Name: child.Name,
+					Type: "dir",
+				})
+				continue
+			}
+
+			// Recurse into child directory.
+			childPath := path.Join(meta.Path, child.Name)
+			if !strings.HasPrefix(childPath, "/") {
+				childPath = "/" + childPath
+			}
+			childMeta, err := c.GetMeta(pnode, childPath)
+			if err != nil {
+				// On error, show directory without children.
+				root.Children = append(root.Children, treeNode{
+					Name: child.Name,
+					Type: "dir",
+				})
+				continue
+			}
+			subtree := buildTree(c, pnode, childMeta, maxDepth, currentDepth+1, dirs, files)
+			subtree.Name = child.Name
+			root.Children = append(root.Children, subtree)
+		} else {
+			*files++
+			// For files in a directory listing, we only have name and type
+			// from ChildEntry. To get full metadata, we'd need another GetMeta call.
+			// For efficiency, we show just the name for files discovered via Children.
+			root.Children = append(root.Children, treeNode{
+				Name: child.Name,
+				Type: child.Type,
+			})
 		}
 	}
 
+	return root
+}
+
+// printTree prints the tree lines with box-drawing characters.
+func printTree(w io.Writer, children []treeNode, prefix string) {
+	for i, child := range children {
+		isLast := i == len(children)-1
+
+		connector := "\u251c\u2500\u2500 " // "├── "
+		if isLast {
+			connector = "\u2514\u2500\u2500 " // "└── "
+		}
+
+		if child.Type == "dir" {
+			fmt.Fprintf(w, "%s%s%s/\n", prefix, connector, child.Name)
+		} else {
+			annotation := ""
+			if child.Access != "" {
+				annotation = " (" + formatFileAnnotation(child.Access, child.Size, child.PricePerKB) + ")"
+			}
+			fmt.Fprintf(w, "%s%s%s%s\n", prefix, connector, child.Name, annotation)
+		}
+
+		// Recurse into directory children.
+		if child.Type == "dir" && len(child.Children) > 0 {
+			childPrefix := prefix + "\u2502   " // "│   "
+			if isLast {
+				childPrefix = prefix + "    "
+			}
+			printTree(w, child.Children, childPrefix)
+		}
+	}
+}
+
+// formatFileAnnotation returns a parenthetical annotation for a file,
+// e.g. "free, 1.2K" or "paid, 100 sat/KB".
+func formatFileAnnotation(access string, size uint64, pricePerKB uint64) string {
+	if access == "paid" && pricePerKB > 0 {
+		return fmt.Sprintf("%s, %d sat/KB", access, pricePerKB)
+	}
+	if size > 0 {
+		return fmt.Sprintf("%s, %s", access, formatSize(size))
+	}
+	return access
+}
+
+// outputJSON marshals the tree node as indented JSON.
+func outputJSON(node treeNode, stdout, stderr io.Writer) int {
+	data, err := json.MarshalIndent(node, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "btree: json marshal: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, string(data))
 	return 0
+}
+
+// handleError maps client errors to exit codes and prints a message.
+func handleError(err error, stderr io.Writer) int {
+	switch {
+	case errors.Is(err, client.ErrNotFound):
+		fmt.Fprintf(stderr, "btree: not found\n")
+		return 2
+	case errors.Is(err, client.ErrTimeout):
+		fmt.Fprintf(stderr, "btree: request timeout\n")
+		return 4
+	case errors.Is(err, client.ErrNetwork):
+		fmt.Fprintf(stderr, "btree: network error: %v\n", err)
+		return 4
+	case errors.Is(err, client.ErrServer):
+		fmt.Fprintf(stderr, "btree: server error: %v\n", err)
+		return 4
+	default:
+		fmt.Fprintf(stderr, "btree: %v\n", err)
+		return 1
+	}
+}
+
+// formatSize returns a human-readable file size string (compact style).
+func formatSize(bytes uint64) string {
+	if bytes == 0 {
+		return "0"
+	}
+
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
+	)
+
+	switch {
+	case bytes >= TB:
+		return fmt.Sprintf("%.1fT", float64(bytes)/float64(TB))
+	case bytes >= GB:
+		return fmt.Sprintf("%.1fG", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1fM", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1fK", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d", bytes)
+	}
 }
