@@ -53,6 +53,8 @@ func run(args []string) int {
 		return runRm(cmdArgs)
 	case "mv":
 		return runMv(cmdArgs)
+	case "cp":
+		return runCp(cmdArgs)
 	case "link":
 		return runLink(cmdArgs)
 	case "sell":
@@ -101,6 +103,7 @@ File Commands:
   mkdir          Create a directory
   rm             Remove a file or directory
   mv             Move or rename a file
+  cp             Copy a file
   link           Create a hard or soft link
 
 Trading Commands:
