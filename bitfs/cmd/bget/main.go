@@ -13,6 +13,8 @@ import (
 	"io"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -35,6 +37,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	buy := fs.Bool("buy", false, "attempt to purchase paid content")
 	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before downloading")
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
+	utxoStr := fs.String("utxo", "", "buyer UTXO for purchase (txid:vout:amount)")
 	version := fs.Bool("version", false, "show version-specific content")
 	host := fs.String("host", "http://localhost:8080", "daemon URL")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
@@ -120,7 +123,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "free":
 		return downloadContent(c, meta, *output, stdout, stderr)
 	case "paid":
-		return handlePaid(c, meta, *buy, *walletKey, *output, stdout, stderr)
+		return handlePaid(c, meta, *buy, *walletKey, *utxoStr, *output, stdout, stderr)
 	case "private":
 		fmt.Fprintf(stderr, "bget: private content cannot be accessed remotely\n")
 		return 6
@@ -185,7 +188,7 @@ func deriveFilename(uriPath string) string {
 }
 
 // handlePaid handles paid content access (with or without --buy).
-func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, outputName string, stdout, stderr io.Writer) int {
+func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, utxoFlag, outputName string, stdout, stderr io.Writer) int {
 	if !buy {
 		fmt.Fprintf(stderr, "bget: content requires payment: %d sat/KB (%d bytes)\nUse --buy to purchase\n",
 			meta.PricePerKB, meta.FileSize)
@@ -195,6 +198,12 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 	// Validate wallet key is provided.
 	if walletKey == "" {
 		fmt.Fprintf(stderr, "bget: --wallet-key is required for purchases\n")
+		return 6
+	}
+
+	// Validate UTXO is provided.
+	if utxoFlag == "" {
+		fmt.Fprintf(stderr, "bget: --utxo is required for purchases (format: txid:vout:amount)\n")
 		return 6
 	}
 
@@ -223,6 +232,17 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 6
 	}
 
+	// Parse UTXO from flag.
+	utxo, err := parseUTXOFlag(utxoFlag)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid --utxo: %v\n", err)
+		return 6
+	}
+
+	// Derive buyer's P2PKH script for the UTXO.
+	buyerPKH := privKey.PubKey().Hash()
+	utxo.ScriptPubKey = buildBuyerP2PKHScript(buyerPKH)
+
 	// Validate that meta has a TxID for the purchase invoice.
 	if meta.TxID == "" {
 		fmt.Fprintf(stderr, "bget: paid content has no invoice txid\n")
@@ -250,21 +270,24 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 5
 	}
 
-	// Step 2: Build HTLC transaction.
-	htlcRaw, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: privKey.PubKey().Compressed(),
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      buyInfo.Price,
-		Timeout:     x402.DefaultHTLCTimeout,
+	// Step 2: Build HTLC funding transaction.
+	fundingResult, err := x402.BuildHTLCFundingTx(&x402.HTLCFundingParams{
+		BuyerPrivKey: privKey,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       buyInfo.Price,
+		Timeout:      x402.DefaultHTLCTimeout,
+		UTXOs:        []*x402.HTLCUTXO{utxo},
+		ChangeAddr:   buyerPKH,
+		FeeRate:      1,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "bget: build HTLC: %v\n", err)
+		fmt.Fprintf(stderr, "bget: build HTLC funding tx: %v\n", err)
 		return 5
 	}
 
-	// Step 3: Submit HTLC to get the capsule.
-	capsuleResp, err := c.SubmitHTLC(meta.TxID, htlcRaw)
+	// Step 3: Submit the signed funding transaction to get the capsule.
+	capsuleResp, err := c.SubmitHTLC(meta.TxID, fundingResult.RawTx)
 	if err != nil {
 		fmt.Fprintf(stderr, "bget: submit HTLC: %v\n", err)
 		return handleError(err, stderr)
@@ -337,6 +360,44 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 
 	fmt.Fprintf(stdout, "Downloaded %d bytes to %s\n", n, filename)
 	return 0
+}
+
+// parseUTXOFlag parses a UTXO from the --utxo flag (format: txid:vout:amount).
+func parseUTXOFlag(s string) (*x402.HTLCUTXO, error) {
+	parts := strings.SplitN(s, ":", 3)
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("expected txid:vout:amount")
+	}
+	txid, err := hex.DecodeString(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("invalid txid hex: %w", err)
+	}
+	if len(txid) != 32 {
+		return nil, fmt.Errorf("txid must be 32 bytes")
+	}
+	vout, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("invalid vout: %w", err)
+	}
+	amount, err := strconv.ParseUint(parts[2], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid amount: %w", err)
+	}
+	return &x402.HTLCUTXO{
+		TxID:   txid,
+		Vout:   uint32(vout),
+		Amount: amount,
+	}, nil
+}
+
+// buildBuyerP2PKHScript builds a standard P2PKH locking script from a pubkey hash.
+func buildBuyerP2PKHScript(pkh []byte) []byte {
+	// OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
+	s := make([]byte, 0, 25)
+	s = append(s, 0x76, 0xa9, 0x14) // OP_DUP OP_HASH160 PUSH20
+	s = append(s, pkh...)
+	s = append(s, 0x88, 0xac) // OP_EQUALVERIFY OP_CHECKSIG
+	return s
 }
 
 // handleError maps client errors to exit codes and prints a message.
