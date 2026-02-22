@@ -1,12 +1,14 @@
 package engine
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
+	"github.com/tongxiaofeng/libbitfs/network"
 	"github.com/tongxiaofeng/libbitfs/storage"
 	"github.com/tongxiaofeng/libbitfs/tx"
 	"github.com/tongxiaofeng/libbitfs/wallet"
@@ -20,7 +22,8 @@ type Engine struct {
 	Store   *storage.FileStore
 	State   *LocalState
 	DataDir string
-	DNS     DNSResolver // injectable for testing; nil uses default net.LookupTXT
+	DNS     DNSResolver                // injectable for testing; nil uses default net.LookupTXT
+	Chain   network.BlockchainService  // optional; nil = offline mode
 }
 
 // Result holds the output of an engine operation.
@@ -241,4 +244,52 @@ func (e *Engine) TrackParentRefreshUTXO(mtx *tx.MetanetTx, parentPubHex string) 
 		PubKeyHex:    parentPubHex,
 		Type:         "node",
 	})
+}
+
+// IsOnline returns true if a blockchain service is configured.
+func (e *Engine) IsOnline() bool {
+	return e.Chain != nil
+}
+
+// BroadcastTx submits a signed transaction to the network.
+func (e *Engine) BroadcastTx(ctx context.Context, rawTxHex string) (string, error) {
+	if e.Chain == nil {
+		return "", fmt.Errorf("engine: no blockchain service configured (offline mode)")
+	}
+	return e.Chain.BroadcastTx(ctx, rawTxHex)
+}
+
+// RefreshFeeUTXOs queries the network for unspent outputs at the given address
+// and adds any new ones to local state as fee UTXOs.
+func (e *Engine) RefreshFeeUTXOs(ctx context.Context, address, pubKeyHex string) error {
+	if e.Chain == nil {
+		return fmt.Errorf("engine: no blockchain service configured")
+	}
+
+	utxos, err := e.Chain.ListUnspent(ctx, address)
+	if err != nil {
+		return fmt.Errorf("engine: list unspent: %w", err)
+	}
+
+	for _, u := range utxos {
+		exists := false
+		for _, existing := range e.State.UTXOs {
+			if existing.TxID == u.TxID && existing.Vout == u.Vout {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			e.State.AddUTXO(&UTXOState{
+				TxID:         u.TxID,
+				Vout:         u.Vout,
+				Amount:       u.Amount,
+				ScriptPubKey: u.ScriptPubKey,
+				PubKeyHex:    pubKeyHex,
+				Type:         "fee",
+			})
+		}
+	}
+
+	return nil
 }
