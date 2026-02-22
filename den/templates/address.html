@@ -1,0 +1,27 @@
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Home</a> / Address</div>
+<div class="card">
+  <h2>Address</h2>
+  <div class="field-row"><span class="label">Address</span><span class="value mono">{{.Address}}</span></div>
+  <div class="field-row"><span class="label">UTXOs</span><span class="value">{{len .UTXOs}}</span></div>
+</div>
+
+<div class="card">
+  <h2>Unspent Outputs</h2>
+  {{if .UTXOs}}
+  <table>
+    <tr><th>TxID</th><th>Vout</th><th>Amount (sat)</th><th>Confirmations</th></tr>
+    {{range .UTXOs}}
+    <tr>
+      <td><a href="/tx/{{.TxID}}" class="mono hash">{{.TxID}}</a></td>
+      <td>{{.Vout}}</td>
+      <td>{{.Amount}}</td>
+      <td>{{.Confirmations}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p style="color:#999;padding:12px">No unspent outputs found.</p>
+  {{end}}
+</div>
+{{end}}

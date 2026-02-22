@@ -43,7 +43,7 @@ func LoadTemplates() (*Templates, error) {
 		return nil, fmt.Errorf("parse base: %w", err)
 	}
 
-	pages := []string{"home.html"}
+	pages := []string{"home.html", "block.html", "tx.html", "address.html", "search.html"}
 	t := &Templates{pages: make(map[string]*template.Template)}
 
 	for _, page := range pages {

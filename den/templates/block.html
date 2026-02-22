@@ -1,0 +1,31 @@
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Home</a> / Block {{.Block.Height}}</div>
+<div class="card">
+  <h2>Block #{{.Block.Height}}</h2>
+  <div class="field-row"><span class="label">Hash</span><span class="value mono">{{.Block.Hash}}</span></div>
+  <div class="field-row"><span class="label">Previous</span><span class="value"><a href="/block/{{.Block.PreviousHash}}" class="mono">{{.Block.PreviousHash}}</a></span></div>
+  {{if .Block.NextBlockHash}}
+  <div class="field-row"><span class="label">Next</span><span class="value"><a href="/block/{{.Block.NextBlockHash}}" class="mono">{{.Block.NextBlockHash}}</a></span></div>
+  {{end}}
+  <div class="field-row"><span class="label">Merkle Root</span><span class="value mono">{{.Block.MerkleRoot}}</span></div>
+  <div class="field-row"><span class="label">Time</span><span class="value">{{formatTime .Block.Time}}</span></div>
+  <div class="field-row"><span class="label">Version</span><span class="value">{{.Block.Version}}</span></div>
+  <div class="field-row"><span class="label">Bits</span><span class="value mono">{{.Block.Bits}}</span></div>
+  <div class="field-row"><span class="label">Nonce</span><span class="value">{{.Block.Nonce}}</span></div>
+  <div class="field-row"><span class="label">Size</span><span class="value">{{.Block.Size}} bytes</span></div>
+  <div class="field-row"><span class="label">Confirmations</span><span class="value">{{.Block.Confirmations}}</span></div>
+</div>
+
+<div class="card">
+  <h2>Transactions ({{.Block.TxCount}})</h2>
+  <table>
+    <tr><th>#</th><th>TxID</th></tr>
+    {{range $i, $txid := .Block.Tx}}
+    <tr>
+      <td>{{$i}}</td>
+      <td><a href="/tx/{{$txid}}" class="mono">{{$txid}}</a></td>
+    </tr>
+    {{end}}
+  </table>
+</div>
+{{end}}

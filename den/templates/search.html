@@ -1,0 +1,9 @@
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Home</a> / Search</div>
+<div class="card">
+  <h2>Search Results</h2>
+  {{if .Error}}
+  <div class="error">Nothing found for "{{.Query}}": {{.Error}}</div>
+  {{end}}
+</div>
+{{end}}

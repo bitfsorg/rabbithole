@@ -1,0 +1,49 @@
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Home</a>{{if .Tx.BlockHash}} / <a href="/block/{{.Tx.BlockHash}}">Block</a>{{end}} / Tx</div>
+<div class="card">
+  <h2>Transaction {{if .Metanet}}{{if .Metanet.IsMetanet}}<span class="tag tag-metanet">METANET</span>{{end}}{{end}}</h2>
+  <div class="field-row"><span class="label">TxID</span><span class="value mono">{{.Tx.TxID}}</span></div>
+  <div class="field-row"><span class="label">Size</span><span class="value">{{.Tx.Size}} bytes</span></div>
+  <div class="field-row"><span class="label">Version</span><span class="value">{{.Tx.Version}}</span></div>
+  <div class="field-row"><span class="label">LockTime</span><span class="value">{{.Tx.LockTime}}</span></div>
+  {{if .Tx.BlockHash}}
+  <div class="field-row"><span class="label">Block</span><span class="value"><a href="/block/{{.Tx.BlockHash}}" class="mono">{{truncHash .Tx.BlockHash}}</a></span></div>
+  <div class="field-row"><span class="label">Confirmations</span><span class="value">{{.Tx.Confirmations}}</span></div>
+  {{else}}
+  <div class="field-row"><span class="label">Status</span><span class="value" style="color:#e94560">Unconfirmed</span></div>
+  {{end}}
+  {{if .Metanet}}{{if .Metanet.IsMetanet}}
+  <div class="field-row"><span class="label">Metanet</span><span class="value"><a href="/metanet/{{.Tx.TxID}}">View Metanet Details</a> | <a href="/spv/{{.Tx.TxID}}">SPV Proof</a></span></div>
+  {{end}}{{end}}
+</div>
+
+<div class="card">
+  <h2>Inputs ({{len .Tx.Vin}})</h2>
+  <table>
+    <tr><th>#</th><th>Source</th><th>Script</th></tr>
+    {{range $i, $in := .Tx.Vin}}
+    <tr>
+      <td>{{$i}}</td>
+      <td>{{if $in.Coinbase}}Coinbase{{else}}<a href="/tx/{{$in.TxID}}" class="mono hash">{{$in.TxID}}</a>:{{$in.Vout}}{{end}}</td>
+      <td class="mono" style="font-size:11px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{if $in.Coinbase}}{{$in.Coinbase}}{{else}}{{$in.ScriptSig.ASM}}{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Outputs ({{len .Tx.Vout}})</h2>
+  <table>
+    <tr><th>#</th><th>Value (BSV)</th><th>Type</th><th>Address</th><th>Script</th></tr>
+    {{range .Tx.Vout}}
+    <tr>
+      <td>{{.N}}</td>
+      <td>{{printf "%.8f" .Value}}</td>
+      <td>{{.ScriptPubKey.Type}}</td>
+      <td>{{range .ScriptPubKey.Addresses}}<a href="/address/{{.}}">{{.}}</a> {{end}}</td>
+      <td class="mono" style="font-size:11px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{.ScriptPubKey.ASM}}</td>
+    </tr>
+    {{end}}
+  </table>
+</div>
+{{end}}
