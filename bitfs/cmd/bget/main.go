@@ -133,25 +133,58 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-// downloadContent fetches the raw data by key_hash and writes it to a file.
+// downloadContent fetches encrypted data by key_hash, decrypts it using Method 42
+// (free mode: D_node = scalar 1), and writes plaintext to a file.
 func downloadContent(c *client.Client, meta *client.MetaResponse, outputName string, stdout, stderr io.Writer) int {
 	if meta.KeyHash == "" {
 		fmt.Fprintf(stderr, "bget: no content hash available\n")
 		return 1
 	}
 
-	// Determine output filename.
 	filename := outputName
 	if filename == "" {
 		filename = deriveFilename(meta.Path)
 	}
 
-	// TODO: Decrypt content using Method 42 (D_node=1 for free, session key for paid)
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
 		return handleError(err, stderr)
 	}
 	defer func() { _ = reader.Close() }()
+
+	ciphertext, err := io.ReadAll(reader)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: read error: %v\n", err)
+		return 4
+	}
+
+	// Decrypt using Method 42 free mode.
+	var plaintext []byte
+	if len(ciphertext) > 0 {
+		pubKeyBytes, err := hex.DecodeString(meta.PNode)
+		if err != nil {
+			fmt.Fprintf(stderr, "bget: invalid pnode hex: %v\n", err)
+			return 1
+		}
+		pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+		if err != nil {
+			fmt.Fprintf(stderr, "bget: invalid pnode key: %v\n", err)
+			return 1
+		}
+
+		keyHashBytes, err := hex.DecodeString(meta.KeyHash)
+		if err != nil {
+			fmt.Fprintf(stderr, "bget: invalid key hash hex: %v\n", err)
+			return 1
+		}
+
+		result, err := method42.Decrypt(ciphertext, nil, pubKey, keyHashBytes, method42.AccessFree)
+		if err != nil {
+			fmt.Fprintf(stderr, "bget: decrypt: %v\n", err)
+			return 5
+		}
+		plaintext = result.Plaintext
+	}
 
 	file, err := os.Create(filename)
 	if err != nil {
@@ -159,7 +192,7 @@ func downloadContent(c *client.Client, meta *client.MetaResponse, outputName str
 		return 1
 	}
 
-	n, err := io.Copy(file, reader)
+	n, err := file.Write(plaintext)
 	if err != nil {
 		_ = file.Close()
 		_ = os.Remove(filename)
