@@ -8,6 +8,7 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
+	"github.com/tongxiaofeng/libbitfs/config"
 	"github.com/tongxiaofeng/libbitfs/network"
 	"github.com/tongxiaofeng/libbitfs/spv"
 	"github.com/tongxiaofeng/libbitfs/storage"
@@ -47,7 +48,7 @@ func New(dataDir, password string) (*Engine, error) {
 	}
 
 	if password == "" {
-		password = "bitfs"
+		return nil, fmt.Errorf("engine: password is required")
 	}
 
 	seed, err := wallet.DecryptSeed(encrypted, password)
@@ -55,7 +56,15 @@ func New(dataDir, password string) (*Engine, error) {
 		return nil, fmt.Errorf("engine: decrypt wallet: %w", err)
 	}
 
-	w, err := wallet.NewWallet(seed, &wallet.MainNet)
+	// Load network from config file; default to mainnet if config is missing.
+	netCfg := &wallet.MainNet
+	if cfg, cfgErr := config.LoadConfig(config.ConfigPath(dataDir)); cfgErr == nil {
+		if resolved, netErr := wallet.GetNetwork(cfg.Network); netErr == nil {
+			netCfg = resolved
+		}
+	}
+
+	w, err := wallet.NewWallet(seed, netCfg)
 	if err != nil {
 		return nil, fmt.Errorf("engine: create wallet: %w", err)
 	}
@@ -386,6 +395,12 @@ func displayHexToInternal(displayHex string) []byte {
 func (e *Engine) RefreshFeeUTXOs(ctx context.Context, address, pubKeyHex string) error {
 	if e.Chain == nil {
 		return fmt.Errorf("engine: no blockchain service configured")
+	}
+
+	// Import the address into the node's wallet so listunspent can discover its UTXOs.
+	// This is a no-op if the address is already imported.
+	if err := e.Chain.ImportAddress(ctx, address); err != nil {
+		return fmt.Errorf("engine: import address: %w", err)
 	}
 
 	utxos, err := e.Chain.ListUnspent(ctx, address)

@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bsv-blockchain/go-sdk/script"
+
 	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs/config"
 	"github.com/tongxiaofeng/libbitfs/wallet"
@@ -21,7 +23,7 @@ import (
 // runWallet dispatches wallet subcommands.
 func runWallet(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: bitfs wallet <init|show|balance> [options]\n")
+		fmt.Fprintf(os.Stderr, "Usage: bitfs wallet <init|show|balance|fund> [options]\n")
 		return exitUsageError
 	}
 
@@ -35,12 +37,15 @@ func runWallet(args []string) int {
 		return runWalletShow(subArgs)
 	case "balance":
 		return runWalletBalance(subArgs)
+	case "fund":
+		return runWalletFund(subArgs)
 	case "--help", "-h":
-		fmt.Fprintf(os.Stderr, "Usage: bitfs wallet <init|show|balance> [options]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: bitfs wallet <init|show|balance|fund> [options]\n\n")
 		fmt.Fprintf(os.Stderr, "Subcommands:\n")
 		fmt.Fprintf(os.Stderr, "  init      Initialize a new HD wallet\n")
 		fmt.Fprintf(os.Stderr, "  show      Show wallet information\n")
 		fmt.Fprintf(os.Stderr, "  balance   Show UTXO balance (--refresh to sync from network)\n")
+		fmt.Fprintf(os.Stderr, "  fund      Show deposit address with QR code\n")
 		return exitSuccess
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown wallet subcommand %q\n", sub)
@@ -52,6 +57,7 @@ func runWallet(args []string) int {
 func runWalletInit(args []string) int {
 	fs := flag.NewFlagSet("wallet init", flag.ContinueOnError)
 	words := fs.Int("words", 12, "mnemonic word count (12 or 24)")
+	netName := fs.String("network", "mainnet", "BSV network: mainnet, testnet, teratestnet, or regtest")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing; normally prompted)")
 
@@ -68,6 +74,29 @@ func runWalletInit(args []string) int {
 		entropyBits = wallet.Mnemonic24Words
 	default:
 		fmt.Fprintf(os.Stderr, "Error: --words must be 12 or 24\n")
+		return exitUsageError
+	}
+
+	// If --network was not explicitly passed, prompt interactively.
+	networkSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "network" {
+			networkSet = true
+		}
+	})
+	if !networkSet {
+		chosen, promptErr := promptNetwork()
+		if promptErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", promptErr)
+			return exitUsageError
+		}
+		*netName = chosen
+	}
+
+	// Resolve network config.
+	netCfg, err := wallet.GetNetwork(*netName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: --network must be mainnet, testnet, teratestnet, or regtest\n")
 		return exitUsageError
 	}
 
@@ -131,7 +160,7 @@ func runWalletInit(args []string) int {
 	}
 
 	// Create initial wallet state with a default vault.
-	w, err := wallet.NewWallet(seed, &wallet.MainNet)
+	w, err := wallet.NewWallet(seed, netCfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to create wallet: %v\n", err)
 		return exitWalletError
@@ -150,9 +179,10 @@ func runWalletInit(args []string) int {
 		return exitWalletError
 	}
 
-	// Write default config.
+	// Write config with selected network.
 	cfg := config.DefaultConfig()
 	cfg.DataDir = *dataDir
+	cfg.Network = *netName
 	cfgPath := config.ConfigPath(*dataDir)
 	if err := config.SaveConfig(cfgPath, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to write config: %v\n", err)
@@ -169,12 +199,17 @@ func runWalletInit(args []string) int {
 	fmt.Printf("Wallet initialized successfully.\n")
 	fmt.Printf("  Data directory: %s\n", *dataDir)
 	fmt.Printf("  Words:          %d\n", *words)
-	fmt.Printf("  Network:        mainnet\n")
+	fmt.Printf("  Network:        %s\n", *netName)
 	fmt.Printf("  Fee address:    %s\n", hex.EncodeToString(feeKey.PublicKey.Compressed()))
 	fmt.Printf("\n")
 	fmt.Printf("IMPORTANT: Write down your mnemonic phrase and store it safely.\n")
 	fmt.Printf("This is the ONLY time it will be shown.\n\n")
 	fmt.Printf("  %s\n\n", mnemonic)
+
+	// Ask if the user wants to fund the wallet now.
+	if promptYesNo("Fund wallet now?") {
+		return runWalletFund([]string{"--datadir", *dataDir, "--password", pass})
+	}
 
 	return exitSuccess
 }
@@ -273,7 +308,13 @@ func runWalletBalance(args []string) int {
 		return exitUsageError
 	}
 
-	eng, err := engine.New(*dataDir, *password)
+	pass, err := resolvePassword(*password)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitWalletError
+	}
+
+	eng, err := engine.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
@@ -294,14 +335,19 @@ func runWalletBalance(args []string) int {
 
 		// Scan all derived external fee addresses for new UTXOs.
 		ctx := context.Background()
+		isMainnet := eng.Wallet.Network().Name == "mainnet"
 		scanned := 0
 		for i := uint32(0); i <= eng.WState.NextReceiveIndex; i++ {
 			kp, err := eng.Wallet.DeriveFeeKey(wallet.ExternalChain, i)
 			if err != nil {
 				continue
 			}
+			addr, addrErr := script.NewAddressFromPublicKey(kp.PublicKey, isMainnet)
+			if addrErr != nil {
+				continue
+			}
 			pubHex := hex.EncodeToString(kp.PublicKey.Compressed())
-			if err := eng.RefreshFeeUTXOs(ctx, pubHex, pubHex); err != nil {
+			if err := eng.RefreshFeeUTXOs(ctx, addr.AddressString, pubHex); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: refresh index %d: %v\n", i, err)
 				continue
 			}
@@ -329,9 +375,9 @@ func runWalletBalance(args []string) int {
 
 	total := feeBalance + nodeBalance
 	fmt.Printf("Wallet Balance\n")
-	fmt.Printf("  Fee (spendable):  %d sats  (%d UTXOs)\n", feeBalance, feeCount)
-	fmt.Printf("  Node (locked):    %d sats  (%d UTXOs)\n", nodeBalance, nodeCount)
-	fmt.Printf("  Total:            %d sats\n", total)
+	fmt.Printf("  Fee (spendable):  %s sats  (%d UTXOs)\n", formatSats(feeBalance), feeCount)
+	fmt.Printf("  Node (locked):    %s sats  (%d UTXOs)\n", formatSats(nodeBalance), nodeCount)
+	fmt.Printf("  Total:            %s sats\n", formatSats(total))
 
 	return exitSuccess
 }

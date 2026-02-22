@@ -54,6 +54,82 @@ func promptPasswordConfirm() (string, error) {
 	return pass1, nil
 }
 
+// resolvePassword returns the password flag value if non-empty,
+// otherwise prompts the user interactively.
+func resolvePassword(flagValue string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+	return promptPassword("Enter wallet password: ")
+}
+
+// promptNetwork displays a numbered menu and reads the user's choice.
+func promptNetwork() (string, error) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return "", fmt.Errorf("network prompt requires interactive terminal; use --network flag")
+	}
+	networks := []struct {
+		name string
+		desc string
+	}{
+		{"mainnet", "BSV mainnet (production)"},
+		{"testnet", "BSV testnet (testing)"},
+		{"teratestnet", "BSV Teranode testnet (scaling)"},
+		{"regtest", "Local regtest (development)"},
+	}
+
+	fmt.Fprintln(os.Stderr, "Select network:")
+	for i, n := range networks {
+		fmt.Fprintf(os.Stderr, "  %d) %s  — %s\n", i+1, n.name, n.desc)
+	}
+	fmt.Fprint(os.Stderr, "Enter choice [1]: ")
+
+	var buf [8]byte
+	n, err := os.Stdin.Read(buf[:])
+	if err != nil {
+		return "", fmt.Errorf("failed to read input: %w", err)
+	}
+	input := string(buf[:n])
+	// Trim newline/spaces.
+	for len(input) > 0 && (input[len(input)-1] == '\n' || input[len(input)-1] == '\r' || input[len(input)-1] == ' ') {
+		input = input[:len(input)-1]
+	}
+	if input == "" {
+		return networks[0].name, nil // default
+	}
+
+	idx := 0
+	switch input {
+	case "1":
+		idx = 0
+	case "2":
+		idx = 1
+	case "3":
+		idx = 2
+	case "4":
+		idx = 3
+	default:
+		return "", fmt.Errorf("invalid choice %q; enter 1–4", input)
+	}
+	return networks[idx].name, nil
+}
+
+// promptYesNo prints a y/N prompt and returns true if the user enters "y" or "Y".
+// Non-interactive terminals default to "no".
+func promptYesNo(question string) bool {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return false
+	}
+	fmt.Fprintf(os.Stderr, "%s [y/N]: ", question)
+	var buf [8]byte
+	n, err := os.Stdin.Read(buf[:])
+	if err != nil || n == 0 {
+		return false
+	}
+	input := buf[0]
+	return input == 'y' || input == 'Y'
+}
+
 // zeroString attempts to overwrite the string's bytes with zeros.
 // Go strings are immutable, so []byte(*s) creates a copy; this provides
 // defense in depth but cannot guarantee the original data is cleared.

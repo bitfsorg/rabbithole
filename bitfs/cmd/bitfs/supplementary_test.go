@@ -49,7 +49,7 @@ func TestWalletInitCustomDataDir(t *testing.T) {
 	dir := t.TempDir()
 	customDir := filepath.Join(dir, "custom", "nested", "bitfs-data")
 
-	code := runWalletInit([]string{"--datadir", customDir, "--password", "mypass"})
+	code := runWalletInit([]string{"--datadir", customDir, "--password", "mypass", "--network", "regtest"})
 	if code != exitSuccess {
 		t.Fatalf("runWalletInit custom datadir returned %d, want %d", code, exitSuccess)
 	}

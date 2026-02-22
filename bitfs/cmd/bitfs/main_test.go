@@ -58,7 +58,7 @@ func initTestWallet(t *testing.T) string {
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "testbitfs")
 
-	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass"})
+	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass", "--network", "regtest"})
 	if code != exitSuccess {
 		t.Fatalf("runWalletInit returned %d, want %d", code, exitSuccess)
 	}
@@ -92,7 +92,7 @@ func TestWalletInit24Words(t *testing.T) {
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "testbitfs")
 
-	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass", "--words", "24"})
+	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass", "--words", "24", "--network", "regtest"})
 	if code != exitSuccess {
 		t.Fatalf("runWalletInit --words 24 returned %d, want %d", code, exitSuccess)
 	}
@@ -102,7 +102,7 @@ func TestWalletInitInvalidWords(t *testing.T) {
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "testbitfs")
 
-	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass", "--words", "15"})
+	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass", "--words", "15", "--network", "regtest"})
 	if code != exitUsageError {
 		t.Errorf("runWalletInit --words 15 returned %d, want %d", code, exitUsageError)
 	}
@@ -111,7 +111,7 @@ func TestWalletInitInvalidWords(t *testing.T) {
 func TestWalletInitAlreadyExists(t *testing.T) {
 	dataDir := initTestWallet(t)
 
-	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass"})
+	code := runWalletInit([]string{"--datadir", dataDir, "--password", "testpass", "--network", "regtest"})
 	if code != exitWalletError {
 		t.Errorf("second init returned %d, want %d", code, exitWalletError)
 	}

@@ -70,8 +70,6 @@ func run(args []string) int {
 		return runDaemon(cmdArgs)
 	case "shell":
 		return runShell(cmdArgs)
-	case "fund":
-		return runFund(cmdArgs)
 	case "verify":
 		return runVerify(cmdArgs)
 	case "--help", "-h", "help":
@@ -97,6 +95,7 @@ Wallet Commands:
   wallet init      Initialize HD wallet
   wallet show      Show wallet information
   wallet balance   Show UTXO balance
+  wallet fund      Show deposit address with QR code
 
 Vault Commands:
   vault create   Create a new vault
@@ -123,9 +122,6 @@ Publishing Commands:
 Daemon Commands:
   daemon start   Start the daemon
   daemon stop    Stop the daemon
-
-Bootstrap:
-  fund           Register externally-funded UTXOs
 
 Verification:
   verify         SPV-verify a transaction

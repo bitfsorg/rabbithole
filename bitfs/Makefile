@@ -3,6 +3,7 @@ BINS    := bitfs bls bcat bget bstat btree
 OUTDIR  := bin
 
 .PHONY: all build test lint clean e2e install help
+.PHONY: regtest regtest-down testnet testnet-down stn stn-down
 
 all: build ## Build all binaries (default)
 
@@ -26,11 +27,32 @@ e2e: ## Run e2e tests (requires Docker)
 	cd e2e && docker compose up -d
 	go test -tags e2e ./e2e/... -v -timeout 120s
 
-e2e-up: ## Start regtest node
+regtest: ## Start regtest node (RPC localhost:18332)
 	cd e2e && docker compose up -d
+	@echo "Regtest node running. RPC at localhost:18332 (user: bitfs, pass: bitfs)"
 
-e2e-down: ## Stop regtest node
+regtest-down: ## Stop regtest node
 	cd e2e && docker compose down
+
+testnet: ## Start testnet node (RPC localhost:18333)
+	cd e2e && docker compose -f docker-compose.testnet.yml up -d
+	@echo "Testnet node syncing. RPC at localhost:18333 (user: bitfs, pass: bitfs)"
+	@echo "Use a faucet to fund: https://faucet.bitcoincloud.net"
+
+testnet-down: ## Stop testnet node
+	cd e2e && docker compose -f docker-compose.testnet.yml down
+
+stn: ## Start Teranode STN node (RPC localhost:18334)
+	cd e2e && docker compose -f docker-compose.stn.yml up -d
+	@echo "STN node syncing. RPC at localhost:18334 (user: bitfs, pass: bitfs)"
+	@echo "Use the faucet to fund: https://faucet.teranode.bsvblockchain.org"
+
+stn-down: ## Stop STN node
+	cd e2e && docker compose -f docker-compose.stn.yml down
+
+e2e-up: regtest ## Alias for regtest
+
+e2e-down: regtest-down ## Alias for regtest-down
 
 install: build ## Install binaries to $GOPATH/bin
 	@for b in $(BINS); do cp $(OUTDIR)/$$b $(shell go env GOPATH)/bin/$$b; done

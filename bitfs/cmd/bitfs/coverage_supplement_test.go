@@ -183,7 +183,7 @@ func TestVaultList_NoWallet(t *testing.T) {
 func TestWalletInit_24Words(t *testing.T) {
 	dir := t.TempDir()
 	out := captureStdout(t, func() {
-		code := runWalletInit([]string{"--datadir", dir, "--password", "p", "--words", "24"})
+		code := runWalletInit([]string{"--datadir", dir, "--password", "p", "--words", "24", "--network", "regtest"})
 		if code != exitSuccess {
 			t.Fatalf("wallet init 24 words = %d", code)
 		}
@@ -195,7 +195,7 @@ func TestWalletInit_24Words(t *testing.T) {
 
 func TestWalletInit_InvalidWordCount(t *testing.T) {
 	for _, w := range []string{"6", "18", "0", "48"} {
-		code := runWalletInit([]string{"--datadir", t.TempDir(), "--password", "p", "--words", w})
+		code := runWalletInit([]string{"--datadir", t.TempDir(), "--password", "p", "--words", w, "--network", "regtest"})
 		if code != exitUsageError {
 			t.Errorf("wallet init --words %s = %d, want %d", w, code, exitUsageError)
 		}

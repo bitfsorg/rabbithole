@@ -98,12 +98,12 @@ func TestNew_WrongPassword(t *testing.T) {
 	}
 }
 
-func TestNew_DefaultPassword(t *testing.T) {
+func TestNew_EmptyPasswordError(t *testing.T) {
 	dataDir := t.TempDir()
 
 	mnemonic, _ := wallet.GenerateMnemonic(wallet.Mnemonic12Words)
 	seed, _ := wallet.SeedFromMnemonic(mnemonic, "")
-	encrypted, _ := wallet.EncryptSeed(seed, "bitfs") // default password
+	encrypted, _ := wallet.EncryptSeed(seed, "testpass")
 	os.WriteFile(filepath.Join(dataDir, "wallet.enc"), encrypted, 0600)
 
 	w, _ := wallet.NewWallet(seed, &wallet.MainNet)
@@ -112,12 +112,11 @@ func TestNew_DefaultPassword(t *testing.T) {
 	stateData, _ := json.MarshalIndent(wState, "", "  ")
 	os.WriteFile(filepath.Join(dataDir, "state.json"), stateData, 0600)
 
-	// Empty password should use "bitfs" as default.
-	eng, err := New(dataDir, "")
-	if err != nil {
-		t.Fatalf("New with default password: %v", err)
+	// Empty password should return an error.
+	_, err := New(dataDir, "")
+	if err == nil {
+		t.Fatal("expected error for empty password, got nil")
 	}
-	eng.Close()
 }
 
 func TestClose_SavesState(t *testing.T) {

@@ -1,0 +1,18 @@
+services:
+  bsv-node:
+    image: bitcoinsv/bitcoin-sv:1.0.11
+    container_name: bitfs-testnet
+    ports:
+      - "18333:18332"
+      - "18335:18333"
+    volumes:
+      - ./bitcoin-testnet.conf:/data/bitcoin.conf
+      - bsv-testnet-data:/data
+    healthcheck:
+      test: ["CMD", "/entrypoint.sh", "bitcoin-cli", "-testnet", "getinfo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bsv-testnet-data:

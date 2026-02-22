@@ -6,7 +6,7 @@ services:
       - "18332:18332"
       - "18444:18444"
     volumes:
-      - ./bitcoin.conf:/data/bitcoin.conf:ro
+      - ./bitcoin.conf:/data/bitcoin.conf
       - bsv-data:/data
     healthcheck:
       test: ["CMD", "/entrypoint.sh", "bitcoin-cli", "-regtest", "getinfo"]

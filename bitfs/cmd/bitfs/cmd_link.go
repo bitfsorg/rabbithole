@@ -33,7 +33,13 @@ func runLink(args []string) int {
 	target := fs.Arg(0)
 	linkPath := fs.Arg(1)
 
-	eng, err := engine.New(*dataDir, *password)
+	pass, err := resolvePassword(*password)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitWalletError
+	}
+
+	eng, err := engine.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
