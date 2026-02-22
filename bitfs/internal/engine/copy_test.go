@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/libbitfs/method42"
 	"github.com/tongxiaofeng/libbitfs/wallet"
 )
@@ -326,4 +328,34 @@ func TestCopy_PreservesAccessMode(t *testing.T) {
 	if dstNode.MimeType != srcNode.MimeType {
 		t.Errorf("mime type mismatch: dst=%q, src=%q", dstNode.MimeType, srcNode.MimeType)
 	}
+}
+
+func TestCopy_PreservesExtendedMetadata(t *testing.T) {
+	eng, _ := setupCopyTestEngine(t)
+
+	// Manually set extended metadata on the source node.
+	srcNode := eng.State.FindNodeByPath("/test.txt")
+	require.NotNil(t, srcNode)
+	srcNode.Keywords = "test,example"
+	srcNode.Description = "A test file"
+	srcNode.Domain = "example.com"
+	srcNode.OnChain = true
+	srcNode.Compression = 1
+
+	addFeeUTXO(t, eng, 100000)
+
+	_, err := eng.Copy(&CopyOpts{
+		VaultIndex: 0,
+		SrcPath:    "/test.txt",
+		DstPath:    "/copy.txt",
+	})
+	require.NoError(t, err)
+
+	dstNode := eng.State.FindNodeByPath("/copy.txt")
+	require.NotNil(t, dstNode)
+	assert.Equal(t, "test,example", dstNode.Keywords)
+	assert.Equal(t, "A test file", dstNode.Description)
+	assert.Equal(t, "example.com", dstNode.Domain)
+	assert.True(t, dstNode.OnChain)
+	assert.Equal(t, int32(1), dstNode.Compression)
 }
