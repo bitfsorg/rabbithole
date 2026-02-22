@@ -1,4 +1,4 @@
-# 模块规范：internal/paymail
+# 模块规范：libbitfs/paymail
 
 ## 目的
 

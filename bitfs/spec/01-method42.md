@@ -1,4 +1,4 @@
-# 模块规范：internal/method42
+# 模块规范：libbitfs/method42
 
 ## 目的
 
