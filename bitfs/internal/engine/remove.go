@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/hex"
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/tongxiaofeng/libbitfs/metanet"
@@ -83,10 +84,45 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 	nodeState.TxID = txIDHex
 	e.TrackNewUTXOs(mtx, nodeState.PubKeyHex, changePubHex)
 
+	// --- Update parent directory to remove child entry ---
+	parentDir := path.Dir(opts.Path)
+	parent, parentErr := e.resolveParentDir(parentDir, opts.VaultIndex)
+	if parentErr != nil {
+		// Best effort: return node-only result with a warning.
+		return &Result{
+			TxHex:   txHex,
+			TxID:    txIDHex,
+			Message: fmt.Sprintf("Removed %s (warning: parent update failed: %v)", opts.Path, parentErr),
+			NodePub: nodeState.PubKeyHex,
+		}, nil
+	}
+
+	// Remove child entry from parent's Children slice.
+	childName := path.Base(opts.Path)
+	for i, c := range parent.Children {
+		if c.Name == childName {
+			parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
+			break
+		}
+	}
+
+	// Build and sign SelfUpdate tx for parent to commit the updated children list.
+	parentTxHex, parentTxIDHex, parentBuildErr := e.buildParentSelfUpdate(parent)
+	if parentBuildErr != nil {
+		// Best effort: return node-only result with a warning.
+		return &Result{
+			TxHex:   txHex,
+			TxID:    txIDHex,
+			Message: fmt.Sprintf("Removed %s (warning: parent update failed: %v)", opts.Path, parentBuildErr),
+			NodePub: nodeState.PubKeyHex,
+		}, nil
+	}
+	parent.TxID = parentTxIDHex
+
 	return &Result{
-		TxHex:   txHex,
+		TxHex:   txHex + "\n" + parentTxHex,
 		TxID:    txIDHex,
-		Message: fmt.Sprintf("Removed %s", opts.Path),
+		Message: fmt.Sprintf("Removed %s (2 txs: node=%s, parent=%s)", opts.Path, txIDHex[:8], parentTxIDHex[:8]),
 		NodePub: nodeState.PubKeyHex,
 	}, nil
 }

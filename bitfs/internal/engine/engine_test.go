@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/libbitfs/tx"
 	"github.com/tongxiaofeng/libbitfs/wallet"
 )
@@ -531,5 +533,48 @@ func TestMetanetAdapter_GetNodeByPath_Found(t *testing.T) {
 	}
 	if len(info.Children) != 1 || info.Children[0].Name != "readme.txt" {
 		t.Errorf("children = %v, want [readme.txt]", info.Children)
+	}
+}
+
+// --- Remove + parent update tests ---
+
+func TestRemove_UpdatesParentChildList(t *testing.T) {
+	eng, _ := setupCopyTestEngine(t) // gives us root + /test.txt
+
+	// Verify the file exists in parent's children.
+	root := eng.State.FindNodeByPath("/")
+	if root == nil {
+		// root might be stored by pubkey only
+		rootPubHex, _ := eng.getRootPubHex(0)
+		root = eng.State.GetNode(rootPubHex)
+	}
+	require.NotNil(t, root)
+
+	found := false
+	for _, c := range root.Children {
+		if c.Name == "test.txt" {
+			found = true
+		}
+	}
+	require.True(t, found, "test.txt should be in root children before remove")
+
+	// Add fee UTXOs for both txs (node delete + parent update).
+	addFeeUTXO(t, eng, 100000)
+	addFeeUTXO(t, eng, 100000)
+
+	result, err := eng.Remove(&RemoveOpts{VaultIndex: 0, Path: "/test.txt"})
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.TxHex)
+	assert.Contains(t, result.Message, "Removed")
+
+	// Result should contain 2 txs (newline-separated).
+	txParts := strings.Split(result.TxHex, "\n")
+	assert.Len(t, txParts, 2, "Remove should produce 2 txs: node delete + parent update")
+
+	// Parent's children list should no longer contain test.txt.
+	rootPubHex, _ := eng.getRootPubHex(0)
+	rootAfter := eng.State.GetNode(rootPubHex)
+	for _, c := range rootAfter.Children {
+		assert.NotEqual(t, "test.txt", c.Name, "test.txt should be removed from parent children")
 	}
 }
