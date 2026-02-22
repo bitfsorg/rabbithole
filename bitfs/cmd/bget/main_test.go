@@ -278,10 +278,11 @@ func TestPaid_WithBuy_InvalidWalletKey(t *testing.T) {
 		{"wrong length", "aabbcc", "wallet key must be 32 or 33 bytes"},
 	}
 
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			code := run([]string{"--buy", "--wallet-key", tt.walletKey, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+			code := run([]string{"--buy", "--wallet-key", tt.walletKey, "--utxo", fakeUTXO, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
 			assert.Equal(t, 6, code, "invalid wallet key should exit 6")
 			assert.Contains(t, stderr.String(), tt.wantMsg)
@@ -312,8 +313,10 @@ func TestPaid_WithBuy_MissingTxID(t *testing.T) {
 	)
 	defer srv.Close()
 
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
 	assert.Equal(t, 5, code, "missing txid should exit 5")
 	assert.Contains(t, stderr.String(), "no invoice txid")
@@ -375,8 +378,10 @@ func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
 	)
 	defer srv.Close()
 
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
 	assert.Equal(t, 4, code, "submit HTLC failure should exit 4 (server error)")
 	assert.Contains(t, stderr.String(), "server error")
@@ -448,8 +453,11 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 	)
 	defer srv.Close()
 
+	// Provide a fake UTXO with enough funds for the purchase (price=1000 sat).
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "-o", outFile, "--host", srv.URL, makeURI("/premium.txt")}, &stdout, &stderr)
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/premium.txt")}, &stdout, &stderr)
 
 	assert.Equal(t, 0, code, "successful purchase should exit 0; stderr: %s", stderr.String())
 	assert.Empty(t, stderr.String())
