@@ -641,3 +641,93 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 
 	t.Logf("Unit crypto flow: encrypt -> capsule -> HTLC -> extract -> decrypt OK")
 }
+
+// TestPaidPurchase_BuyerRefund tests the buyer refund path on regtest.
+// It builds an HTLC funding tx, mines past the timeout, then spends via refund.
+func TestPaidPurchase_BuyerRefund(t *testing.T) {
+	node := testutil.NewRegtestNode()
+	testutil.SkipIfUnavailable(t, node)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	sellerWallet := setupFundedWallet(t, ctx, node)
+	buyerWallet := setupFundedWallet(t, ctx, node)
+
+	sellerFeeKey, err := sellerWallet.DeriveFeeKey(wallet.ExternalChain, 0)
+	require.NoError(t, err)
+
+	buyerFeeKey, err := buyerWallet.DeriveFeeKey(wallet.ExternalChain, 0)
+	require.NoError(t, err)
+
+	// Fund buyer.
+	buyerFeeAddr, err := script.NewAddressFromPublicKey(buyerFeeKey.PublicKey, false)
+	require.NoError(t, err)
+	buyerUTXO := getFundedUTXO(t, ctx, node, buyerFeeAddr.AddressString, buyerFeeKey)
+
+	sellerPKH := sellerFeeKey.PublicKey.Hash()
+	buyerPKH := buyerFeeKey.PublicKey.Hash()
+	capsuleHash := bytes.Repeat([]byte{0xab}, 32)
+
+	mineAddr, err := node.NewAddress(ctx)
+	require.NoError(t, err)
+
+	// Use a very short timeout (current block height + 1) so we can refund quickly.
+	blockCount, err := node.GetBlockCount(ctx)
+	require.NoError(t, err)
+	timeout := uint32(blockCount + 1)
+
+	// Build and broadcast HTLC funding tx.
+	fundingResult, err := x402.BuildHTLCFundingTx(&x402.HTLCFundingParams{
+		BuyerPrivKey: buyerFeeKey.PrivateKey,
+		SellerAddr:   sellerPKH,
+		CapsuleHash:  capsuleHash,
+		Amount:       1000,
+		Timeout:      timeout,
+		UTXOs: []*x402.HTLCUTXO{{
+			TxID:         buyerUTXO.TxID,
+			Vout:         buyerUTXO.Vout,
+			Amount:       buyerUTXO.Amount,
+			ScriptPubKey: buyerUTXO.ScriptPubKey,
+		}},
+		ChangeAddr: buyerPKH,
+		FeeRate:    1,
+	})
+	require.NoError(t, err)
+
+	htlcTxID, err := node.SendRawTransaction(ctx, hex.EncodeToString(fundingResult.RawTx))
+	require.NoError(t, err)
+	t.Logf("HTLC funding txid: %s (timeout at block %d)", htlcTxID, timeout)
+
+	// Mine past the timeout.
+	_, err = node.MineBlocks(ctx, 2, mineAddr)
+	require.NoError(t, err)
+
+	// Build and broadcast buyer refund tx.
+	refundTx, err := x402.BuildBuyerRefundTx(&x402.BuyerRefundParams{
+		FundingTxID:   fundingResult.TxID,
+		FundingVout:   fundingResult.HTLCVout,
+		FundingAmount: fundingResult.HTLCAmount,
+		HTLCScript:    fundingResult.HTLCScript,
+		BuyerPrivKey:  buyerFeeKey.PrivateKey,
+		OutputAddr:    buyerPKH,
+		Locktime:      timeout,
+		FeeRate:       1,
+	})
+	require.NoError(t, err)
+
+	refundTxHex := hex.EncodeToString(refundTx.Bytes())
+	refundTxID, err := node.SendRawTransaction(ctx, refundTxHex)
+	require.NoError(t, err, "broadcast buyer refund tx")
+	t.Logf("buyer refund txid: %s", refundTxID)
+
+	// Mine to confirm.
+	_, err = node.MineBlocks(ctx, 1, mineAddr)
+	require.NoError(t, err)
+
+	// Verify refund was confirmed.
+	refundRaw, err := node.GetRawTransaction(ctx, refundTxID)
+	require.NoError(t, err)
+	require.NotEmpty(t, refundRaw)
+	t.Logf("buyer refund confirmed on-chain: %d bytes", len(refundRaw))
+}

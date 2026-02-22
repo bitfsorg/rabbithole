@@ -187,6 +187,15 @@ func (n *RegtestNode) GetBlockHash(ctx context.Context, height int) (string, err
 	return hash, nil
 }
 
+// GetBlockCount returns the current block height.
+func (n *RegtestNode) GetBlockCount(ctx context.Context) (int64, error) {
+	var count int64
+	if err := n.rpc.Call(ctx, "getblockcount", nil, &count); err != nil {
+		return 0, fmt.Errorf("getblockcount: %w", err)
+	}
+	return count, nil
+}
+
 // ImportAddress imports an address (or script) for watch-only tracking.
 // This allows ListUnspent to find UTXOs sent to non-wallet addresses.
 func (n *RegtestNode) ImportAddress(ctx context.Context, addr string) error {
