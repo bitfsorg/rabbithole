@@ -276,28 +276,20 @@ func TestHandleGetBuyInfo_Expired(t *testing.T) {
 // --- handleSubmitHTLC Tests ---
 
 func TestHandleSubmitHTLC_Success(t *testing.T) {
-	d, _, store, _ := newTestDaemon(t)
+	d, _, _, _ := newTestDaemon(t)
 
-	// Put some encrypted content in the store.
-	keyHash := make([]byte, 32)
-	for i := range keyHash {
-		keyHash[i] = byte(i + 0x10)
-	}
-	keyHashHex := hex.EncodeToString(keyHash)
-	encryptedContent := []byte("encrypted-capsule-data-here")
-	store.Put(keyHashHex, encryptedContent)
-
+	capsuleData := []byte("test-capsule-ecdh-secret-32bytes!")
 	totalPrice := x402.CalculatePrice(75, 2048)
 
-	// Create an invoice with a real BSV address for x402 verification.
+	// Create an invoice with a pre-computed capsule and real BSV address.
 	invoice := &InvoiceRecord{
 		ID:          "htlc-invoice-001",
 		TotalPrice:  totalPrice,
-		KeyHash:     keyHash,
 		PricePerKB:  75,
 		FileSize:    2048,
 		PaymentAddr: testPaymentAddr,
 		CapsuleHash: strings.Repeat("dd", 32),
+		Capsule:     capsuleData,
 		Expiry:      time.Now().Add(time.Hour),
 		Paid:        false,
 	}
@@ -319,7 +311,7 @@ func TestHandleSubmitHTLC_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "htlc-invoice-001", resp["invoice_id"])
-	assert.Equal(t, hex.EncodeToString(encryptedContent), resp["capsule"])
+	assert.Equal(t, hex.EncodeToString(capsuleData), resp["capsule"])
 	assert.Equal(t, true, resp["paid"])
 
 	// Verify the invoice is now marked as paid.
@@ -426,100 +418,32 @@ func TestHandleSubmitHTLC_EmptyBody(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "EMPTY_TX")
 }
 
-func TestHandleSubmitHTLC_ContentNotInStore(t *testing.T) {
-	d, _, _, _ := newTestDaemon(t)
-
-	// Create invoice with a key hash that doesn't exist in the store.
-	keyHash := make([]byte, 32)
-	for i := range keyHash {
-		keyHash[i] = byte(i + 0x30)
-	}
-
-	totalPrice := x402.CalculatePrice(50, 1024)
-	invoice := &InvoiceRecord{
-		ID:          "no-content-invoice",
-		TotalPrice:  totalPrice,
-		KeyHash:     keyHash,
-		PricePerKB:  50,
-		FileSize:    1024,
-		PaymentAddr: testPaymentAddr,
-		Expiry:      time.Now().Add(time.Hour),
-		Paid:        false,
-	}
-	d.invoicesMu.Lock()
-	d.invoices["no-content-invoice"] = invoice
-	d.invoicesMu.Unlock()
-
-	htlcTx := buildTestPaymentTx(t, testPaymentAddr, totalPrice)
-	req := httptest.NewRequest("POST", "/_bitfs/buy/no-content-invoice", bytes.NewReader(htlcTx))
-	w := httptest.NewRecorder()
-	d.Handler().ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.Contains(t, w.Body.String(), "CONTENT_NOT_FOUND")
-}
-
-func TestHandleSubmitHTLC_NoKeyHash(t *testing.T) {
+func TestHandleSubmitHTLC_NoCapsule(t *testing.T) {
 	d, _, _, _ := newTestDaemon(t)
 
 	totalPrice := x402.CalculatePrice(50, 1024)
-	// Create invoice with no key hash.
+	// Create invoice with no capsule (e.g., node had no PNode).
 	invoice := &InvoiceRecord{
-		ID:          "no-keyhash-invoice",
+		ID:          "no-capsule-invoice",
 		TotalPrice:  totalPrice,
-		KeyHash:     nil, // empty key hash
 		PricePerKB:  50,
 		FileSize:    1024,
 		PaymentAddr: testPaymentAddr,
 		Expiry:      time.Now().Add(time.Hour),
 		Paid:        false,
+		Capsule:     nil, // no capsule computed
 	}
 	d.invoicesMu.Lock()
-	d.invoices["no-keyhash-invoice"] = invoice
+	d.invoices["no-capsule-invoice"] = invoice
 	d.invoicesMu.Unlock()
 
 	htlcTx := buildTestPaymentTx(t, testPaymentAddr, totalPrice)
-	req := httptest.NewRequest("POST", "/_bitfs/buy/no-keyhash-invoice", bytes.NewReader(htlcTx))
-	w := httptest.NewRecorder()
-	d.Handler().ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-	assert.Contains(t, w.Body.String(), "NO_CONTENT")
-}
-
-func TestHandleSubmitHTLC_StorageError(t *testing.T) {
-	d, _, store, _ := newTestDaemon(t)
-
-	keyHash := make([]byte, 32)
-	for i := range keyHash {
-		keyHash[i] = byte(i + 0x40)
-	}
-
-	totalPrice := x402.CalculatePrice(50, 1024)
-	invoice := &InvoiceRecord{
-		ID:          "storage-err-invoice",
-		TotalPrice:  totalPrice,
-		KeyHash:     keyHash,
-		PricePerKB:  50,
-		FileSize:    1024,
-		PaymentAddr: testPaymentAddr,
-		Expiry:      time.Now().Add(time.Hour),
-		Paid:        false,
-	}
-	d.invoicesMu.Lock()
-	d.invoices["storage-err-invoice"] = invoice
-	d.invoicesMu.Unlock()
-
-	// Inject storage error.
-	store.err = fmt.Errorf("disk failure")
-
-	htlcTx := buildTestPaymentTx(t, testPaymentAddr, totalPrice)
-	req := httptest.NewRequest("POST", "/_bitfs/buy/storage-err-invoice", bytes.NewReader(htlcTx))
+	req := httptest.NewRequest("POST", "/_bitfs/buy/no-capsule-invoice", bytes.NewReader(htlcTx))
 	w := httptest.NewRecorder()
 	d.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Contains(t, w.Body.String(), "STORAGE_ERROR")
+	assert.Contains(t, w.Body.String(), "NO_CAPSULE")
 }
 
 // --- x402 VerifyPayment Integration Tests ---
@@ -703,7 +627,11 @@ func TestFullPurchaseFlow(t *testing.T) {
 	err = json.Unmarshal(w3.Body.Bytes(), &capsuleResp)
 	require.NoError(t, err)
 	assert.Equal(t, invoiceID, capsuleResp["invoice_id"])
-	assert.Equal(t, hex.EncodeToString(encryptedContent), capsuleResp["capsule"])
+	// The capsule is an ECDH shared secret computed during invoice creation,
+	// not the encrypted content. Verify it's a non-empty hex string (32 bytes = 64 hex chars).
+	capsuleHex, ok := capsuleResp["capsule"].(string)
+	assert.True(t, ok, "capsule should be a string")
+	assert.Len(t, capsuleHex, 64, "capsule should be 32 bytes (64 hex chars)")
 	assert.Equal(t, true, capsuleResp["paid"])
 
 	// Step 4: Try to pay again, should fail with ALREADY_PAID.

@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/tongxiaofeng/libbitfs/method42"
 	"github.com/tongxiaofeng/libbitfs/x402"
 )
 
@@ -22,6 +23,8 @@ type InvoiceRecord struct {
 	FileSize    uint64    `json:"file_size"`
 	PaymentAddr string    `json:"payment_addr"`
 	CapsuleHash string    `json:"capsule_hash"`
+	HTLCScript  []byte    `json:"-"` // Precomputed HTLC script for verification
+	Capsule     []byte    `json:"-"` // ECDH capsule for buyer
 	Expiry      time.Time `json:"-"`
 	Paid        bool      `json:"-"`
 }
@@ -36,21 +39,36 @@ const maxHTLCBodySize = 1 << 20
 // generating and storing an invoice for the purchase flow.
 // Uses libbitfs/x402 for invoice creation, price calculation, and HTTP headers.
 func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
-	// Compute capsule hash as SHA256 of the key hash.
+	// Compute ECDH capsule = ECDH(D_seller, P_node).x for the buyer.
+	sellerPriv, _, err := d.wallet.GetSellerKeyPair()
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "WALLET_ERROR", "Failed to get seller key pair")
+		return
+	}
+
+	var capsule []byte
 	var capsuleHashBytes []byte
 	capsuleHashHex := ""
-	if len(node.KeyHash) > 0 {
-		h := sha256.Sum256(node.KeyHash)
-		capsuleHashBytes = h[:]
+
+	if len(node.PNode) > 0 {
+		nodePubKey, pubErr := ec.PublicKeyFromBytes(node.PNode)
+		if pubErr != nil {
+			writeJSONError(w, http.StatusInternalServerError, "KEY_ERROR", "Invalid node public key")
+			return
+		}
+
+		capsule, err = method42.ComputeCapsule(sellerPriv, nodePubKey)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "CAPSULE_ERROR", "Failed to compute capsule")
+			return
+		}
+		capsuleHashBytes = method42.ComputeCapsuleHash(capsule)
 		capsuleHashHex = hex.EncodeToString(capsuleHashBytes)
 	}
 
-	// TODO(payment): Replace with real BSV P2PKH address derived from node's public key.
-	// This is a placeholder format for development; real addresses use Base58Check encoding.
-	paymentAddr := ""
-	if len(node.PNode) > 0 {
-		paymentAddr = fmt.Sprintf("1BitFS%s", hex.EncodeToString(node.PNode[:8]))
-	}
+	// Derive payment address from seller's public key hash.
+	sellerPKH := sellerPriv.PubKey().Hash()
+	paymentAddr := fmt.Sprintf("1BitFS%s", hex.EncodeToString(sellerPKH[:8]))
 
 	// Determine invoice TTL in seconds.
 	ttlSeconds := int64(DefaultInvoiceExpiry / time.Second)
@@ -71,6 +89,7 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 		FileSize:    inv.FileSize,
 		PaymentAddr: inv.PaymentAddr,
 		CapsuleHash: capsuleHashHex,
+		Capsule:     capsule,
 		Expiry:      time.Unix(inv.Expiry, 0),
 		Paid:        false,
 	}
@@ -182,53 +201,47 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the payment transaction using libbitfs/x402.
-	proof := &x402.PaymentProof{RawTx: htlcBody}
-	inv := &x402.Invoice{
-		ID:          invoice.ID,
-		Price:       invoice.TotalPrice,
-		PricePerKB:  invoice.PricePerKB,
-		FileSize:    invoice.FileSize,
-		PaymentAddr: invoice.PaymentAddr,
-		Expiry:      invoice.Expiry.Unix(),
-	}
-	if err := x402.VerifyPayment(proof, inv); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", "Payment verification failed")
-		return
-	}
-
-	// Retrieve the encrypted content from the store.
-	if len(invoice.KeyHash) == 0 {
-		writeJSONError(w, http.StatusNotFound, "NO_CONTENT", "No content key hash associated with this invoice")
-		return
-	}
-
-	exists, err := d.store.Has(invoice.KeyHash)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "STORAGE_ERROR", "Failed to check content availability")
-		return
-	}
-	if !exists {
-		writeJSONError(w, http.StatusNotFound, "CONTENT_NOT_FOUND", "Encrypted content not found in store")
-		return
+	// Verify the payment transaction.
+	if len(invoice.HTLCScript) > 0 {
+		// HTLC path: verify the funding tx has a matching HTLC output.
+		_, err := x402.VerifyHTLCFunding(htlcBody, invoice.HTLCScript, invoice.TotalPrice)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID",
+				fmt.Sprintf("HTLC verification failed: %v", err))
+			return
+		}
+	} else {
+		// Fallback: verify as P2PKH payment (backwards compatibility).
+		proof := &x402.PaymentProof{RawTx: htlcBody}
+		inv := &x402.Invoice{
+			ID:          invoice.ID,
+			Price:       invoice.TotalPrice,
+			PricePerKB:  invoice.PricePerKB,
+			FileSize:    invoice.FileSize,
+			PaymentAddr: invoice.PaymentAddr,
+			Expiry:      invoice.Expiry.Unix(),
+		}
+		if err := x402.VerifyPayment(proof, inv); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", "Payment verification failed")
+			return
+		}
 	}
 
-	data, err := d.store.Get(invoice.KeyHash)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "STORAGE_ERROR", "Failed to retrieve encrypted content")
-		return
-	}
-
-	// Mark the invoice as paid only after content is successfully retrieved.
+	// Mark as paid.
 	d.invoicesMu.Lock()
 	invoice.Paid = true
 	d.invoicesMu.Unlock()
 
-	// Return the capsule (hex-encoded encrypted content).
+	// Return the capsule (ECDH shared secret).
+	if len(invoice.Capsule) == 0 {
+		writeJSONError(w, http.StatusInternalServerError, "NO_CAPSULE", "No capsule computed for this invoice")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"invoice_id": invoice.ID,
-		"capsule":    hex.EncodeToString(data),
+		"capsule":    hex.EncodeToString(invoice.Capsule),
 		"paid":       true,
 	})
 }
