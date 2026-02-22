@@ -1,0 +1,38 @@
+{{define "content"}}
+<div class="chain-info">
+  <div class="stat">
+    <div class="label">Network</div>
+    <div class="value">{{.Chain.Chain}}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Height</div>
+    <div class="value">{{.Chain.Blocks}}</div>
+  </div>
+  <div class="stat">
+    <div class="label">Best Block</div>
+    <div class="value"><a href="/block/{{.Chain.BestBlockHash}}" class="hash" style="max-width:160px">{{.Chain.BestBlockHash}}</a></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent Blocks</h2>
+  <div id="block-list">
+    {{template "block-table" .Blocks}}
+  </div>
+</div>
+{{end}}
+
+{{define "block-table"}}
+<table>
+  <tr><th>Height</th><th>Hash</th><th>Txs</th><th>Size</th><th>Time</th></tr>
+  {{range .}}
+  <tr>
+    <td>{{.Height}}</td>
+    <td><a href="/block/{{.Hash}}" class="hash">{{.Hash}}</a></td>
+    <td>{{.TxCount}}</td>
+    <td>{{.Size}} B</td>
+    <td>{{formatTime .Time}}</td>
+  </tr>
+  {{end}}
+</table>
+{{end}}

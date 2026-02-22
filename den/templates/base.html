@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Den — {{.Title}}</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'SF Mono', 'Menlo', 'Monaco', monospace; font-size: 14px; line-height: 1.6; color: #e0e0e0; background: #1a1a2e; }
+    a { color: #64b5f6; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    header { background: #16213e; border-bottom: 1px solid #0f3460; padding: 12px 0; margin-bottom: 24px; }
+    header .container { display: flex; align-items: center; justify-content: space-between; }
+    header h1 { font-size: 20px; color: #e94560; }
+    header h1 span { color: #666; font-weight: normal; font-size: 14px; }
+    .search-form { display: flex; gap: 8px; }
+    .search-form input { background: #1a1a2e; border: 1px solid #0f3460; color: #e0e0e0; padding: 6px 12px; border-radius: 4px; width: 400px; font-family: inherit; font-size: 13px; }
+    .search-form button { background: #0f3460; color: #e0e0e0; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-family: inherit; }
+    .card { background: #16213e; border: 1px solid #0f3460; border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 16px; color: #e94560; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #0f3460; }
+    th { color: #999; font-weight: normal; font-size: 12px; text-transform: uppercase; }
+    td { font-size: 13px; }
+    .mono { font-family: inherit; }
+    .hash { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: bold; }
+    .tag-file { background: #1b5e20; color: #a5d6a7; }
+    .tag-dir { background: #0d47a1; color: #90caf9; }
+    .tag-link { background: #4a148c; color: #ce93d8; }
+    .tag-root { background: #e65100; color: #ffcc80; }
+    .tag-private { background: #880e4f; color: #f48fb1; }
+    .tag-free { background: #1b5e20; color: #a5d6a7; }
+    .tag-paid { background: #f57f17; color: #fff9c4; }
+    .tag-metanet { background: #e94560; color: #fff; }
+    .chain-info { display: flex; gap: 24px; margin-bottom: 16px; }
+    .chain-info .stat { }
+    .chain-info .stat .label { color: #999; font-size: 12px; }
+    .chain-info .stat .value { font-size: 18px; color: #e0e0e0; }
+    .field-row { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #0f3460; }
+    .field-row .label { color: #999; min-width: 140px; font-size: 12px; }
+    .field-row .value { word-break: break-all; }
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator { display: inline; }
+    .error { color: #e94560; padding: 12px; border: 1px solid #e94560; border-radius: 4px; }
+    .breadcrumb { margin-bottom: 16px; color: #999; font-size: 13px; }
+    .breadcrumb a { color: #64b5f6; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Den <span>BitFS Explorer</span></h1>
+      <form class="search-form" action="/search" method="get">
+        <input type="text" name="q" placeholder="Search txid / block hash / height / address" autocomplete="off">
+        <button type="submit">Search</button>
+      </form>
+    </div>
+  </header>
+  <div class="container">
+    {{template "content" .}}
+  </div>
+</body>
+</html>
