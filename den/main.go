@@ -26,8 +26,15 @@ func main() {
 	}
 
 	rpc := network.NewRPCClient(*cfg)
-	_ = rpc
+	explorer := NewExplorer(rpc)
+
+	templates, err := LoadTemplates()
+	if err != nil {
+		log.Fatalf("templates: %v", err)
+	}
+
+	srv := NewServer(explorer, templates)
 
 	fmt.Printf("Den starting on %s (network=%s, rpc=%s)\n", *addr, *net, cfg.URL)
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	log.Fatal(http.ListenAndServe(*addr, srv.Routes()))
 }
