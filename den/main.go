@@ -1,0 +1,33 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+
+	"github.com/tongxiaofeng/libbitfs/network"
+)
+
+func main() {
+	rpcURL := flag.String("rpc-url", "", "bitcoind RPC URL")
+	rpcUser := flag.String("rpc-user", "", "RPC username")
+	rpcPass := flag.String("rpc-pass", "", "RPC password")
+	addr := flag.String("addr", ":8080", "HTTP listen address")
+	net := flag.String("network", "regtest", "Network: regtest|testnet")
+	flag.Parse()
+
+	cfg, err := network.ResolveConfig(
+		&network.RPCConfig{URL: *rpcURL, User: *rpcUser, Password: *rpcPass},
+		nil, *net,
+	)
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
+	rpc := network.NewRPCClient(*cfg)
+	_ = rpc
+
+	fmt.Printf("Den starting on %s (network=%s, rpc=%s)\n", *addr, *net, cfg.URL)
+	log.Fatal(http.ListenAndServe(*addr, nil))
+}
