@@ -14,7 +14,6 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/bsv-blockchain/go-sdk/transaction/template/p2pkh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
@@ -277,7 +276,7 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	assert.True(t, foundSellerAddr, "HTLC should contain seller's address hash")
 
 	// ==================================================================
-	// Step 8: Fund buyer and build a payment tx with HTLC output.
+	// Step 8: Fund buyer and build HTLC funding tx using BuildHTLCFundingTx.
 	// ==================================================================
 	buyerFeeAddr, err := script.NewAddressFromPublicKey(buyerFeeKey.PublicKey, false)
 	require.NoError(t, err, "buyer fee address")
@@ -286,57 +285,28 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	t.Logf("buyer UTXO: txid=%x, vout=%d, amount=%d sat",
 		buyerUTXO.TxID, buyerUTXO.Vout, buyerUTXO.Amount)
 
-	// Build a raw transaction with an HTLC output manually.
-	// Input: buyer's funded UTXO.
-	// Output 0: HTLC script (invoice price).
-	// Output 1: change back to buyer.
-	htlcTx := transaction.NewTransaction()
-
-	// Convert buyer UTXO TxID ([]byte) to *chainhash.Hash.
-	buyerTxIDHash, err := chainhash.NewHash(buyerUTXO.TxID)
-	require.NoError(t, err, "convert buyer UTXO txid to chainhash")
-
-	// Add input.
-	htlcTx.AddInput(&transaction.TransactionInput{
-		SourceTXID:       buyerTxIDHash,
-		SourceTxOutIndex: buyerUTXO.Vout,
-		SequenceNumber:   0xffffffff,
-	})
-
-	// Add HTLC output.
-	htlcAmount := invoice.Price
-	if htlcAmount < tx.DustLimit {
-		htlcAmount = tx.DustLimit // Enforce dust limit.
-	}
-	htlcLockingScript := script.Script(htlcScript)
-	htlcTx.AddOutput(&transaction.TransactionOutput{
-		LockingScript: &htlcLockingScript,
-		Satoshis:      htlcAmount,
-	})
-
-	// Add change output.
 	changePKH := buyerFeeKey.PublicKey.Hash()
-	changeOutput, err := tx.BuildP2PKHOutput(changePKH, buyerUTXO.Amount-htlcAmount-200)
-	require.NoError(t, err, "build change output")
-	htlcTx.AddOutput(changeOutput)
 
-	// Sign the input using go-sdk's P2PKH template.
-	buyerLockScript := script.NewFromBytes(buyerUTXO.ScriptPubKey)
-	htlcTx.Inputs[0].SetSourceTxOutput(&transaction.TransactionOutput{
-		Satoshis:      buyerUTXO.Amount,
-		LockingScript: buyerLockScript,
+	fundingResult, err := x402.BuildHTLCFundingTx(&x402.HTLCFundingParams{
+		BuyerPrivKey: buyerFeeKey.PrivateKey,
+		SellerAddr:   sellerPKH,
+		CapsuleHash:  capsuleHash,
+		Amount:       invoice.Price,
+		Timeout:      x402.DefaultHTLCTimeout,
+		UTXOs: []*x402.HTLCUTXO{{
+			TxID:         buyerUTXO.TxID,
+			Vout:         buyerUTXO.Vout,
+			Amount:       buyerUTXO.Amount,
+			ScriptPubKey: buyerUTXO.ScriptPubKey,
+		}},
+		ChangeAddr: changePKH,
+		FeeRate:    1,
 	})
+	require.NoError(t, err, "build HTLC funding tx")
+	t.Logf("HTLC funding tx: %d bytes", len(fundingResult.RawTx))
 
-	unlocker, err := p2pkh.Unlock(buyerFeeKey.PrivateKey, nil)
-	require.NoError(t, err, "create P2PKH unlocker")
-	htlcTx.Inputs[0].UnlockingScriptTemplate = unlocker
-
-	err = htlcTx.Sign()
-	require.NoError(t, err, "sign HTLC payment tx")
-
-	htlcTxHex := hex.EncodeToString(htlcTx.Bytes())
-	htlcPaymentTxID, err := node.SendRawTransaction(ctx, htlcTxHex)
-	require.NoError(t, err, "broadcast HTLC payment tx")
+	htlcPaymentTxID, err := node.SendRawTransaction(ctx, hex.EncodeToString(fundingResult.RawTx))
+	require.NoError(t, err, "broadcast HTLC funding tx")
 	t.Logf("HTLC payment txid: %s", htlcPaymentTxID)
 	mineOneBlock(t)
 
@@ -347,45 +317,25 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	t.Logf("HTLC tx confirmed on-chain: %d bytes", len(htlcRawBytes))
 
 	// ==================================================================
-	// Step 9: Simulate seller claiming the HTLC (build claim tx in memory).
+	// Step 9: Seller claims the HTLC using BuildSellerClaimTx (real signature).
 	// ==================================================================
-	// The seller's claim unlocking script is: <sig> <seller_pubkey> <capsule> OP_TRUE
-	// Since BuildClaimTx doesn't exist yet, we construct the unlocking script
-	// manually and build a simulated claim transaction.
-
-	claimTx := transaction.NewTransaction()
-
-	// The claim tx spends the HTLC output (output 0 of the payment tx).
-	htlcTxIDHash := htlcTx.TxID()
-	claimTx.AddInput(&transaction.TransactionInput{
-		SourceTXID:       htlcTxIDHash,
-		SourceTxOutIndex: 0,
-		SequenceNumber:   0xffffffff,
+	claimTx, err := x402.BuildSellerClaimTx(&x402.SellerClaimParams{
+		FundingTxID:   fundingResult.TxID,
+		FundingVout:   fundingResult.HTLCVout,
+		FundingAmount: fundingResult.HTLCAmount,
+		HTLCScript:    fundingResult.HTLCScript,
+		Capsule:       capsule,
+		SellerPrivKey: sellerFeeKey.PrivateKey,
+		OutputAddr:    sellerPKH,
+		FeeRate:       1,
 	})
+	require.NoError(t, err, "build seller claim tx")
 
-	// Output: send to seller's address.
-	sellerOutput, err := tx.BuildP2PKHOutput(sellerPKH, htlcAmount-200)
-	require.NoError(t, err, "build seller claim output")
-	claimTx.AddOutput(sellerOutput)
-
-	// Build the unlocking script: <sig> <seller_pubkey> <capsule> OP_TRUE
-	// For extraction testing, we need a structurally valid unlocking script.
-	// We use a dummy signature since we can't actually spend the HTLC
-	// (would need proper sighash computation against the HTLC script).
-	dummySig := bytes.Repeat([]byte{0x30}, 72) // placeholder DER signature
-	sellerPubKeyBytes := sellerFeeKey.PublicKey.Compressed()
-
-	unlockScript := &script.Script{}
-	err = unlockScript.AppendPushData(dummySig)
-	require.NoError(t, err, "push dummy sig")
-	err = unlockScript.AppendPushData(sellerPubKeyBytes)
-	require.NoError(t, err, "push seller pubkey")
-	err = unlockScript.AppendPushData(capsule)
-	require.NoError(t, err, "push capsule preimage")
-	err = unlockScript.AppendOpcodes(script.OpTRUE)
-	require.NoError(t, err, "push OP_TRUE")
-
-	claimTx.Inputs[0].UnlockingScript = unlockScript
+	claimTxHex := hex.EncodeToString(claimTx.Bytes())
+	claimTxID, err := node.SendRawTransaction(ctx, claimTxHex)
+	require.NoError(t, err, "broadcast seller claim tx")
+	t.Logf("seller claim txid: %s", claimTxID)
+	mineOneBlock(t)
 
 	// ==================================================================
 	// Step 10: Buyer extracts capsule from seller's claim tx.
@@ -550,6 +500,7 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	t.Logf("Seller root txid:    %s", rootTxIDStr)
 	t.Logf("Seller file txid:    %s", fileTxIDStr)
 	t.Logf("HTLC payment txid:   %s", htlcPaymentTxID)
+	t.Logf("Seller claim txid:   %s", claimTxID)
 	t.Logf("Invoice:             %s (price=%d sat)", invoice.ID, invoice.Price)
 	t.Logf("Capsule:             %x...", capsule[:16])
 	t.Logf("CapsuleHash:         %x...", capsuleHash[:16])
@@ -558,7 +509,7 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	t.Logf("Capsule decrypt:     OK (%d bytes)", len(capsuleDecResult.Plaintext))
 	t.Logf("Buyer ECDH decrypt:  OK (%d bytes)", len(buyerDecResult.Plaintext))
 	t.Logf("ParseHTLCPreimage:   OK (extracted %d byte capsule)", len(extractedCapsule))
-	t.Logf("HTLC on-chain:       confirmed")
+	t.Logf("HTLC on-chain:       confirmed (funding + claim)")
 }
 
 // TestPaidPurchase_CryptoFlowUnit is a focused unit-level test verifying the
