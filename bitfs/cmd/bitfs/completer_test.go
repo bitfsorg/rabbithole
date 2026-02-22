@@ -215,3 +215,54 @@ func TestShellCompleterDo_PutSecondArg_Remote(t *testing.T) {
 	require.Len(t, newLine, 1)
 	assert.Equal(t, "ploads/", string(newLine[0]))
 }
+
+func TestParseLineForCompletion_Empty(t *testing.T) {
+	tokens, current := parseLineForCompletion("")
+	assert.Nil(t, tokens)
+	assert.Equal(t, "", current)
+}
+
+func TestParseLineForCompletion_SinglePartialToken(t *testing.T) {
+	tokens, current := parseLineForCompletion("ls")
+	assert.Empty(t, tokens)
+	assert.Equal(t, "ls", current)
+}
+
+func TestParseLineForCompletion_CommandAndPartialArg(t *testing.T) {
+	tokens, current := parseLineForCompletion("cd do")
+	assert.Equal(t, []string{"cd"}, tokens)
+	assert.Equal(t, "do", current)
+}
+
+func TestParseLineForCompletion_CommandAndTrailingSpace(t *testing.T) {
+	tokens, current := parseLineForCompletion("cd ")
+	assert.Equal(t, []string{"cd"}, tokens)
+	assert.Equal(t, "", current)
+}
+
+func TestParseLineForCompletion_TwoArgsAndPartial(t *testing.T) {
+	tokens, current := parseLineForCompletion("put file.txt /docs/r")
+	assert.Equal(t, []string{"put", "file.txt"}, tokens)
+	assert.Equal(t, "/docs/r", current)
+}
+
+func TestFormatCandidates_Empty(t *testing.T) {
+	result, length := formatCandidates(nil, "x")
+	assert.Nil(t, result)
+	assert.Equal(t, 0, length)
+}
+
+func TestFormatCandidates_DirSuffix(t *testing.T) {
+	result, length := formatCandidates([]string{"docs/"}, "d")
+	require.Len(t, result, 1)
+	assert.Equal(t, "ocs/", string(result[0]))
+	assert.Equal(t, 1, length)
+}
+
+func TestFormatCandidates_FileSuffix(t *testing.T) {
+	result, length := formatCandidates([]string{"readme.md"}, "r")
+	require.Len(t, result, 1)
+	// File completions get a trailing space.
+	assert.Equal(t, "eadme.md ", string(result[0]))
+	assert.Equal(t, 1, length)
+}
