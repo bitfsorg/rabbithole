@@ -59,6 +59,10 @@ RabbitHole/
 - Method 42: `aes_key = HKDF-SHA256(ECDH(D_node, P_node).x, key_hash)`
 - 设计文档中文，代码和 spec 英文
 
+## 工作流规则
+
+- **实施计划前清空上下文**：完成设计/计划阶段后，在开始执行实施计划之前，必须先使用 `/clear` 清空对话上下文，然后在新的上下文中加载计划文件并逐任务执行。避免在一个超长对话中同时完成设计和全部实施。
+
 ## 许可证
 
 - 源代码: OpenBSV License
