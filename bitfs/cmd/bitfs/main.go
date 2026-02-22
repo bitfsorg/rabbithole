@@ -93,8 +93,9 @@ Usage:
   bitfs <command> [options]
 
 Wallet Commands:
-  wallet init    Initialize HD wallet
-  wallet show    Show wallet information
+  wallet init      Initialize HD wallet
+  wallet show      Show wallet information
+  wallet balance   Show UTXO balance
 
 Vault Commands:
   vault create   Create a new vault
