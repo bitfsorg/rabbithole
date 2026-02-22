@@ -52,6 +52,10 @@ func runDaemonStart(args []string) int {
 	listen := fs.String("listen", ":8080", "listen address")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing)")
+	rpcURL := fs.String("rpc-url", "", "BSV node JSON-RPC URL")
+	rpcUser := fs.String("rpc-user", "", "RPC username")
+	rpcPass := fs.String("rpc-pass", "", "RPC password")
+	netName := fs.String("network", "regtest", "network name (regtest, testnet, mainnet)")
 
 	if err := fs.Parse(args); err != nil {
 		return exitUsageError
@@ -63,6 +67,9 @@ func runDaemonStart(args []string) int {
 		return exitWalletError
 	}
 	defer eng.Close()
+
+	// Wire up blockchain service if RPC is configured.
+	configureChain(eng, *rpcURL, *rpcUser, *rpcPass, *netName)
 
 	// Create daemon with adapter types.
 	cfg := daemon.DefaultConfig()
@@ -92,6 +99,11 @@ func runDaemonStart(args []string) int {
 	fmt.Printf("BitFS daemon started on %s\n", *listen)
 	fmt.Printf("  Data directory: %s\n", *dataDir)
 	fmt.Printf("  PID: %d\n", os.Getpid())
+	if eng.IsOnline() {
+		fmt.Printf("  Network: online (RPC)\n")
+	} else {
+		fmt.Printf("  Network: offline\n")
+	}
 
 	// Wait for interrupt signal.
 	sigCh := make(chan os.Signal, 1)
