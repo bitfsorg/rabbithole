@@ -35,6 +35,6 @@ func main() {
 
 	srv := NewServer(explorer, templates)
 
-	fmt.Printf("Den starting on %s (network=%s, rpc=%s)\n", *addr, *net, cfg.URL)
+	fmt.Printf("Den v0.1.0 — BitFS Blockchain Explorer\nNetwork:  %s\nRPC:      %s\nListen:   http://localhost%s\n", *net, cfg.URL, *addr)
 	log.Fatal(http.ListenAndServe(*addr, srv.Routes()))
 }
