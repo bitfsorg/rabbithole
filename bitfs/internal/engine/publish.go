@@ -70,12 +70,13 @@ func (e *Engine) publishDomain(opts *PublishOpts) (*Result, error) {
 	verified := false
 	resolver := e.dnsResolver()
 	dnsPubHex, err := lookupBitfsPubkey(resolver, opts.Domain)
-	if err != nil {
+	switch {
+	case err != nil:
 		fmt.Fprintf(&msg, "\nDNS verification: not yet configured (%v)", err)
-	} else if dnsPubHex == rootPubHex {
+	case dnsPubHex == rootPubHex:
 		verified = true
 		fmt.Fprintf(&msg, "\nDNS verification: VERIFIED (bidirectional match)")
-	} else {
+	default:
 		fmt.Fprintf(&msg, "\nDNS verification: MISMATCH (DNS pubkey %s != vault pubkey %s)", dnsPubHex, rootPubHex)
 	}
 

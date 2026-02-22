@@ -15,10 +15,10 @@ import (
 // LocalState tracks Metanet nodes and UTXOs created locally.
 // Persisted as JSON at {dataDir}/nodes.json.
 type LocalState struct {
-	Nodes           map[string]*NodeState `json:"nodes"`             // key: pubkey hex (compressed)
-	UTXOs           []*UTXOState          `json:"utxos"`             // tracked unspent outputs
-	RootTxID        map[uint32]string     `json:"root_txid"`         // vault index → root TxID hex
-	PublishBindings []*PublishBinding      `json:"publish_bindings"`  // domain → vault bindings
+	Nodes           map[string]*NodeState `json:"nodes"`            // key: pubkey hex (compressed)
+	UTXOs           []*UTXOState          `json:"utxos"`            // tracked unspent outputs
+	RootTxID        map[uint32]string     `json:"root_txid"`        // vault index → root TxID hex
+	PublishBindings []*PublishBinding     `json:"publish_bindings"` // domain → vault bindings
 
 	mu   sync.Mutex `json:"-"`
 	path string     `json:"-"` // file path for persistence
@@ -55,7 +55,7 @@ type ChildState struct {
 
 // UTXOState tracks an unspent output.
 type UTXOState struct {
-	TxID         string `json:"txid"`          // hex
+	TxID         string `json:"txid"` // hex
 	Vout         uint32 `json:"vout"`
 	Amount       uint64 `json:"amount"`        // satoshis
 	ScriptPubKey string `json:"script_pubkey"` // hex

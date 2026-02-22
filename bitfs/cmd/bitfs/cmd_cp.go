@@ -37,7 +37,7 @@ func runCp(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	vaultIdx, err := eng.ResolveVaultIndex(*vault)
 	if err != nil {

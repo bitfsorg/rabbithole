@@ -510,4 +510,3 @@ func TestVaultUnknownSubcommand(t *testing.T) {
 		t.Errorf("runVault unknown returned %d, want %d", code, exitUsageError)
 	}
 }
-

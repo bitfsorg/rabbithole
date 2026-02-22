@@ -377,11 +377,11 @@ func TestSingleFile_NotDirectory(t *testing.T) {
 func TestSingleFile_JSONOutput(t *testing.T) {
 	responses := map[string]client.MetaResponse{
 		"/data.bin": {
-			PNode:    testPubKey,
-			Type:     "file",
-			Path:     "/data.bin",
-			FileSize: 2048,
-			Access:   "paid",
+			PNode:      testPubKey,
+			Type:       "file",
+			Path:       "/data.bin",
+			FileSize:   2048,
+			Access:     "paid",
 			PricePerKB: 100,
 		},
 	}

@@ -31,7 +31,7 @@ func runPublish(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	// No domain argument: list all bindings.
 	if fs.NArg() < 1 {

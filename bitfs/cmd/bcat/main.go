@@ -133,7 +133,7 @@ func outputContent(c *client.Client, meta *client.MetaResponse, stdout, stderr i
 	if err != nil {
 		return handleError(err, stderr)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	if _, err := io.Copy(stdout, reader); err != nil {
 		fmt.Fprintf(stderr, "bcat: write error: %v\n", err)
@@ -245,7 +245,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 	if err != nil {
 		return handleError(err, stderr)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	ciphertext, err := io.ReadAll(reader)
 	if err != nil {

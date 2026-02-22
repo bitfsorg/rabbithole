@@ -107,7 +107,7 @@ func outputDefault(meta *client.MetaResponse, w io.Writer) int {
 		if name == "" {
 			name = meta.PNode
 		}
-		fmt.Fprintln(w, name)
+		_, _ = fmt.Fprintln(w, name)
 		return 0
 	}
 
@@ -116,7 +116,7 @@ func outputDefault(meta *client.MetaResponse, w io.Writer) int {
 		if child.Type == "dir" {
 			name += "/"
 		}
-		fmt.Fprintln(w, name)
+		_, _ = fmt.Fprintln(w, name)
 	}
 	return 0
 }
@@ -148,7 +148,7 @@ func outputJSON(meta *client.MetaResponse, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "bls: json marshal: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, string(data))
+	_, _ = fmt.Fprintln(stdout, string(data))
 	return 0
 }
 

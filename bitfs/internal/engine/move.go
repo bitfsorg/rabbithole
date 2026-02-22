@@ -56,7 +56,7 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 	}
 
 	// Build and sign SelfUpdate tx for parent to commit the rename.
-	txHex, txIDHex, _, err := e.buildParentSelfUpdate(parent)
+	txHex, txIDHex, err := e.buildParentSelfUpdate(parent)
 	if err != nil {
 		return nil, fmt.Errorf("engine: update parent: %w", err)
 	}
@@ -119,7 +119,7 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Resu
 	}
 
 	// 5. Build SelfUpdate tx for source parent (child removed).
-	srcTxHex, srcTxID, _, err := e.buildParentSelfUpdate(srcParent)
+	srcTxHex, srcTxID, err := e.buildParentSelfUpdate(srcParent)
 	if err != nil {
 		return nil, fmt.Errorf("engine: update source parent: %w", err)
 	}
@@ -135,7 +135,7 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Resu
 	})
 
 	// 7. Build SelfUpdate tx for destination parent (child added).
-	dstTxHex, dstTxID, _, err := e.buildParentSelfUpdate(dstParent)
+	dstTxHex, dstTxID, err := e.buildParentSelfUpdate(dstParent)
 	if err != nil {
 		return nil, fmt.Errorf("engine: update destination parent: %w", err)
 	}
@@ -179,12 +179,12 @@ func (e *Engine) resolveParentDir(dirPath string, vaultIdx uint32) (*NodeState, 
 // buildParentSelfUpdate builds and signs a SelfUpdate transaction for a parent
 // directory node, reflecting its current children list. It allocates a fee UTXO,
 // derives a change address, and tracks the resulting UTXOs.
-// Returns the signed tx hex, tx ID hex, and change pubkey hex.
-func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex string, changePubHex string, err error) {
+// Returns the signed tx hex and tx ID hex.
+func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex string, err error) {
 	// Derive parent key.
 	parentKP, err := e.Wallet.DeriveNodeKey(parent.VaultIndex, parent.ChildIndices, nil)
 	if err != nil {
-		return "", "", "", fmt.Errorf("derive parent key: %w", err)
+		return "", "", fmt.Errorf("derive parent key: %w", err)
 	}
 
 	// Build children list for payload.
@@ -211,41 +211,41 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 
 	payload, err := metanet.SerializePayload(parentNode)
 	if err != nil {
-		return "", "", "", fmt.Errorf("serialize payload: %w", err)
+		return "", "", fmt.Errorf("serialize payload: %w", err)
 	}
 
 	var parentTxIDBytes []byte
 	if parent.ParentTxID != "" {
 		parentTxIDBytes, err = TxIDBytes(parent.ParentTxID)
 		if err != nil {
-			return "", "", "", err
+			return "", "", err
 		}
 	}
 
 	parentUTXO, err := e.getNodeUTXO(parent.PubKeyHex)
 	if err != nil {
-		return "", "", "", fmt.Errorf("parent UTXO: %w", err)
+		return "", "", fmt.Errorf("parent UTXO: %w", err)
 	}
 
 	changeAddr, changePriv, err := e.DeriveChangeAddr()
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
-	changePubHex = hex.EncodeToString(changePriv.PubKey().Compressed())
+	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
 
 	feeUTXO, err := e.AllocateFeeUTXO(2000)
 	if err != nil {
-		return "", "", "", err
+		return "", "", err
 	}
 
 	mtx, err := buildUnsignedSelfUpdateTx(parentKP, parentTxIDBytes, payload, parentUTXO, feeUTXO, changeAddr)
 	if err != nil {
-		return "", "", "", fmt.Errorf("build self-update tx: %w", err)
+		return "", "", fmt.Errorf("build self-update tx: %w", err)
 	}
 
 	signedHex, err := signSelfUpdateTx(mtx, parentUTXO, feeUTXO)
 	if err != nil {
-		return "", "", "", fmt.Errorf("sign self-update tx: %w", err)
+		return "", "", fmt.Errorf("sign self-update tx: %w", err)
 	}
 
 	txIDHex = hex.EncodeToString(mtx.TxID)
@@ -253,5 +253,5 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 	// Track new UTXOs from this transaction.
 	e.TrackNewUTXOs(mtx, parent.PubKeyHex, changePubHex)
 
-	return signedHex, txIDHex, changePubHex, nil
+	return signedHex, txIDHex, nil
 }

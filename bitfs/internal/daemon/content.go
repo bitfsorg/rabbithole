@@ -130,7 +130,7 @@ func (d *Daemon) handleMeta(w http.ResponseWriter, r *http.Request) {
 	if node.Type == "dir" && len(node.Children) > 0 {
 		resp.Children = make([]metaChildResponse, len(node.Children))
 		for i, c := range node.Children {
-			resp.Children[i] = metaChildResponse{Name: c.Name, Type: c.Type}
+			resp.Children[i] = metaChildResponse(c)
 		}
 	}
 

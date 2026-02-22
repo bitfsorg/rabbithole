@@ -47,7 +47,7 @@ func runFund(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	// Derive the fee receive key to get the expected pubkey and script.
 	feeIdx := eng.WState.NextReceiveIndex

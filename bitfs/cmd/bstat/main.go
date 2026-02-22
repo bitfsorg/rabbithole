@@ -139,7 +139,7 @@ func outputJSON(meta *client.MetaResponse, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "bstat: json marshal: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, string(data))
+	_, _ = fmt.Fprintln(stdout, string(data))
 	return 0
 }
 

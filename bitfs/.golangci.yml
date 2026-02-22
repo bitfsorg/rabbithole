@@ -46,6 +46,14 @@ linters:
         - name: unreachable-code
     misspell:
       locale: US
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        - fmt.Printf
+        - fmt.Println
+        - fmt.Print
     unparam:
       check-exported: false
   exclusions:

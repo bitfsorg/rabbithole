@@ -24,17 +24,17 @@ type Engine struct {
 	State    *LocalState
 	DataDir  string
 	DNS      DNSResolver               // injectable for testing; nil uses default net.LookupTXT
-	Chain    network.BlockchainService  // optional; nil = offline mode
-	SPV      *network.SPVClient         // nil until InitSPV; requires Chain != nil
-	SPVStore *spv.BoltStore             // nil until InitSPV; closed by Close()
+	Chain    network.BlockchainService // optional; nil = offline mode
+	SPV      *network.SPVClient        // nil until InitSPV; requires Chain != nil
+	SPVStore *spv.BoltStore            // nil until InitSPV; closed by Close()
 }
 
 // Result holds the output of an engine operation.
 type Result struct {
-	TxHex    string // signed transaction hex (empty if build-only)
-	TxID     string // transaction ID hex
-	Message  string // human-readable summary
-	NodePub  string // created/updated node pubkey hex
+	TxHex   string // signed transaction hex (empty if build-only)
+	TxID    string // transaction ID hex
+	Message string // human-readable summary
+	NodePub string // created/updated node pubkey hex
 }
 
 // New creates a new Engine from a data directory.
@@ -92,7 +92,7 @@ func New(dataDir, password string) (*Engine, error) {
 // Close persists state and releases resources. Should be called when done.
 func (e *Engine) Close() error {
 	if e.SPVStore != nil {
-		e.SPVStore.Close()
+		_ = e.SPVStore.Close()
 	}
 	return e.State.Save()
 }
@@ -301,10 +301,7 @@ func (e *Engine) TrackNewUTXOs(mtx *tx.MetanetTx, nodePubHex, changePubHex strin
 		})
 	}
 
-	if mtx.ParentUTXO != nil {
-		// Parent refresh — we need the parent's pubkey from the params.
-		// This is handled by the caller.
-	}
+	// Parent refresh UTXO is tracked by the caller via TrackParentRefreshUTXO.
 
 	if mtx.ChangeUTXO != nil && changePubHex != "" {
 		scriptPK, _ := tx.BuildP2PKHScript(mustDecompressPubKey(changePubHex))

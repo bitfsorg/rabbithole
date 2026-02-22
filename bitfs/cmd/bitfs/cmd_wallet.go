@@ -278,7 +278,7 @@ func runWalletBalance(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	if *refresh {
 		// Read network from config file.

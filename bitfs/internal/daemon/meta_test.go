@@ -78,8 +78,8 @@ func TestHandleMeta_FileNode(t *testing.T) {
 	assert.Equal(t, "text/plain", resp.MimeType)
 	assert.Equal(t, uint64(100), resp.FileSize)
 	assert.Equal(t, hex.EncodeToString(keyHash), resp.KeyHash)
-	assert.Equal(t, uint64(0), resp.PricePerKB)  // omitted when 0
-	assert.Nil(t, resp.Children)                  // no children for file
+	assert.Equal(t, uint64(0), resp.PricePerKB) // omitted when 0
+	assert.Nil(t, resp.Children)                // no children for file
 }
 
 // TestHandleMeta_DirectoryNode verifies that handleMeta returns children for a directory.

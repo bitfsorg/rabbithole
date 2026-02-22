@@ -26,7 +26,7 @@ func (e *Engine) Mkdir(opts *MkdirOpts) (*Result, error) {
 	// If creating root ("/"), return the root creation result.
 	if opts.Path == "/" {
 		if rootResult != nil {
-			rootResult.Message = fmt.Sprintf("Created root directory /")
+			rootResult.Message = "Created root directory /"
 			return rootResult, nil
 		}
 		return &Result{

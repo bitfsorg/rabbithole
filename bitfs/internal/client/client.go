@@ -38,12 +38,12 @@ var (
 // MetaResponse holds node metadata returned by the daemon.
 type MetaResponse struct {
 	PNode      string       `json:"pnode"`
-	Type       string       `json:"type"`                  // "file", "dir", "link"
+	Type       string       `json:"type"` // "file", "dir", "link"
 	Path       string       `json:"path"`
 	MimeType   string       `json:"mime_type,omitempty"`
 	FileSize   uint64       `json:"file_size,omitempty"`
 	KeyHash    string       `json:"key_hash,omitempty"`
-	Access     string       `json:"access"`                // "free", "paid", "private"
+	Access     string       `json:"access"` // "free", "paid", "private"
 	PricePerKB uint64       `json:"price_per_kb,omitempty"`
 	TxID       string       `json:"txid,omitempty"`
 	Children   []ChildEntry `json:"children,omitempty"`
@@ -116,7 +116,7 @@ func (c *Client) GetMeta(pnode, path string) (*MetaResponse, error) {
 	if err != nil {
 		return nil, wrapNetworkError(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkStatus(resp); err != nil {
 		return nil, err
@@ -146,7 +146,7 @@ func (c *Client) GetData(hash string) (io.ReadCloser, error) {
 	}
 
 	if err := checkStatus(resp); err != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, err
 	}
 
@@ -162,7 +162,7 @@ func (c *Client) GetBuyInfo(txid string) (*BuyInfo, error) {
 	if err != nil {
 		return nil, wrapNetworkError(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkStatus(resp); err != nil {
 		return nil, err
@@ -191,7 +191,7 @@ func (c *Client) SubmitHTLC(txid string, htlcRawTx []byte) (*CapsuleResponse, er
 	if err != nil {
 		return nil, wrapNetworkError(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkStatus(resp); err != nil {
 		return nil, err
@@ -221,7 +221,7 @@ func (c *Client) VerifySPV(txid string) (*SPVProofResponse, error) {
 	if err != nil {
 		return nil, wrapNetworkError(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if err := checkStatus(resp); err != nil {
 		return nil, err
@@ -264,7 +264,7 @@ func checkStatus(resp *http.Response) error {
 
 // wrapNetworkError wraps a network-level error with ErrNetwork.
 func wrapNetworkError(err error) error {
-	return fmt.Errorf("%w: %v", ErrNetwork, err)
+	return fmt.Errorf("%w: %w", ErrNetwork, err)
 }
 
 // validateHex validates that s is a valid hex string decoding to exactly expectedBytes bytes.

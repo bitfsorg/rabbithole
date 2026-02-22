@@ -66,7 +66,7 @@ func runDaemonStart(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	// Wire up blockchain service if RPC is configured.
 	configureChain(eng, *rpcURL, *rpcUser, *rpcPass, *netName)

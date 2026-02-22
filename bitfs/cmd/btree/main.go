@@ -118,7 +118,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Print tree-style output.
-	fmt.Fprintln(stdout, root.Name)
+	_, _ = fmt.Fprintln(stdout, root.Name)
 	printTree(stdout, root.Children, "")
 	dirWord := "directories"
 	if dirs == 1 {
@@ -250,7 +250,7 @@ func outputJSON(node treeNode, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "btree: json marshal: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(stdout, string(data))
+	_, _ = fmt.Fprintln(stdout, string(data))
 	return 0
 }
 

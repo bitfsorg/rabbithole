@@ -44,7 +44,7 @@ func runVerify(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer eng.Close()
+	defer func() { _ = eng.Close() }()
 
 	configureChain(eng, *rpcURL, *rpcUser, *rpcPass, *netName)
 	if err := eng.InitSPV(); err != nil {

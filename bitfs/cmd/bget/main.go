@@ -151,7 +151,7 @@ func downloadContent(c *client.Client, meta *client.MetaResponse, outputName str
 	if err != nil {
 		return handleError(err, stderr)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	file, err := os.Create(filename)
 	if err != nil {
@@ -161,14 +161,14 @@ func downloadContent(c *client.Client, meta *client.MetaResponse, outputName str
 
 	n, err := io.Copy(file, reader)
 	if err != nil {
-		file.Close()
-		os.Remove(filename)
+		_ = file.Close()
+		_ = os.Remove(filename)
 		fmt.Fprintf(stderr, "bget: write error: %v\n", err)
 		return 1
 	}
 
 	if err := file.Close(); err != nil {
-		os.Remove(filename)
+		_ = os.Remove(filename)
 		fmt.Fprintf(stderr, "bget: close error: %v\n", err)
 		return 1
 	}
@@ -310,7 +310,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 	if err != nil {
 		return handleError(err, stderr)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	ciphertext, err := io.ReadAll(reader)
 	if err != nil {
@@ -346,14 +346,14 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 
 	n, err := file.Write(result.Plaintext)
 	if err != nil {
-		file.Close()
-		os.Remove(filename)
+		_ = file.Close()
+		_ = os.Remove(filename)
 		fmt.Fprintf(stderr, "bget: write error: %v\n", err)
 		return 1
 	}
 
 	if err := file.Close(); err != nil {
-		os.Remove(filename)
+		_ = os.Remove(filename)
 		fmt.Fprintf(stderr, "bget: close error: %v\n", err)
 		return 1
 	}

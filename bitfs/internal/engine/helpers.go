@@ -117,14 +117,14 @@ func (e *Engine) createRootNode(vaultIdx uint32, rootPubHex string) (*NodeState,
 	}
 
 	node := &metanet.Node{
-		Version: 1,
-		Type:    metanet.NodeTypeDir,
-		Op:      metanet.OpCreate,
-		Access:  metanet.AccessFree,
+		Version:   1,
+		Type:      metanet.NodeTypeDir,
+		Op:        metanet.OpCreate,
+		Access:    metanet.AccessFree,
 		Timestamp: uint64(time.Now().Unix()),
 	}
 
-	result, err := e.buildAndSignRootTx(kp, node, vaultIdx, rootPubHex)
+	result, err := e.buildAndSignRootTx(kp, node, rootPubHex)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -149,7 +149,7 @@ func (e *Engine) createRootNode(vaultIdx uint32, rootPubHex string) (*NodeState,
 }
 
 // buildAndSignRootTx builds and signs a CreateRoot transaction.
-func (e *Engine) buildAndSignRootTx(kp *wallet.KeyPair, node *metanet.Node, vaultIdx uint32, nodePubHex string) (*Result, error) {
+func (e *Engine) buildAndSignRootTx(kp *wallet.KeyPair, node *metanet.Node, nodePubHex string) (*Result, error) {
 	payload, err := metanet.SerializePayload(node)
 	if err != nil {
 		return nil, fmt.Errorf("engine: serialize payload: %w", err)

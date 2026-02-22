@@ -391,4 +391,3 @@ func TestMove_CrossDirectory_FromRoot(t *testing.T) {
 		t.Error("'moved_file.txt' should be in /subdir children")
 	}
 }
-
