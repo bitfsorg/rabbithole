@@ -153,11 +153,12 @@ func (sc *shellCompleter) completeLocalPath(partial string) []string {
 
 	// Resolve the directory to list.
 	var lookupDir string
-	if filepath.IsAbs(dir) {
+	switch {
+	case filepath.IsAbs(dir):
 		lookupDir = filepath.Clean(dir)
-	} else if dir == "" {
+	case dir == "":
 		lookupDir = sc.localCwd
-	} else {
+	default:
 		lookupDir = filepath.Clean(filepath.Join(sc.localCwd, dir))
 	}
 

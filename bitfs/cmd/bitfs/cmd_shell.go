@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -73,17 +74,17 @@ func runShell(args []string) int {
 		fmt.Fprintf(os.Stderr, "Error initializing shell: %v\n", err)
 		return exitError
 	}
-	defer rl.Close()
+	defer func() { _ = rl.Close() }()
 
-	fmt.Fprintf(rl.Stdout(), "BitFS Shell (vault %d). Type 'help' for commands, 'quit' to exit.\n", vaultIdx)
+	_, _ = fmt.Fprintf(rl.Stdout(), "BitFS Shell (vault %d). Type 'help' for commands, 'quit' to exit.\n", vaultIdx)
 
 	for {
 		line, err := rl.ReadLine()
-		if err == readline.ErrInterrupt {
+		if errors.Is(err, readline.ErrInterrupt) {
 			continue // Ctrl-C: cancel current line.
 		}
-		if err == io.EOF {
-			fmt.Fprintln(rl.Stdout(), "Bye.")
+		if errors.Is(err, io.EOF) {
+			_, _ = fmt.Fprintln(rl.Stdout(), "Bye.")
 			return exitSuccess
 		}
 		if err != nil {
