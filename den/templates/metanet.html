@@ -1,0 +1,91 @@
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Home</a> / <a href="/tx/{{.TxID}}">Tx</a> / Metanet</div>
+
+<div class="card">
+  <h2>Metanet Node
+    {{if .Metanet.IsRoot}}<span class="tag tag-root">ROOT</span>{{end}}
+    {{if .Metanet.Node}}
+      {{if .Metanet.Node.IsDir}}<span class="tag tag-dir">DIR</span>{{end}}
+      {{if .Metanet.Node.IsFile}}<span class="tag tag-file">FILE</span>{{end}}
+      {{if .Metanet.Node.IsLink}}<span class="tag tag-link">LINK</span>{{end}}
+    {{end}}
+  </h2>
+  <div class="field-row"><span class="label">TxID</span><span class="value mono">{{.TxID}}</span></div>
+  <div class="field-row"><span class="label">P_node</span><span class="value mono">{{.Metanet.PNode}}</span></div>
+  {{if not .Metanet.IsRoot}}
+  <div class="field-row"><span class="label">Parent TxID</span><span class="value mono"><a href="/metanet/{{.Metanet.ParentTxID}}">{{.Metanet.ParentTxID}}</a></span></div>
+  {{end}}
+  {{if .Metanet.Error}}
+  <div class="field-row"><span class="label">Parse Error</span><span class="value error">{{.Metanet.Error}}</span></div>
+  {{end}}
+</div>
+
+{{if .Metanet.Node}}
+<div class="card">
+  <h2>Node Properties</h2>
+  {{with .Metanet.Node}}
+  <div class="field-row"><span class="label">Version</span><span class="value">{{.Version}}</span></div>
+  <div class="field-row"><span class="label">Type</span><span class="value">{{.Type}}</span></div>
+  <div class="field-row"><span class="label">Operation</span><span class="value">{{.Op}}</span></div>
+  <div class="field-row"><span class="label">Access</span><span class="value">
+    {{if eq (accessName .Access) "PRIVATE"}}<span class="tag tag-private">PRIVATE</span>
+    {{else if eq (accessName .Access) "FREE"}}<span class="tag tag-free">FREE</span>
+    {{else}}<span class="tag tag-paid">PAID</span>{{end}}
+  </span></div>
+  {{if .MimeType}}<div class="field-row"><span class="label">MIME Type</span><span class="value">{{.MimeType}}</span></div>{{end}}
+  {{if .FileSize}}<div class="field-row"><span class="label">File Size</span><span class="value">{{.FileSize}} bytes</span></div>{{end}}
+  {{if .PricePerKB}}<div class="field-row"><span class="label">Price/KB</span><span class="value">{{.PricePerKB}} sat</span></div>{{end}}
+  {{if .Domain}}<div class="field-row"><span class="label">Domain</span><span class="value">{{.Domain}}</span></div>{{end}}
+  {{if .Encrypted}}<div class="field-row"><span class="label">Encrypted</span><span class="value">Yes</span></div>{{end}}
+  {{end}}
+</div>
+
+{{if .Metanet.Node.Children}}
+<div class="card">
+  <h2>Children ({{len .Metanet.Node.Children}})</h2>
+  <table>
+    <tr><th>Index</th><th>Name</th><th>Type</th><th>P_node (pubkey)</th><th>Hardened</th></tr>
+    {{range .Metanet.Node.Children}}
+    <tr>
+      <td>{{.Index}}</td>
+      <td>{{.Name}}</td>
+      <td>
+        {{if eq (.Type.String) "DIR"}}<span class="tag tag-dir">DIR</span>
+        {{else if eq (.Type.String) "FILE"}}<span class="tag tag-file">FILE</span>
+        {{else}}<span class="tag tag-link">LINK</span>{{end}}
+      </td>
+      <td class="mono" style="font-size:11px">{{printf "%x" .PubKey}}</td>
+      <td>{{if .Hardened}}Yes{{else}}No{{end}}</td>
+    </tr>
+    {{end}}
+  </table>
+</div>
+{{end}}
+{{end}}
+
+{{if .TLVFields}}
+<div class="card">
+  <h2>TLV Payload Fields</h2>
+  <table>
+    <tr><th>Tag</th><th>Name</th><th>Length</th><th>Value (hex)</th><th>Decoded</th></tr>
+    {{range .TLVFields}}
+    <tr>
+      <td class="mono">0x{{printf "%02X" .Tag}}</td>
+      <td>{{.TagName}}</td>
+      <td>{{.Length}}</td>
+      <td class="mono" style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{.ValueHex}}</td>
+      <td>{{.ValueStr}}</td>
+    </tr>
+    {{end}}
+  </table>
+</div>
+{{end}}
+
+{{if .Metanet.Node}}
+<div class="card" style="margin-top:8px">
+  <a href="/method42/{{.TxID}}">View Method 42 Encryption Analysis</a> |
+  <a href="/spv/{{.TxID}}">View SPV Proof</a> |
+  <a href="/tx/{{.TxID}}">View Raw Transaction</a>
+</div>
+{{end}}
+{{end}}

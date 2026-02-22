@@ -1,0 +1,45 @@
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Home</a> / <a href="/tx/{{.TxID}}">Tx</a> / <a href="/metanet/{{.TxID}}">Metanet</a> / Method 42</div>
+
+<div class="card">
+  <h2>Method 42 Encryption Analysis</h2>
+  <div class="field-row"><span class="label">TxID</span><span class="value mono">{{.Analysis.TxID}}</span></div>
+  <div class="field-row"><span class="label">P_node</span><span class="value mono">{{.Analysis.PNode}}</span></div>
+  <div class="field-row"><span class="label">Encrypted</span><span class="value">{{if .Analysis.Encrypted}}Yes{{else}}No{{end}}</span></div>
+  <div class="field-row"><span class="label">Access Level</span><span class="value">
+    {{if eq .Analysis.Access "PRIVATE"}}<span class="tag tag-private">PRIVATE</span>
+    {{else if eq .Analysis.Access "FREE"}}<span class="tag tag-free">FREE</span>
+    {{else if eq .Analysis.Access "PAID"}}<span class="tag tag-paid">PAID</span>
+    {{else}}{{.Analysis.Access}}{{end}}
+  </span></div>
+</div>
+
+<div class="card">
+  <h2>ECDH Key Derivation</h2>
+  <div class="field-row"><span class="label">Mode</span><span class="value" style="font-size:12px">{{.Analysis.AccessMode}}</span></div>
+  <div class="field-row"><span class="label">Decryption</span><span class="value" style="font-size:12px">{{.Analysis.CanDecrypt}}</span></div>
+  {{if .Analysis.KeyHash}}
+  <div class="field-row"><span class="label">KeyHash</span><span class="value mono" style="font-size:11px">{{.Analysis.KeyHash}}</span></div>
+  <div class="field-row"><span class="label">KeyHash Length</span><span class="value">{{.Analysis.KeyHashLen}} bytes</span></div>
+  <div class="field-row"><span class="label">Formula</span><span class="value" style="font-size:12px">KeyHash = SHA256(SHA256(plaintext))</span></div>
+  {{else}}
+  <div class="field-row"><span class="label">KeyHash</span><span class="value" style="color:#999">Not present (content may not be encrypted)</span></div>
+  {{end}}
+</div>
+
+<div class="card">
+  <h2>Key Derivation Chain</h2>
+  <pre style="color:#a5d6a7;font-size:12px;line-height:1.8;padding:8px 0">
+1. P_node        = {{.Analysis.PNode}}
+{{if eq .Analysis.Access "FREE"}}2. D_node        = 1 (trivial private key — public knowledge)
+3. shared_secret = ECDH(1, P_node).x
+{{else if eq .Analysis.Access "PRIVATE"}}2. D_node        = ??? (owner's private key — secret)
+3. shared_secret = ECDH(D_node, P_node).x
+{{else}}2. capsule       = ECDH(D_node, P_buyer) — revealed via HTLC
+3. shared_secret = capsule
+{{end}}4. key_hash      = {{if .Analysis.KeyHash}}{{.Analysis.KeyHash}}{{else}}(not available){{end}}
+5. aes_key       = HKDF-SHA256(shared_secret, key_hash, "bitfs-file-encryption")
+6. plaintext     = AES-256-GCM-Decrypt(ciphertext, aes_key)
+  </pre>
+</div>
+{{end}}

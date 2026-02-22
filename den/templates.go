@@ -6,6 +6,8 @@ import (
 	"html/template"
 	"io"
 	"time"
+
+	"github.com/tongxiaofeng/libbitfs/metanet"
 )
 
 //go:embed templates
@@ -28,6 +30,18 @@ var tmplFuncs = template.FuncMap{
 		}
 		return h
 	},
+	"accessName": func(a metanet.AccessLevel) string {
+		switch a {
+		case metanet.AccessPrivate:
+			return "PRIVATE"
+		case metanet.AccessFree:
+			return "FREE"
+		case metanet.AccessPaid:
+			return "PAID"
+		default:
+			return fmt.Sprintf("UNKNOWN(%d)", a)
+		}
+	},
 }
 
 // Templates holds all parsed templates.
@@ -43,7 +57,7 @@ func LoadTemplates() (*Templates, error) {
 		return nil, fmt.Errorf("parse base: %w", err)
 	}
 
-	pages := []string{"home.html", "block.html", "tx.html", "address.html", "search.html"}
+	pages := []string{"home.html", "block.html", "tx.html", "address.html", "search.html", "metanet.html", "spv.html", "method42.html"}
 	t := &Templates{pages: make(map[string]*template.Template)}
 
 	for _, page := range pages {

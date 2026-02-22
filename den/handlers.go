@@ -196,12 +196,12 @@ func (s *Server) handleSPV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	headerBytes, _ := s.explorer.rpc.GetBlockHeader(ctx, proof.BlockHash)
+	verification := VerifySPVProof(proof, headerBytes)
 
 	data := map[string]interface{}{
-		"Title":       fmt.Sprintf("SPV Proof %s", truncHash(txid)),
-		"TxID":        txid,
-		"Proof":       proof,
-		"HeaderBytes": headerBytes,
+		"Title":        fmt.Sprintf("SPV Proof %s", truncHash(txid)),
+		"TxID":         txid,
+		"Verification": verification,
 	}
 	s.render(w, "spv.html", data)
 }
@@ -222,10 +222,12 @@ func (s *Server) handleMethod42(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	analysis := AnalyzeMethod42(txid, decoded.Node, decoded.PNode)
+
 	data := map[string]interface{}{
-		"Title":   fmt.Sprintf("Method 42 %s", truncHash(txid)),
-		"TxID":    txid,
-		"Metanet": decoded,
+		"Title":    fmt.Sprintf("Method 42 %s", truncHash(txid)),
+		"TxID":     txid,
+		"Analysis": analysis,
 	}
 	s.render(w, "method42.html", data)
 }

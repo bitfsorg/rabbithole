@@ -1,0 +1,37 @@
+{{define "content"}}
+<div class="breadcrumb"><a href="/">Home</a> / <a href="/tx/{{.TxID}}">Tx</a> / SPV Proof</div>
+
+<div class="card">
+  <h2>SPV Merkle Proof</h2>
+  <div class="field-row"><span class="label">TxID</span><span class="value mono">{{.TxID}}</span></div>
+  {{if .Verification}}
+  <div class="field-row"><span class="label">Block</span><span class="value"><a href="/block/{{.Verification.BlockHash}}" class="mono">{{truncHash .Verification.BlockHash}}</a></span></div>
+  <div class="field-row"><span class="label">Tx Index</span><span class="value">{{.Verification.Index}}</span></div>
+  <div class="field-row"><span class="label">Computed Root</span><span class="value mono" style="font-size:11px">{{.Verification.ComputedRoot}}</span></div>
+  <div class="field-row"><span class="label">Expected Root</span><span class="value mono" style="font-size:11px">{{.Verification.ExpectedRoot}}</span></div>
+  <div class="field-row"><span class="label">Verified</span><span class="value">
+    {{if .Verification.Valid}}<span style="color:#4caf50;font-weight:bold">VALID</span>
+    {{else}}<span style="color:#e94560;font-weight:bold">INVALID</span>{{end}}
+  </span></div>
+  {{if .Verification.Error}}
+  <div class="field-row"><span class="label">Error</span><span class="value error">{{.Verification.Error}}</span></div>
+  {{end}}
+  {{end}}
+</div>
+
+{{if .Verification}}{{if .Verification.Branches}}
+<div class="card">
+  <h2>Merkle Path ({{len .Verification.Branches}} levels)</h2>
+  <table>
+    <tr><th>Level</th><th>Side</th><th>Hash</th></tr>
+    {{range .Verification.Branches}}
+    <tr>
+      <td>{{.Level}}</td>
+      <td>{{.Side}}</td>
+      <td class="mono" style="font-size:11px">{{.Hash}}</td>
+    </tr>
+    {{end}}
+  </table>
+</div>
+{{end}}{{end}}
+{{end}}
