@@ -74,8 +74,10 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 // for the destination parent (child added). The node itself is not modified —
 // only the parent directories' children lists change.
 //
-// Note: This is application-level atomicity only. If the first transaction
-// succeeds but the second fails, the filesystem state may be inconsistent.
+// The implementation uses a build-then-apply pattern: both transactions are built
+// first (Phase 1) without permanently mutating state. Only after both builds
+// succeed are the state changes applied (Phase 2). This ensures that if either
+// build fails, local state remains consistent.
 func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Result, error) {
 	srcDir := path.Dir(opts.SrcPath)
 	dstDir := path.Dir(opts.DstPath)
@@ -101,12 +103,13 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Resu
 		}
 	}
 
-	// 4. Find and remove child entry from source parent.
+	// 4. Find the child entry in source parent (don't remove yet).
 	var movedChild *ChildState
+	var srcChildIdx int
 	for i, c := range srcParent.Children {
 		if c.Name == srcName {
 			movedChild = c
-			srcParent.Children = append(srcParent.Children[:i], srcParent.Children[i+1:]...)
+			srcChildIdx = i
 			break
 		}
 	}
@@ -114,34 +117,49 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Resu
 		return nil, fmt.Errorf("engine: %q not found in source directory", srcName)
 	}
 
-	// 5. Build SelfUpdate tx for source parent (child removed).
+	// --- Phase 1: Build both TXs without mutating state ---
+
+	// Build source parent children list (without the moved child).
+	srcChildrenAfter := make([]*ChildState, 0, len(srcParent.Children)-1)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[:srcChildIdx]...)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[srcChildIdx+1:]...)
+
+	// Temporarily swap children for build.
+	origSrcChildren := srcParent.Children
+	srcParent.Children = srcChildrenAfter
 	srcTxHex, srcTxID, err := e.buildParentSelfUpdate(srcParent)
+	srcParent.Children = origSrcChildren // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: update source parent: %w", err)
 	}
-	srcParent.TxID = srcTxID
 
-	// 6. Add child entry to destination parent (with possibly new name).
-	dstParent.Children = append(dstParent.Children, &ChildState{
+	// Build destination parent children list (with the moved child).
+	newChild := &ChildState{
 		Name:     dstName,
 		Type:     movedChild.Type,
 		PubKey:   movedChild.PubKey,
 		Index:    movedChild.Index,
 		Hardened: movedChild.Hardened,
-	})
+	}
+	dstChildrenAfter := make([]*ChildState, len(dstParent.Children)+1)
+	copy(dstChildrenAfter, dstParent.Children)
+	dstChildrenAfter[len(dstParent.Children)] = newChild
 
-	// 7. Build SelfUpdate tx for destination parent (child added).
+	origDstChildren := dstParent.Children
+	dstParent.Children = dstChildrenAfter
 	dstTxHex, dstTxID, err := e.buildParentSelfUpdate(dstParent)
+	dstParent.Children = origDstChildren // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: update destination parent: %w", err)
 	}
-	dstParent.TxID = dstTxID
 
-	// 8. Update node path in local state.
+	// --- Phase 2: Both builds succeeded — apply state ---
+	srcParent.Children = srcChildrenAfter
+	srcParent.TxID = srcTxID
+	dstParent.Children = dstChildrenAfter
+	dstParent.TxID = dstTxID
 	nodeState.Path = opts.DstPath
 
-	// Return the destination parent tx as the primary result. Both transaction
-	// hex values are concatenated with a newline so callers can broadcast both.
 	return &Result{
 		TxHex:   srcTxHex + "\n" + dstTxHex,
 		TxID:    dstTxID,
