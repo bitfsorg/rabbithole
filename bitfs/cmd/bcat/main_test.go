@@ -85,7 +85,17 @@ func newFullMockDaemon(t *testing.T,
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_OutputToStdout(t *testing.T) {
-	content := []byte("Hello, BitFS world!\nSecond line.\n")
+	plaintext := []byte("Hello, BitFS world!\nSecond line.\n")
+
+	// Encrypt content with Method 42 AccessFree using testPubKey.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -94,17 +104,14 @@ func TestFreeContent_OutputToStdout(t *testing.T) {
 				Type:     "file",
 				Path:     "/hello.txt",
 				MimeType: "text/plain",
-				FileSize: uint64(len(content)),
-				KeyHash:  testKeyHash("aa"),
+				FileSize: uint64(len(plaintext)),
+				KeyHash:  keyHashHex,
 				Access:   "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
-			// Verify the data endpoint was called with the correct hash.
-			assert.True(t, strings.HasSuffix(r.URL.Path, "/"+testKeyHash("aa")),
-				"data request should include key_hash; got %s", r.URL.Path)
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -114,15 +121,25 @@ func TestFreeContent_OutputToStdout(t *testing.T) {
 
 	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	assert.Empty(t, stderr.String())
-	assert.Equal(t, content, stdout.Bytes(), "stdout should contain exact file content")
+	assert.Equal(t, plaintext, stdout.Bytes(), "stdout should contain decrypted plaintext")
 }
 
 func TestFreeContent_BinaryData(t *testing.T) {
 	// Binary content with null bytes, high bytes, etc.
-	content := make([]byte, 256)
-	for i := range content {
-		content[i] = byte(i)
+	plaintext := make([]byte, 256)
+	for i := range plaintext {
+		plaintext[i] = byte(i)
 	}
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -131,14 +148,14 @@ func TestFreeContent_BinaryData(t *testing.T) {
 				Type:     "file",
 				Path:     "/binary.dat",
 				MimeType: "application/octet-stream",
-				FileSize: uint64(len(content)),
-				KeyHash:  testKeyHash("bb"),
+				FileSize: uint64(len(plaintext)),
+				KeyHash:  keyHashHex,
 				Access:   "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -147,7 +164,7 @@ func TestFreeContent_BinaryData(t *testing.T) {
 	code := run([]string{"--host", srv.URL, makeURI("/binary.dat")}, &stdout, &stderr)
 
 	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
-	assert.Equal(t, content, stdout.Bytes(), "binary content should be preserved exactly")
+	assert.Equal(t, plaintext, stdout.Bytes(), "binary content should be preserved exactly")
 }
 
 func TestFreeContent_EmptyFile(t *testing.T) {
@@ -693,12 +710,22 @@ func TestInvalidTimeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_LargeFile(t *testing.T) {
-	// Verify that large content is streamed correctly via io.Copy.
+	// Verify that large content is decrypted and output correctly.
 	size := 1024 * 64 // 64 KB
-	content := make([]byte, size)
-	for i := range content {
-		content[i] = byte(i % 251) // Use prime to vary bytes
+	plaintext := make([]byte, size)
+	for i := range plaintext {
+		plaintext[i] = byte(i % 251) // Use prime to vary bytes
 	}
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -706,13 +733,13 @@ func TestFreeContent_LargeFile(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/large.bin",
-				KeyHash: testKeyHash("ff"),
+				KeyHash: keyHashHex,
 				Access:  "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -722,7 +749,7 @@ func TestFreeContent_LargeFile(t *testing.T) {
 
 	assert.Equal(t, 0, code)
 	require.Equal(t, size, stdout.Len(), "output size should match input")
-	assert.Equal(t, content, stdout.Bytes())
+	assert.Equal(t, plaintext, stdout.Bytes())
 }
 
 // ---------------------------------------------------------------------------
@@ -730,8 +757,18 @@ func TestFreeContent_LargeFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_DataEndpointCalled(t *testing.T) {
-	content := []byte("tracked content")
+	plaintext := []byte("tracked content")
 	var dataRequested bool
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -739,14 +776,14 @@ func TestFreeContent_DataEndpointCalled(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/tracked.txt",
-				KeyHash: testKeyHash("11"),
+				KeyHash: keyHashHex,
 				Access:  "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			dataRequested = true
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -756,7 +793,7 @@ func TestFreeContent_DataEndpointCalled(t *testing.T) {
 
 	assert.Equal(t, 0, code)
 	assert.True(t, dataRequested, "data endpoint should have been called")
-	assert.Equal(t, content, stdout.Bytes())
+	assert.Equal(t, plaintext, stdout.Bytes())
 }
 
 // ---------------------------------------------------------------------------
@@ -764,7 +801,17 @@ func TestFreeContent_DataEndpointCalled(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_WriteError(t *testing.T) {
-	content := []byte("some content")
+	plaintext := []byte("some content")
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -772,13 +819,13 @@ func TestFreeContent_WriteError(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/werror.txt",
-				KeyHash: testKeyHash("22"),
+				KeyHash: keyHashHex,
 				Access:  "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()

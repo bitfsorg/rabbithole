@@ -121,21 +121,57 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-// outputContent fetches the raw data by key_hash and writes it to stdout.
+// outputContent fetches encrypted data by key_hash, decrypts it using Method 42
+// (free mode: D_node = scalar 1), and writes plaintext to stdout.
 func outputContent(c *client.Client, meta *client.MetaResponse, stdout, stderr io.Writer) int {
 	if meta.KeyHash == "" {
 		fmt.Fprintf(stderr, "bcat: no content hash available\n")
 		return 1
 	}
 
-	// TODO: Decrypt content using Method 42 (D_node=1 for free, session key for paid)
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
 		return handleError(err, stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
-	if _, err := io.Copy(stdout, reader); err != nil {
+	ciphertext, err := io.ReadAll(reader)
+	if err != nil {
+		fmt.Fprintf(stderr, "bcat: read error: %v\n", err)
+		return 4
+	}
+
+	// Empty content — nothing to decrypt.
+	if len(ciphertext) == 0 {
+		return 0
+	}
+
+	// Decode the node's public key for Method 42 free-mode decryption.
+	pubKeyBytes, err := hex.DecodeString(meta.PNode)
+	if err != nil {
+		fmt.Fprintf(stderr, "bcat: invalid pnode hex: %v\n", err)
+		return 1
+	}
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	if err != nil {
+		fmt.Fprintf(stderr, "bcat: invalid pnode key: %v\n", err)
+		return 1
+	}
+
+	keyHashBytes, err := hex.DecodeString(meta.KeyHash)
+	if err != nil {
+		fmt.Fprintf(stderr, "bcat: invalid key hash hex: %v\n", err)
+		return 1
+	}
+
+	// Decrypt: nil private key triggers FreePrivateKey() (scalar 1).
+	result, err := method42.Decrypt(ciphertext, nil, pubKey, keyHashBytes, method42.AccessFree)
+	if err != nil {
+		fmt.Fprintf(stderr, "bcat: decrypt: %v\n", err)
+		return 5
+	}
+
+	if _, err := stdout.Write(result.Plaintext); err != nil {
 		fmt.Fprintf(stderr, "bcat: write error: %v\n", err)
 		return 1
 	}
