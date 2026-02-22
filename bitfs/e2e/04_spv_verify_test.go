@@ -5,15 +5,14 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
+	"github.com/tongxiaofeng/libbitfs/network"
 	"github.com/tongxiaofeng/libbitfs/spv"
 )
 
@@ -84,7 +83,7 @@ func TestSPVVerify_RegtestMerkleProof(t *testing.T) {
 	// ---------------------------------------------------------------
 	// Step 4: Parse the BIP37 MerkleBlock
 	// ---------------------------------------------------------------
-	mbHeader, txIndex, branch, totalTxs, err := parseBIP37MerkleBlock(merkleBlockBytes, computedTxID)
+	mbHeader, txIndex, branch, totalTxs, err := network.ParseBIP37MerkleBlock(merkleBlockBytes, computedTxID)
 	require.NoError(t, err, "parse BIP37 merkle block")
 	t.Logf("totalTxs=%d, txIndex=%d, branch length=%d", totalTxs, txIndex, len(branch))
 
@@ -304,198 +303,6 @@ func callRPC(node *testutil.RegtestNode, ctx context.Context, method string, par
 	// We recreate a client with the same default credentials.
 	client := testutil.NewRPCClient("http://localhost:18332", "bitfs", "bitfs")
 	return client.Call(ctx, method, params, result)
-}
-
-// parseBIP37MerkleBlock parses a BIP37-encoded MerkleBlock message and extracts
-// the Merkle branch (proof nodes) and index for a specific target transaction.
-//
-// BIP37 MerkleBlock format:
-//
-//	[0:80]   Block header (80 bytes)
-//	[80:84]  Total transactions in block (uint32 LE)
-//	[84:]    Varint: number of hashes, then N * 32-byte hashes
-//	[...]    Varint: number of flag bytes, then flag bytes
-//
-// The partial Merkle tree is traversed using the flag bits to identify which
-// hashes are included and to reconstruct the Merkle branch for the target tx.
-func parseBIP37MerkleBlock(data []byte, targetTxID []byte) (header []byte, txIndex uint32, branch [][]byte, totalTxs uint32, err error) {
-	if len(data) < 84 {
-		return nil, 0, nil, 0, fmt.Errorf("merkle block too short: %d bytes", len(data))
-	}
-
-	header = data[:80]
-	totalTxs = binary.LittleEndian.Uint32(data[80:84])
-	pos := 84
-
-	// Read varint: number of hashes.
-	numHashes, bytesRead := readVarInt(data[pos:])
-	if bytesRead == 0 {
-		return nil, 0, nil, 0, fmt.Errorf("failed to read hash count varint")
-	}
-	pos += bytesRead
-
-	// Read the hashes.
-	hashes := make([][]byte, numHashes)
-	for i := uint64(0); i < numHashes; i++ {
-		if pos+32 > len(data) {
-			return nil, 0, nil, 0, fmt.Errorf("unexpected end of data reading hash %d", i)
-		}
-		h := make([]byte, 32)
-		copy(h, data[pos:pos+32])
-		hashes[i] = h
-		pos += 32
-	}
-
-	// Read varint: number of flag bytes.
-	numFlagBytes, bytesRead := readVarInt(data[pos:])
-	if bytesRead == 0 {
-		return nil, 0, nil, 0, fmt.Errorf("failed to read flag bytes count varint")
-	}
-	pos += bytesRead
-
-	if uint64(pos)+numFlagBytes > uint64(len(data)) {
-		return nil, 0, nil, 0, fmt.Errorf("unexpected end of data reading flags")
-	}
-	flagBytes := data[pos : pos+int(numFlagBytes)]
-
-	// Traverse the partial Merkle tree to extract the branch for our target tx.
-	txIndex, branch, err = traversePartialMerkleTree(hashes, flagBytes, totalTxs, targetTxID)
-	if err != nil {
-		return nil, 0, nil, 0, fmt.Errorf("traverse partial merkle tree: %w", err)
-	}
-
-	return header, txIndex, branch, totalTxs, nil
-}
-
-// traversePartialMerkleTree walks the BIP37 partial Merkle tree structure and
-// extracts the branch nodes needed for a standard Merkle proof of the target tx.
-func traversePartialMerkleTree(hashes [][]byte, flagBytes []byte, totalTxs uint32, targetTxID []byte) (txIndex uint32, branch [][]byte, err error) {
-	// Calculate the tree height.
-	height := uint32(0)
-	for calcTreeWidth(totalTxs, height) > 1 {
-		height++
-	}
-
-	hashIdx := 0
-	bitIdx := 0
-
-	// getBit reads the next flag bit.
-	getBit := func() bool {
-		if bitIdx/8 >= len(flagBytes) {
-			return false
-		}
-		bit := (flagBytes[bitIdx/8] >> uint(bitIdx%8)) & 1
-		bitIdx++
-		return bit == 1
-	}
-
-	// getHash reads the next hash.
-	getHash := func() []byte {
-		if hashIdx >= len(hashes) {
-			return nil
-		}
-		h := hashes[hashIdx]
-		hashIdx++
-		return h
-	}
-
-	type traverseResult struct {
-		hash    []byte
-		found   bool
-		index   uint32
-		branch  [][]byte
-	}
-
-	// Recursive traversal of the partial Merkle tree.
-	var traverse func(depth, pos uint32) traverseResult
-	traverse = func(depth, pos uint32) traverseResult {
-		flag := getBit()
-
-		if depth == 0 {
-			// Leaf node.
-			h := getHash()
-			isTarget := bytes.Equal(h, targetTxID)
-			return traverseResult{hash: h, found: isTarget, index: pos}
-		}
-
-		if !flag {
-			// Not a parent of a matched tx; consume the combined hash.
-			h := getHash()
-			return traverseResult{hash: h}
-		}
-
-		// This is a parent of a matched tx; descend into children.
-		left := traverse(depth-1, pos*2)
-		var right traverseResult
-		if pos*2+1 < calcTreeWidth(totalTxs, depth-1) {
-			right = traverse(depth-1, pos*2+1)
-		} else {
-			// Odd number of nodes at this level; right = left (duplicated).
-			right = traverseResult{hash: left.hash}
-		}
-
-		// Compute parent hash.
-		combined := make([]byte, 64)
-		copy(combined[:32], left.hash)
-		copy(combined[32:], right.hash)
-		parentHash := spv.DoubleHash(combined)
-
-		// Build branch: if the target was found in one subtree,
-		// the sibling hash from the other subtree is a branch node.
-		result := traverseResult{hash: parentHash}
-		if left.found {
-			result.found = true
-			result.index = left.index
-			result.branch = append(left.branch, right.hash)
-		} else if right.found {
-			result.found = true
-			result.index = right.index
-			result.branch = append(right.branch, left.hash)
-		}
-
-		return result
-	}
-
-	result := traverse(height, 0)
-	if !result.found {
-		return 0, nil, fmt.Errorf("target tx not found in partial merkle tree")
-	}
-
-	return result.index, result.branch, nil
-}
-
-// calcTreeWidth computes the number of nodes at a given depth in a Merkle tree
-// with totalLeaves leaf nodes.
-func calcTreeWidth(totalLeaves, depth uint32) uint32 {
-	return (totalLeaves + (1 << depth) - 1) >> depth
-}
-
-// readVarInt reads a Bitcoin-style variable-length integer from data.
-// Returns the value and the number of bytes consumed.
-func readVarInt(data []byte) (uint64, int) {
-	if len(data) == 0 {
-		return 0, 0
-	}
-	first := data[0]
-	switch {
-	case first < 0xFD:
-		return uint64(first), 1
-	case first == 0xFD:
-		if len(data) < 3 {
-			return 0, 0
-		}
-		return uint64(binary.LittleEndian.Uint16(data[1:3])), 3
-	case first == 0xFE:
-		if len(data) < 5 {
-			return 0, 0
-		}
-		return uint64(binary.LittleEndian.Uint32(data[1:5])), 5
-	default: // 0xFF
-		if len(data) < 9 {
-			return 0, 0
-		}
-		return binary.LittleEndian.Uint64(data[1:9]), 9
-	}
 }
 
 // buildMerkleBranch manually constructs a Merkle branch (proof nodes) for the

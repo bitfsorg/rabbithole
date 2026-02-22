@@ -204,6 +204,36 @@ func (c *Client) SubmitHTLC(txid string, htlcRawTx []byte) (*CapsuleResponse, er
 	return &capsule, nil
 }
 
+// SPVProofResponse holds the SPV verification result returned by the daemon.
+type SPVProofResponse struct {
+	TxID        string `json:"txid"`
+	Confirmed   bool   `json:"confirmed"`
+	BlockHash   string `json:"block_hash,omitempty"`
+	BlockHeight uint64 `json:"block_height,omitempty"`
+}
+
+// VerifySPV requests SPV verification of a transaction from the daemon.
+// Endpoint: GET /_bitfs/spv/proof/{txid}
+func (c *Client) VerifySPV(txid string) (*SPVProofResponse, error) {
+	url := fmt.Sprintf("%s/_bitfs/spv/proof/%s", c.BaseURL, txid)
+
+	resp, err := c.HTTPClient.Get(url)
+	if err != nil {
+		return nil, wrapNetworkError(err)
+	}
+	defer resp.Body.Close()
+
+	if err := checkStatus(resp); err != nil {
+		return nil, err
+	}
+
+	var result SPVProofResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("client: decode SPV proof response: %w", err)
+	}
+	return &result, nil
+}
+
 // checkStatus maps HTTP status codes to sentinel errors.
 // Returns nil for 2xx responses.
 func checkStatus(resp *http.Response) error {

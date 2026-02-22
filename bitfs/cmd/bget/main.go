@@ -33,6 +33,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	output := fs.String("o", "", "output filename")
 	fs.StringVar(output, "output", "", "output filename")
 	buy := fs.Bool("buy", false, "attempt to purchase paid content")
+	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before downloading")
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
 	version := fs.Bool("version", false, "show version-specific content")
 	host := fs.String("host", "http://localhost:8080", "daemon URL")
@@ -98,6 +99,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if meta.Type == "dir" {
 		fmt.Fprintf(stderr, "bget: %s: is a directory\n", uriPath)
 		return 6
+	}
+
+	// SPV verification if requested.
+	if *verify && meta.TxID != "" {
+		proof, err := c.VerifySPV(meta.TxID)
+		if err != nil {
+			fmt.Fprintf(stderr, "bget: SPV verification failed: %v\n", err)
+			return 4
+		}
+		if !proof.Confirmed {
+			fmt.Fprintf(stderr, "bget: warning: tx %s is unconfirmed\n", meta.TxID)
+		} else {
+			fmt.Fprintf(stderr, "bget: verified tx %s at block %d\n", meta.TxID, proof.BlockHeight)
+		}
 	}
 
 	// Handle access modes.

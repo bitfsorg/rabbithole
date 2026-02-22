@@ -71,6 +71,11 @@ func runDaemonStart(args []string) int {
 	// Wire up blockchain service if RPC is configured.
 	configureChain(eng, *rpcURL, *rpcUser, *rpcPass, *netName)
 
+	// Initialize SPV client and persistent store.
+	if err := eng.InitSPV(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: SPV initialization failed: %v\n", err)
+	}
+
 	// Create daemon with adapter types.
 	cfg := daemon.DefaultConfig()
 	cfg.ListenAddr = *listen
@@ -83,6 +88,11 @@ func runDaemonStart(args []string) int {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitError
+	}
+
+	// Attach SPV service if available.
+	if spvAdapter := engine.NewSPVAdapter(eng); spvAdapter != nil {
+		d.SetSPV(spvAdapter)
 	}
 
 	// Write PID file.

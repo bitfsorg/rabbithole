@@ -31,6 +31,10 @@ func (d *Daemon) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /_bitfs/buy/{txid}", wrap(d.handleSubmitHTLC))
 	mux.HandleFunc("OPTIONS /_bitfs/buy/{txid}", wrap(d.handleOptions))
 
+	// SPV proof endpoint
+	mux.HandleFunc("GET /_bitfs/spv/proof/{txid}", wrap(d.handleSPVProof))
+	mux.HandleFunc("OPTIONS /_bitfs/spv/proof/{txid}", wrap(d.handleOptions))
+
 	// Paymail/BSV Alias
 	mux.HandleFunc("GET /.well-known/bsvalias", wrap(d.handleBSVAlias))
 	mux.HandleFunc("GET /api/v1/pki/{handle}", wrap(d.handlePKI))

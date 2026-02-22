@@ -49,6 +49,19 @@ type MetanetService interface {
 	GetNodeByPath(path string) (*NodeInfo, error)
 }
 
+// SPVService defines the SPV verification interface needed by the daemon.
+type SPVService interface {
+	// VerifyTx performs on-demand SPV verification of a transaction.
+	VerifyTx(ctx context.Context, txid string) (*SPVResult, error)
+}
+
+// SPVResult holds the result of an SPV verification.
+type SPVResult struct {
+	Confirmed   bool   `json:"confirmed"`
+	BlockHash   string `json:"block_hash,omitempty"`
+	BlockHeight uint64 `json:"block_height,omitempty"`
+}
+
 // NodeInfo holds simplified node information for daemon use.
 type NodeInfo struct {
 	PNode      []byte
@@ -181,6 +194,7 @@ type Daemon struct {
 	wallet  WalletService
 	store   ContentStore
 	metanet MetanetService
+	spv     SPVService // optional; nil = SPV endpoints disabled
 	server  *http.Server
 	mux     *http.ServeMux
 	running bool
@@ -234,6 +248,11 @@ func New(config *Config, wallet WalletService, store ContentStore, metanet Metan
 	}
 
 	return d, nil
+}
+
+// SetSPV attaches an SPV verification service. Must be called before Start.
+func (d *Daemon) SetSPV(spv SPVService) {
+	d.spv = spv
 }
 
 // Start starts the daemon HTTP server.

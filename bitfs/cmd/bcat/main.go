@@ -30,6 +30,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 
 	buy := fs.Bool("buy", false, "attempt to purchase paid content")
+	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before outputting")
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
 	host := fs.String("host", "http://localhost:8080", "daemon URL")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
@@ -89,6 +90,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if meta.Type == "dir" {
 		fmt.Fprintf(stderr, "bcat: %s: is a directory\n", path)
 		return 6
+	}
+
+	// SPV verification if requested.
+	if *verify && meta.TxID != "" {
+		proof, err := c.VerifySPV(meta.TxID)
+		if err != nil {
+			fmt.Fprintf(stderr, "bcat: SPV verification failed: %v\n", err)
+			return 4
+		}
+		if !proof.Confirmed {
+			fmt.Fprintf(stderr, "bcat: warning: tx %s is unconfirmed\n", meta.TxID)
+		} else {
+			fmt.Fprintf(stderr, "bcat: verified tx %s at block %d\n", meta.TxID, proof.BlockHeight)
+		}
 	}
 
 	// Handle access modes.

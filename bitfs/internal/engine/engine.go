@@ -9,6 +9,7 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
 	"github.com/tongxiaofeng/libbitfs/network"
+	"github.com/tongxiaofeng/libbitfs/spv"
 	"github.com/tongxiaofeng/libbitfs/storage"
 	"github.com/tongxiaofeng/libbitfs/tx"
 	"github.com/tongxiaofeng/libbitfs/wallet"
@@ -17,13 +18,15 @@ import (
 // Engine is the shared business logic layer. CLI commands, shell REPL,
 // and daemon adapters all call Engine methods to perform filesystem operations.
 type Engine struct {
-	Wallet  *wallet.Wallet
-	WState  *wallet.WalletState
-	Store   *storage.FileStore
-	State   *LocalState
-	DataDir string
-	DNS     DNSResolver                // injectable for testing; nil uses default net.LookupTXT
-	Chain   network.BlockchainService  // optional; nil = offline mode
+	Wallet   *wallet.Wallet
+	WState   *wallet.WalletState
+	Store    *storage.FileStore
+	State    *LocalState
+	DataDir  string
+	DNS      DNSResolver               // injectable for testing; nil uses default net.LookupTXT
+	Chain    network.BlockchainService  // optional; nil = offline mode
+	SPV      *network.SPVClient         // nil until InitSPV; requires Chain != nil
+	SPVStore *spv.BoltStore             // nil until InitSPV; closed by Close()
 }
 
 // Result holds the output of an engine operation.
@@ -86,9 +89,96 @@ func New(dataDir, password string) (*Engine, error) {
 	}, nil
 }
 
-// Close persists state. Should be called when done.
+// Close persists state and releases resources. Should be called when done.
 func (e *Engine) Close() error {
+	if e.SPVStore != nil {
+		e.SPVStore.Close()
+	}
 	return e.State.Save()
+}
+
+// InitSPV initializes the SPV client and persistent header/tx store.
+// Call after Chain is configured. No-op if Chain is nil.
+func (e *Engine) InitSPV() error {
+	if e.Chain == nil {
+		return nil
+	}
+	dbPath := filepath.Join(e.DataDir, "spv", "spv.db")
+	store, err := spv.OpenBoltStore(dbPath)
+	if err != nil {
+		return fmt.Errorf("engine: open SPV store: %w", err)
+	}
+	e.SPVStore = store
+	e.SPV = network.NewSPVClient(e.Chain, store.Headers())
+	return nil
+}
+
+// VerifyTx performs on-demand SPV verification of a transaction.
+// If the tx was previously verified and has a cached proof, the result is returned
+// immediately without network requests. Otherwise, the proof is fetched from the
+// network and backfilled into the local store.
+func (e *Engine) VerifyTx(ctx context.Context, txid string) (*network.VerifyResult, error) {
+	if e.SPV == nil {
+		return nil, fmt.Errorf("engine: no blockchain service configured (offline mode)")
+	}
+
+	// Check local cache for a stored tx with proof.
+	if e.SPVStore != nil {
+		txidBytes := displayHexToInternal(txid)
+		if len(txidBytes) == 32 {
+			if stored, err := e.SPVStore.Txs().GetTx(txidBytes); err == nil && stored.Proof != nil {
+				return &network.VerifyResult{
+					Confirmed:   true,
+					BlockHeight: uint64(stored.BlockHeight),
+					BlockHash:   hex.EncodeToString(reverseBytesCopy(stored.Proof.BlockHash)),
+				}, nil
+			}
+		}
+	}
+
+	// No cached proof — perform network verification.
+	result, err := e.SPV.VerifyTx(ctx, txid)
+	if err != nil {
+		return nil, err
+	}
+
+	// Backfill proof into local store if confirmed.
+	if result.Confirmed && e.SPVStore != nil {
+		txidBytes := displayHexToInternal(txid)
+		blockHashBytes := displayHexToInternal(result.BlockHash)
+		if len(txidBytes) == 32 {
+			proof := &spv.MerkleProof{
+				TxID:      txidBytes,
+				BlockHash: blockHashBytes,
+			}
+			stored, getErr := e.SPVStore.Txs().GetTx(txidBytes)
+			if getErr == nil {
+				// Update existing entry with proof.
+				stored.Proof = proof
+				stored.BlockHeight = uint32(result.BlockHeight)
+				_ = e.SPVStore.Txs().UpdateTx(stored)
+			} else {
+				// Store new entry.
+				newTx := &spv.StoredTx{
+					TxID:        txidBytes,
+					Proof:       proof,
+					BlockHeight: uint32(result.BlockHeight),
+				}
+				_ = e.SPVStore.Txs().PutTx(newTx)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// reverseBytesCopy returns a reversed copy of a byte slice.
+func reverseBytesCopy(b []byte) []byte {
+	c := make([]byte, len(b))
+	for i, v := range b {
+		c[len(b)-1-i] = v
+	}
+	return c
 }
 
 // ResolveVaultIndex resolves a vault name to its account index.
@@ -252,11 +342,46 @@ func (e *Engine) IsOnline() bool {
 }
 
 // BroadcastTx submits a signed transaction to the network.
+// If SPV storage is available, the tx is stored (without proof) for later verification.
 func (e *Engine) BroadcastTx(ctx context.Context, rawTxHex string) (string, error) {
 	if e.Chain == nil {
 		return "", fmt.Errorf("engine: no blockchain service configured (offline mode)")
 	}
-	return e.Chain.BroadcastTx(ctx, rawTxHex)
+	txid, err := e.Chain.BroadcastTx(ctx, rawTxHex)
+	if err != nil {
+		return "", err
+	}
+
+	// Store tx for later proof backfill (best-effort, don't fail on store error).
+	if e.SPVStore != nil {
+		rawTx, decErr := hex.DecodeString(rawTxHex)
+		if decErr == nil {
+			txidBytes := displayHexToInternal(txid)
+			if len(txidBytes) == 32 {
+				storedTx := &spv.StoredTx{
+					TxID:  txidBytes,
+					RawTx: rawTx,
+				}
+				// Ignore duplicate errors (tx may already be stored).
+				_ = e.SPVStore.Txs().PutTx(storedTx)
+			}
+		}
+	}
+
+	return txid, nil
+}
+
+// displayHexToInternal converts a display hex string (big-endian) to internal
+// byte order (little-endian, as used by DoubleHash output).
+func displayHexToInternal(displayHex string) []byte {
+	b, err := hex.DecodeString(displayHex)
+	if err != nil {
+		return nil
+	}
+	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+		b[i], b[j] = b[j], b[i]
+	}
+	return b
 }
 
 // RefreshFeeUTXOs queries the network for unspent outputs at the given address

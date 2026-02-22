@@ -71,6 +71,8 @@ func run(args []string) int {
 		return runShell(cmdArgs)
 	case "fund":
 		return runFund(cmdArgs)
+	case "verify":
+		return runVerify(cmdArgs)
 	case "--help", "-h", "help":
 		printUsage()
 		return exitSuccess
@@ -122,6 +124,9 @@ Daemon Commands:
 
 Bootstrap:
   fund           Register externally-funded UTXOs
+
+Verification:
+  verify         SPV-verify a transaction
 
 Interactive:
   shell          FTP-style interactive REPL

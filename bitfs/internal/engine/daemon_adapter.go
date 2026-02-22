@@ -1,12 +1,13 @@
 package engine
 
 import (
+	"context"
 	"encoding/hex"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
+	"github.com/tongxiaofeng/libbitfs/metanet"
 )
 
 // WalletAdapter implements daemon.WalletService using the engine's wallet.
@@ -111,6 +112,33 @@ func (a *MetanetAdapter) GetNodeByPath(path string) (*daemon.NodeInfo, error) {
 	}
 
 	return info, nil
+}
+
+// SPVAdapter implements daemon.SPVService using the engine's SPV client.
+type SPVAdapter struct {
+	engine *Engine
+}
+
+// NewSPVAdapter creates an SPVAdapter wrapping the engine.
+// Returns nil if the engine has no SPV client configured.
+func NewSPVAdapter(e *Engine) *SPVAdapter {
+	if e.SPV == nil {
+		return nil
+	}
+	return &SPVAdapter{engine: e}
+}
+
+// VerifyTx implements daemon.SPVService.
+func (a *SPVAdapter) VerifyTx(ctx context.Context, txid string) (*daemon.SPVResult, error) {
+	result, err := a.engine.VerifyTx(ctx, txid)
+	if err != nil {
+		return nil, err
+	}
+	return &daemon.SPVResult{
+		Confirmed:   result.Confirmed,
+		BlockHash:   result.BlockHash,
+		BlockHeight: result.BlockHeight,
+	}, nil
 }
 
 // nodeTypeFromString converts string to metanet.NodeType (used internally).
