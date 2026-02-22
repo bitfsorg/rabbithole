@@ -5,19 +5,28 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ergochat/readline"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs/config"
 )
 
+// shellCommands is the list of all shell command names for tab completion.
+var shellCommands = []string{
+	"ls", "cd", "lcd", "pwd", "mkdir", "put", "rm", "mv", "cp",
+	"link", "sell", "encrypt", "help", "quit", "exit",
+}
+
 // runShell handles the "bitfs shell" command.
-// Provides an FTP-style interactive REPL.
+// Provides an FTP-style interactive REPL with line editing, history,
+// and tab completion (commands + remote/local paths).
 func runShell(args []string) int {
 	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
 	vault := fs.String("vault", "", "vault name")
@@ -41,19 +50,48 @@ func runShell(args []string) int {
 		return exitNotFound
 	}
 
-	fmt.Printf("BitFS Shell (vault %d). Type 'help' for commands, 'quit' to exit.\n", vaultIdx)
-
 	cwd := "/"
 	localCwd, _ := os.Getwd()
-	scanner := bufio.NewScanner(os.Stdin)
+
+	completer := &shellCompleter{
+		commands: shellCommands,
+		state:    eng.State,
+		cwd:      cwd,
+		localCwd: localCwd,
+	}
+
+	historyFile := filepath.Join(*dataDir, "shell_history")
+	rl, err := readline.NewFromConfig(&readline.Config{
+		Prompt:          fmt.Sprintf("bitfs:%s> ", cwd),
+		HistoryFile:     historyFile,
+		HistoryLimit:    500,
+		AutoComplete:    completer,
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing shell: %v\n", err)
+		return exitError
+	}
+	defer rl.Close()
+
+	fmt.Fprintf(rl.Stdout(), "BitFS Shell (vault %d). Type 'help' for commands, 'quit' to exit.\n", vaultIdx)
 
 	for {
-		fmt.Printf("bitfs:%s> ", cwd)
-		if !scanner.Scan() {
-			break
+		line, err := rl.ReadLine()
+		if err == readline.ErrInterrupt {
+			continue // Ctrl-C: cancel current line.
+		}
+		if err == io.EOF {
+			fmt.Fprintln(rl.Stdout(), "Bye.")
+			return exitSuccess
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return exitError
 		}
 
-		line := strings.TrimSpace(scanner.Text())
+		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
@@ -81,6 +119,8 @@ func runShell(args []string) int {
 				target = cleanPath(target)
 				cwd = target
 			}
+			completer.cwd = cwd
+			rl.SetPrompt(fmt.Sprintf("bitfs:%s> ", cwd))
 		case "lcd":
 			if len(cmdArgs) == 0 {
 				fmt.Println(localCwd)
@@ -90,12 +130,13 @@ func runShell(args []string) int {
 					target = filepath.Join(localCwd, target)
 				}
 				target = filepath.Clean(target)
-				info, err := os.Stat(target)
-				if err != nil || !info.IsDir() {
+				info, statErr := os.Stat(target)
+				if statErr != nil || !info.IsDir() {
 					fmt.Fprintf(os.Stderr, "Error: %s is not a directory\n", target)
 					continue
 				}
 				localCwd = target
+				completer.localCwd = localCwd
 				fmt.Printf("Local directory: %s\n", localCwd)
 			}
 		case "ls":
@@ -110,9 +151,9 @@ func runShell(args []string) int {
 				continue
 			}
 			path := resolvePath(cwd, cmdArgs[0])
-			result, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: vaultIdx, Path: path})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			result, mkErr := eng.Mkdir(&engine.MkdirOpts{VaultIndex: vaultIdx, Path: path})
+			if mkErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", mkErr)
 			} else {
 				fmt.Println(result.Message)
 			}
@@ -121,15 +162,19 @@ func runShell(args []string) int {
 				fmt.Println("Usage: put <local-file> <remote-path>")
 				continue
 			}
+			localFile := cmdArgs[0]
+			if !filepath.IsAbs(localFile) {
+				localFile = filepath.Join(localCwd, localFile)
+			}
 			remotePath := resolvePath(cwd, cmdArgs[1])
-			result, err := eng.PutFile(&engine.PutOpts{
+			result, putErr := eng.PutFile(&engine.PutOpts{
 				VaultIndex: vaultIdx,
-				LocalFile:  cmdArgs[0],
+				LocalFile:  localFile,
 				RemotePath: remotePath,
 				Access:     "free",
 			})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			if putErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", putErr)
 			} else {
 				fmt.Println(result.Message)
 			}
@@ -139,9 +184,9 @@ func runShell(args []string) int {
 				continue
 			}
 			path := resolvePath(cwd, cmdArgs[0])
-			result, err := eng.Remove(&engine.RemoveOpts{VaultIndex: vaultIdx, Path: path})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			result, rmErr := eng.Remove(&engine.RemoveOpts{VaultIndex: vaultIdx, Path: path})
+			if rmErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", rmErr)
 			} else {
 				fmt.Println(result.Message)
 			}
@@ -150,13 +195,28 @@ func runShell(args []string) int {
 				fmt.Println("Usage: mv <src> <dst>")
 				continue
 			}
-			result, err := eng.Move(&engine.MoveOpts{
+			result, mvErr := eng.Move(&engine.MoveOpts{
 				VaultIndex: vaultIdx,
 				SrcPath:    resolvePath(cwd, cmdArgs[0]),
 				DstPath:    resolvePath(cwd, cmdArgs[1]),
 			})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			if mvErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", mvErr)
+			} else {
+				fmt.Println(result.Message)
+			}
+		case "cp":
+			if len(cmdArgs) < 2 {
+				fmt.Println("Usage: cp <src> <dst>")
+				continue
+			}
+			result, cpErr := eng.Copy(&engine.CopyOpts{
+				VaultIndex: vaultIdx,
+				SrcPath:    resolvePath(cwd, cmdArgs[0]),
+				DstPath:    resolvePath(cwd, cmdArgs[1]),
+			})
+			if cpErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", cpErr)
 			} else {
 				fmt.Println(result.Message)
 			}
@@ -166,14 +226,14 @@ func runShell(args []string) int {
 				continue
 			}
 			soft := len(cmdArgs) > 2 && cmdArgs[2] == "--soft"
-			result, err := eng.Link(&engine.LinkOpts{
+			result, lnErr := eng.Link(&engine.LinkOpts{
 				VaultIndex: vaultIdx,
 				TargetPath: resolvePath(cwd, cmdArgs[0]),
 				LinkPath:   resolvePath(cwd, cmdArgs[1]),
 				Soft:       soft,
 			})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			if lnErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", lnErr)
 			} else {
 				fmt.Println(result.Message)
 			}
@@ -188,13 +248,13 @@ func runShell(args []string) int {
 				fmt.Println("Error: price must be positive")
 				continue
 			}
-			result, err := eng.Sell(&engine.SellOpts{
+			result, sellErr := eng.Sell(&engine.SellOpts{
 				VaultIndex: vaultIdx,
 				Path:       resolvePath(cwd, cmdArgs[0]),
 				PricePerKB: price,
 			})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			if sellErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", sellErr)
 			} else {
 				fmt.Println(result.Message)
 			}
@@ -203,12 +263,12 @@ func runShell(args []string) int {
 				fmt.Println("Usage: encrypt <path>")
 				continue
 			}
-			result, err := eng.EncryptNode(&engine.EncryptOpts{
+			result, encErr := eng.EncryptNode(&engine.EncryptOpts{
 				VaultIndex: vaultIdx,
 				Path:       resolvePath(cwd, cmdArgs[0]),
 			})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			if encErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", encErr)
 			} else {
 				fmt.Println(result.Message)
 			}
@@ -216,8 +276,6 @@ func runShell(args []string) int {
 			fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", cmd)
 		}
 	}
-
-	return exitSuccess
 }
 
 func shellHelp() {
@@ -230,7 +288,8 @@ func shellHelp() {
   put <local> <remote>     Upload file
   rm <path>                Remove file/directory
   mv <src> <dst>           Move/rename
-  link <target> <path>     Create hard link
+  cp <src> <dst>           Copy file
+  link <target> <path>     Create hard link (--soft for symlink)
   sell <path> <price>      Set price (sats/KB)
   encrypt <path>           Encrypt (FREE -> PRIVATE)
   help                     Show this help
