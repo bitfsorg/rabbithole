@@ -611,8 +611,10 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 		SourceTxOutIndex: 0,
 		SequenceNumber:   0xffffffff,
 	})
+	dummyLockScript := script.NewFromBytes([]byte{script.OpTRUE})
 	claimTx.AddOutput(&transaction.TransactionOutput{
-		Satoshis: 800,
+		Satoshis:      800,
+		LockingScript: dummyLockScript,
 	})
 
 	// Seller claim unlocking: <sig> <seller_pubkey> <capsule> OP_TRUE
