@@ -192,33 +192,67 @@ func interpretTLVValue(tag byte, value []byte) string {
 }
 
 // extractOPReturnPushes finds and extracts OP_RETURN data pushes from a transaction.
-func extractOPReturnPushes(tx *transaction.Transaction) [][]byte {
-	for _, out := range tx.Outputs {
-		script := out.LockingScript
-		// OP_FALSE (0x00) OP_RETURN (0x6a) or OP_RETURN (0x6a)
-		chunks, err := script.Chunks()
-		if err != nil || len(chunks) < 3 {
+// It parses the raw script bytes directly because the go-sdk Chunks() method
+// bundles all data after OP_RETURN into a single chunk.
+func extractOPReturnPushes(sdkTx *transaction.Transaction) [][]byte {
+	for _, out := range sdkTx.Outputs {
+		raw := []byte(*out.LockingScript)
+		if len(raw) < 2 {
 			continue
 		}
 
-		isOPReturn := false
-		startIdx := 0
-		// Check for OP_FALSE OP_RETURN pattern
-		if chunks[0].Op == 0x00 && chunks[1].Op == 0x6a {
-			isOPReturn = true
-			startIdx = 2
-		} else if chunks[0].Op == 0x6a {
-			isOPReturn = true
-			startIdx = 1
-		}
-
-		if !isOPReturn {
+		// Find OP_RETURN start position.
+		var pos int
+		if raw[0] == 0x00 && raw[1] == 0x6a {
+			pos = 2 // OP_FALSE OP_RETURN
+		} else if raw[0] == 0x6a {
+			pos = 1 // OP_RETURN
+		} else {
 			continue
 		}
 
+		// Parse push data elements from the remaining bytes.
 		var pushes [][]byte
-		for _, chunk := range chunks[startIdx:] {
-			pushes = append(pushes, chunk.Data)
+		for pos < len(raw) {
+			opcode := raw[pos]
+			pos++
+
+			var dataLen int
+			switch {
+			case opcode == 0x00:
+				pushes = append(pushes, []byte{})
+				continue
+			case opcode >= 0x01 && opcode <= 0x4b:
+				dataLen = int(opcode)
+			case opcode == 0x4c: // OP_PUSHDATA1
+				if pos >= len(raw) {
+					return pushes
+				}
+				dataLen = int(raw[pos])
+				pos++
+			case opcode == 0x4d: // OP_PUSHDATA2
+				if pos+2 > len(raw) {
+					return pushes
+				}
+				dataLen = int(raw[pos]) | int(raw[pos+1])<<8
+				pos += 2
+			case opcode == 0x4e: // OP_PUSHDATA4
+				if pos+4 > len(raw) {
+					return pushes
+				}
+				dataLen = int(raw[pos]) | int(raw[pos+1])<<8 | int(raw[pos+2])<<16 | int(raw[pos+3])<<24
+				pos += 4
+			default:
+				return pushes // non-push opcode, stop
+			}
+
+			if pos+dataLen > len(raw) {
+				return pushes
+			}
+			data := make([]byte, dataLen)
+			copy(data, raw[pos:pos+dataLen])
+			pushes = append(pushes, data)
+			pos += dataLen
 		}
 		return pushes
 	}
