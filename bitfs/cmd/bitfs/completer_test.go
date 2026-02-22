@@ -1,0 +1,217 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/tongxiaofeng/bitfs/internal/engine"
+)
+
+// shellCommandsList is the full list of shell command names.
+var shellCommandsList = []string{
+	"ls", "cd", "lcd", "pwd", "mkdir", "put", "rm", "mv", "cp",
+	"link", "sell", "encrypt", "help", "quit", "exit",
+}
+
+func TestCompleteCommandNames_EmptyInput(t *testing.T) {
+	sc := &shellCompleter{commands: shellCommandsList}
+	candidates := sc.completeCommandName("")
+	assert.Equal(t, shellCommandsList, candidates)
+}
+
+func TestCompleteCommandNames_Prefix(t *testing.T) {
+	sc := &shellCompleter{commands: shellCommandsList}
+	candidates := sc.completeCommandName("l")
+	assert.Equal(t, []string{"ls", "lcd", "link"}, candidates)
+}
+
+func TestCompleteCommandNames_ExactMatch(t *testing.T) {
+	sc := &shellCompleter{commands: shellCommandsList}
+	candidates := sc.completeCommandName("pwd")
+	assert.Equal(t, []string{"pwd"}, candidates)
+}
+
+func TestCompleteCommandNames_NoMatch(t *testing.T) {
+	sc := &shellCompleter{commands: shellCommandsList}
+	candidates := sc.completeCommandName("zzz")
+	assert.Empty(t, candidates)
+}
+
+func TestCompleteRemotePath_RootChildren(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "docs", Type: "dir"},
+			{Name: "hello.txt", Type: "file"},
+			{Name: "data", Type: "dir"},
+		},
+	})
+
+	sc := &shellCompleter{state: state, cwd: "/"}
+	candidates := sc.completeRemotePath("")
+	assert.Equal(t, []string{"docs/", "hello.txt", "data/"}, candidates)
+}
+
+func TestCompleteRemotePath_Prefix(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "docs", Type: "dir"},
+			{Name: "hello.txt", Type: "file"},
+			{Name: "data", Type: "dir"},
+		},
+	})
+
+	sc := &shellCompleter{state: state, cwd: "/"}
+	candidates := sc.completeRemotePath("d")
+	assert.Equal(t, []string{"docs/", "data/"}, candidates)
+}
+
+func TestCompleteRemotePath_NestedDir(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "docs", Type: "dir"},
+		},
+	})
+	state.SetNode("bbb", &engine.NodeState{
+		Path: "/docs", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "readme.md", Type: "file"},
+			{Name: "api.md", Type: "file"},
+		},
+	})
+
+	sc := &shellCompleter{state: state, cwd: "/"}
+	candidates := sc.completeRemotePath("docs/")
+	assert.Equal(t, []string{"docs/readme.md", "docs/api.md"}, candidates)
+}
+
+func TestCompleteRemotePath_AbsolutePath(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "docs", Type: "dir"},
+		},
+	})
+	state.SetNode("bbb", &engine.NodeState{
+		Path: "/docs", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "readme.md", Type: "file"},
+		},
+	})
+
+	sc := &shellCompleter{state: state, cwd: "/other"}
+	candidates := sc.completeRemotePath("/docs/")
+	assert.Equal(t, []string{"/docs/readme.md"}, candidates)
+}
+
+func TestCompleteLocalPath(t *testing.T) {
+	tmp := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "subdir"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("x"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "file2.go"), []byte("x"), 0644))
+
+	sc := &shellCompleter{localCwd: tmp}
+	candidates := sc.completeLocalPath("file")
+	assert.ElementsMatch(t, []string{"file.txt", "file2.go"}, candidates)
+}
+
+func TestCompleteLocalPath_Subdir(t *testing.T) {
+	tmp := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "subdir"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "subdir", "a.txt"), []byte("x"), 0644))
+
+	sc := &shellCompleter{localCwd: tmp}
+	candidates := sc.completeLocalPath("subdir/")
+	assert.Equal(t, []string{"subdir/a.txt"}, candidates)
+}
+
+func TestShellCompleterDo_FirstToken(t *testing.T) {
+	sc := &shellCompleter{commands: shellCommandsList}
+	line := []rune("l")
+	newLine, length := sc.Do(line, 1)
+	assert.Equal(t, 1, length)
+	assert.Len(t, newLine, 3)
+}
+
+func TestShellCompleterDo_CdArgument(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "docs", Type: "dir"},
+			{Name: "music", Type: "dir"},
+		},
+	})
+
+	sc := &shellCompleter{
+		commands: shellCommandsList,
+		state:    state,
+		cwd:      "/",
+	}
+	line := []rune("cd d")
+	newLine, length := sc.Do(line, 4)
+	assert.Equal(t, 1, length)
+	require.Len(t, newLine, 1)
+	assert.Equal(t, "ocs/", string(newLine[0]))
+}
+
+func TestShellCompleterDo_LcdArgument(t *testing.T) {
+	tmp := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(tmp, "mydir"), 0755))
+
+	sc := &shellCompleter{
+		commands: shellCommandsList,
+		localCwd: tmp,
+	}
+	line := []rune("lcd m")
+	newLine, length := sc.Do(line, 5)
+	assert.Equal(t, 1, length)
+	require.Len(t, newLine, 1)
+	assert.Equal(t, "ydir/", string(newLine[0]))
+}
+
+func TestShellCompleterDo_PutFirstArg_Local(t *testing.T) {
+	tmp := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "upload.bin"), []byte("x"), 0644))
+
+	sc := &shellCompleter{
+		commands: shellCommandsList,
+		localCwd: tmp,
+	}
+	line := []rune("put u")
+	newLine, length := sc.Do(line, 5)
+	assert.Equal(t, 1, length)
+	require.Len(t, newLine, 1)
+	assert.Equal(t, "pload.bin ", string(newLine[0]))
+}
+
+func TestShellCompleterDo_PutSecondArg_Remote(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "uploads", Type: "dir"},
+		},
+	})
+
+	sc := &shellCompleter{
+		commands: shellCommandsList,
+		state:    state,
+		cwd:      "/",
+	}
+	line := []rune("put file.txt u")
+	newLine, length := sc.Do(line, 14)
+	assert.Equal(t, 1, length)
+	require.Len(t, newLine, 1)
+	assert.Equal(t, "ploads/", string(newLine[0]))
+}
