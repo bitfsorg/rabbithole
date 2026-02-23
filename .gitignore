@@ -15,5 +15,8 @@ bitfs/bstat
 bitfs/btree
 metanet/metanet
 
+# Git worktrees
+.worktrees/
+
 # Docker volume data
 bitfs/e2e/bsv-data/
