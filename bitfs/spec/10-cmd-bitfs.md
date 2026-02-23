@@ -76,15 +76,15 @@ bitfs shell                            FTP 风格交互式 REPL
 
 - `github.com/spf13/cobra` -- CLI 框架
 - `github.com/spf13/viper` -- 配置管理
-- `internal/wallet` -- HD 钱包操作
-- `internal/method42` -- 加密
-- `internal/tx` -- 交易构建
-- `internal/metanet` -- 文件系统操作
-- `internal/storage` -- 内容存储
-- `internal/spv` -- SPV 验证
+- `libbitfs/wallet` -- HD 钱包操作
+- `libbitfs/method42` -- 加密
+- `libbitfs/tx` -- 交易构建
+- `libbitfs/metanet` -- 文件系统操作
+- `libbitfs/storage` -- 内容存储
+- `libbitfs/spv` -- SPV 验证
 - `internal/daemon` -- 守护进程管理
-- `internal/paymail` -- URI 解析
-- `internal/x402` -- 支付协议
+- `libbitfs/paymail` -- URI 解析
+- `libbitfs/x402` -- 支付协议
 
 ## 数据结构
 

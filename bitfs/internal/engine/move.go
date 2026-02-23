@@ -1,12 +1,8 @@
 package engine
 
 import (
-	"encoding/hex"
 	"fmt"
 	"path"
-	"time"
-
-	"github.com/tongxiaofeng/libbitfs/metanet"
 )
 
 // MoveOpts holds options for the Move (rename) operation.
@@ -47,21 +43,26 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 		}
 	}
 
-	// Rename in parent's children list.
+	// Temporarily rename in parent's children list for the build.
+	var renamedIdx int = -1
 	for i, c := range parent.Children {
 		if c.Name == srcName {
-			parent.Children[i].Name = dstName
+			renamedIdx = i
 			break
 		}
 	}
+	if renamedIdx == -1 {
+		return nil, fmt.Errorf("engine: %q not found in parent children", srcName)
+	}
 
-	// Build and sign SelfUpdate tx for parent to commit the rename.
+	parent.Children[renamedIdx].Name = dstName
 	txHex, txIDHex, err := e.buildParentSelfUpdate(parent)
 	if err != nil {
+		parent.Children[renamedIdx].Name = srcName // restore on failure
 		return nil, fmt.Errorf("engine: update parent: %w", err)
 	}
 
-	// Update local state.
+	// TX build succeeded — apply remaining state changes.
 	parent.TxID = txIDHex
 	nodeState.Path = opts.DstPath
 
@@ -78,8 +79,10 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 // for the destination parent (child added). The node itself is not modified —
 // only the parent directories' children lists change.
 //
-// Note: This is application-level atomicity only. If the first transaction
-// succeeds but the second fails, the filesystem state may be inconsistent.
+// The implementation uses a build-then-apply pattern: both transactions are built
+// first (Phase 1) without permanently mutating state. Only after both builds
+// succeed are the state changes applied (Phase 2). This ensures that if either
+// build fails, local state remains consistent.
 func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Result, error) {
 	srcDir := path.Dir(opts.SrcPath)
 	dstDir := path.Dir(opts.DstPath)
@@ -105,12 +108,13 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Resu
 		}
 	}
 
-	// 4. Find and remove child entry from source parent.
+	// 4. Find the child entry in source parent (don't remove yet).
 	var movedChild *ChildState
+	var srcChildIdx int
 	for i, c := range srcParent.Children {
 		if c.Name == srcName {
 			movedChild = c
-			srcParent.Children = append(srcParent.Children[:i], srcParent.Children[i+1:]...)
+			srcChildIdx = i
 			break
 		}
 	}
@@ -118,140 +122,53 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Resu
 		return nil, fmt.Errorf("engine: %q not found in source directory", srcName)
 	}
 
-	// 5. Build SelfUpdate tx for source parent (child removed).
+	// --- Phase 1: Build both TXs without mutating state ---
+
+	// Build source parent children list (without the moved child).
+	srcChildrenAfter := make([]*ChildState, 0, len(srcParent.Children)-1)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[:srcChildIdx]...)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[srcChildIdx+1:]...)
+
+	// Temporarily swap children for build.
+	origSrcChildren := srcParent.Children
+	srcParent.Children = srcChildrenAfter
 	srcTxHex, srcTxID, err := e.buildParentSelfUpdate(srcParent)
+	srcParent.Children = origSrcChildren // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: update source parent: %w", err)
 	}
-	srcParent.TxID = srcTxID
 
-	// 6. Add child entry to destination parent (with possibly new name).
-	dstParent.Children = append(dstParent.Children, &ChildState{
+	// Build destination parent children list (with the moved child).
+	newChild := &ChildState{
 		Name:     dstName,
 		Type:     movedChild.Type,
 		PubKey:   movedChild.PubKey,
 		Index:    movedChild.Index,
 		Hardened: movedChild.Hardened,
-	})
+	}
+	dstChildrenAfter := make([]*ChildState, len(dstParent.Children)+1)
+	copy(dstChildrenAfter, dstParent.Children)
+	dstChildrenAfter[len(dstParent.Children)] = newChild
 
-	// 7. Build SelfUpdate tx for destination parent (child added).
+	origDstChildren := dstParent.Children
+	dstParent.Children = dstChildrenAfter
 	dstTxHex, dstTxID, err := e.buildParentSelfUpdate(dstParent)
+	dstParent.Children = origDstChildren // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: update destination parent: %w", err)
 	}
-	dstParent.TxID = dstTxID
 
-	// 8. Update node path in local state.
+	// --- Phase 2: Both builds succeeded — apply state ---
+	srcParent.Children = srcChildrenAfter
+	srcParent.TxID = srcTxID
+	dstParent.Children = dstChildrenAfter
+	dstParent.TxID = dstTxID
 	nodeState.Path = opts.DstPath
 
-	// Return the destination parent tx as the primary result. Both transaction
-	// hex values are concatenated with a newline so callers can broadcast both.
 	return &Result{
 		TxHex:   srcTxHex + "\n" + dstTxHex,
 		TxID:    dstTxID,
 		Message: fmt.Sprintf("Moved %s -> %s (2 txs: src=%s, dst=%s)", opts.SrcPath, opts.DstPath, srcTxID[:8], dstTxID[:8]),
 		NodePub: nodeState.PubKeyHex,
 	}, nil
-}
-
-// resolveParentDir finds the parent directory node for a given directory path.
-// Handles the root directory case (path "/" or ".").
-func (e *Engine) resolveParentDir(dirPath string, vaultIdx uint32) (*NodeState, error) {
-	parent := e.State.FindNodeByPath(dirPath)
-	if parent != nil {
-		return parent, nil
-	}
-
-	if dirPath == "/" || dirPath == "." {
-		rootPubHex, err := e.getRootPubHex(vaultIdx)
-		if err != nil {
-			return nil, err
-		}
-		parent = e.State.GetNode(rootPubHex)
-		if parent != nil {
-			return parent, nil
-		}
-	}
-
-	return nil, fmt.Errorf("directory %q not found", dirPath)
-}
-
-// buildParentSelfUpdate builds and signs a SelfUpdate transaction for a parent
-// directory node, reflecting its current children list. It allocates a fee UTXO,
-// derives a change address, and tracks the resulting UTXOs.
-// Returns the signed tx hex and tx ID hex.
-func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex string, err error) {
-	// Derive parent key.
-	parentKP, err := e.Wallet.DeriveNodeKey(parent.VaultIndex, parent.ChildIndices, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("derive parent key: %w", err)
-	}
-
-	// Build children list for payload.
-	var children []metanet.ChildEntry
-	for _, c := range parent.Children {
-		children = append(children, metanet.ChildEntry{
-			Index:    c.Index,
-			Name:     c.Name,
-			Type:     metanet.NodeType(nodeTypeInt(c.Type)),
-			PubKey:   mustDecodeHex(c.PubKey),
-			Hardened: c.Hardened,
-		})
-	}
-
-	parentNode := &metanet.Node{
-		Version:        1,
-		Type:           metanet.NodeTypeDir,
-		Op:             metanet.OpUpdate,
-		Access:         metanet.AccessFree,
-		Timestamp:      uint64(time.Now().Unix()),
-		Children:       children,
-		NextChildIndex: parent.NextChildIdx,
-	}
-
-	payload, err := metanet.SerializePayload(parentNode)
-	if err != nil {
-		return "", "", fmt.Errorf("serialize payload: %w", err)
-	}
-
-	var parentTxIDBytes []byte
-	if parent.ParentTxID != "" {
-		parentTxIDBytes, err = TxIDBytes(parent.ParentTxID)
-		if err != nil {
-			return "", "", err
-		}
-	}
-
-	parentUTXO, err := e.getNodeUTXO(parent.PubKeyHex)
-	if err != nil {
-		return "", "", fmt.Errorf("parent UTXO: %w", err)
-	}
-
-	changeAddr, changePriv, err := e.DeriveChangeAddr()
-	if err != nil {
-		return "", "", err
-	}
-	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
-
-	feeUTXO, err := e.AllocateFeeUTXO(2000)
-	if err != nil {
-		return "", "", err
-	}
-
-	mtx, err := buildUnsignedSelfUpdateTx(parentKP, parentTxIDBytes, payload, parentUTXO, feeUTXO, changeAddr)
-	if err != nil {
-		return "", "", fmt.Errorf("build self-update tx: %w", err)
-	}
-
-	signedHex, err := signSelfUpdateTx(mtx, parentUTXO, feeUTXO)
-	if err != nil {
-		return "", "", fmt.Errorf("sign self-update tx: %w", err)
-	}
-
-	txIDHex = hex.EncodeToString(mtx.TxID)
-
-	// Track new UTXOs from this transaction.
-	e.TrackNewUTXOs(mtx, parent.PubKeyHex, changePubHex)
-
-	return signedHex, txIDHex, nil
 }

@@ -1,4 +1,4 @@
-# 模块规范：internal/storage
+# 模块规范：libbitfs/storage
 
 ## 目的
 

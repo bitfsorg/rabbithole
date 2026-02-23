@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // setupMoveTestEngine sets up a test engine with root, /src, /dst directories,
@@ -310,6 +313,67 @@ func TestMove_CrossDirectory_DuplicateDestName(t *testing.T) {
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("error should mention 'already exists', got: %v", err)
 	}
+}
+
+// TestMove_CrossDirectory_SecondTxFailure_PreservesState verifies that when
+// the second TX build fails (destination parent update), both source and
+// destination parent directories' children lists remain unchanged (P2 fix).
+func TestMove_CrossDirectory_SecondTxFailure_PreservesState(t *testing.T) {
+	eng := setupMoveTestEngine(t)
+
+	// Snapshot state before the move.
+	srcDir := eng.State.FindNodeByPath("/src")
+	require.NotNil(t, srcDir)
+	srcChildrenBefore := make([]string, len(srcDir.Children))
+	for i, c := range srcDir.Children {
+		srcChildrenBefore[i] = c.Name
+	}
+
+	dstDir := eng.State.FindNodeByPath("/dst")
+	require.NotNil(t, dstDir)
+	dstChildrenBefore := make([]string, len(dstDir.Children))
+	for i, c := range dstDir.Children {
+		dstChildrenBefore[i] = c.Name
+	}
+
+	srcNode := eng.State.FindNodeByPath("/src/file.txt")
+	require.NotNil(t, srcNode)
+	originalPath := srcNode.Path
+
+	// Mark destination parent's node UTXO as spent so the second
+	// buildParentSelfUpdate (for dst) fails.
+	for _, u := range eng.State.UTXOs {
+		if u.PubKeyHex == dstDir.PubKeyHex && u.Type == "node" && !u.Spent {
+			u.Spent = true
+		}
+	}
+
+	// Move should fail because dst parent update can't build.
+	_, err := eng.Move(&MoveOpts{
+		VaultIndex: 0,
+		SrcPath:    "/src/file.txt",
+		DstPath:    "/dst/file.txt",
+	})
+	require.Error(t, err, "move should fail when dst parent update fails")
+
+	// Source parent's children must be unchanged.
+	srcDirAfter := eng.State.FindNodeByPath("/src")
+	srcChildrenAfter := make([]string, len(srcDirAfter.Children))
+	for i, c := range srcDirAfter.Children {
+		srcChildrenAfter[i] = c.Name
+	}
+	assert.Equal(t, srcChildrenBefore, srcChildrenAfter, "source parent children should be unchanged")
+
+	// Destination parent's children must be unchanged.
+	dstDirAfter := eng.State.FindNodeByPath("/dst")
+	dstChildrenAfter := make([]string, len(dstDirAfter.Children))
+	for i, c := range dstDirAfter.Children {
+		dstChildrenAfter[i] = c.Name
+	}
+	assert.Equal(t, dstChildrenBefore, dstChildrenAfter, "destination parent children should be unchanged")
+
+	// Node path must be unchanged.
+	assert.Equal(t, originalPath, srcNode.Path, "node path should be unchanged")
 }
 
 func TestMove_CrossDirectory_FromRoot(t *testing.T) {

@@ -6,8 +6,8 @@
 
 ## 第一阶段：基础（密码学 + 钱包 + 交易）
 
-### 任务 1：internal/method42 -- Method 42 ECDH 加密引擎
-- **包**：`internal/method42/`
+### 任务 1：libbitfs/method42 -- Method 42 ECDH 加密引擎
+- **包**：`libbitfs/method42/`
 - **文件**：`encrypt.go`、`ecdh.go`、`kdf.go`、`access.go`、`method42_test.go`
 - **描述**：实现核心加密系统。secp256k1 上的 ECDH 密钥交换、HKDF-SHA256 密钥推导、AES-256-GCM 加密/解密、三种访问模式（私有/免费/付费）、用于 HTLC 的胶囊（Capsule）计算、模式间重加密。
 - **验收标准**：
@@ -23,8 +23,8 @@
 - **估计测试数**：45
 - **依赖**：go-sdk（ec 原语）、golang.org/x/crypto（hkdf）
 
-### 任务 2：internal/wallet -- HD 钱包（BIP32/BIP39）
-- **包**：`internal/wallet/`
+### 任务 2：libbitfs/wallet -- HD 钱包（BIP32/BIP39）
+- **包**：`libbitfs/wallet/`
 - **文件**：`seed.go`、`hd.go`、`vault.go`、`network.go`、`wallet_test.go`
 - **描述**：BIP39 助记词生成/验证、使用 BitFS 路径方案（m/44'/236'/...）的 BIP32 密钥派生、Argon2id 种子加密、保险库 CRUD、手续费密钥链派生、网络配置。
 - **验收标准**：
@@ -43,8 +43,8 @@
 - **估计测试数**：55
 - **依赖**：go-sdk（bip32、bip39、ec）、golang.org/x/crypto（argon2）
 
-### 任务 3：internal/tx -- BSV 交易构建
-- **包**：`internal/tx/`
+### 任务 3：libbitfs/tx -- BSV 交易构建
+- **包**：`libbitfs/tx/`
 - **文件**：`metanet_tx.go`、`utxo.go`、`opreturn.go`、`tx_test.go`
 - **描述**：构建四种 Metanet 交易模板（CreateRoot、CreateChild、SelfUpdate、DataTransaction）。OP_RETURN 构建与解析。自维持链的 UTXO 追踪。手续费估算。
 - **验收标准**：
@@ -59,14 +59,14 @@
   - [x] UTXO 追踪正确跟随刷新链
   - [x] 资金不足错误信息清晰
 - **估计测试数**：40
-- **依赖**：go-sdk（transaction、script、ec）、internal/wallet
+- **依赖**：go-sdk（transaction、script、ec）、libbitfs/wallet
 
 ---
 
 ## 第二阶段：文件系统（DAG + 验证 + 存储）
 
-### 任务 4：internal/metanet -- Metanet DAG 解析器
-- **包**：`internal/metanet/`
+### 任务 4：libbitfs/metanet -- Metanet DAG 解析器
+- **包**：`libbitfs/metanet/`
 - **文件**：`node.go`、`parser.go`、`resolve.go`、`directory.go`、`link.go`、`metanet_test.go`
 - **描述**：将 Metanet 交易解析为 Node 结构体，实现 Unix 文件系统操作（路径解析、目录列表、链接跟踪），版本解析（最高区块高度 + TTOR），价格继承。
 - **验收标准**：
@@ -82,10 +82,10 @@
   - [x] InheritPricePerKB 沿目录树向上查找
   - [x] 三种节点类型（FILE/DIR/LINK）正确解析
 - **估计测试数**：65
-- **依赖**：internal/tx、protobuf、go-sdk（ec）
+- **依赖**：libbitfs/tx、protobuf、go-sdk（ec）
 
-### 任务 5：internal/spv -- SPV 轻客户端
-- **包**：`internal/spv/`
+### 任务 5：libbitfs/spv -- SPV 轻客户端
+- **包**：`libbitfs/spv/`
 - **文件**：`merkle.go`、`header.go`、`verify.go`、`store.go`、`spv_test.go`
 - **描述**：Merkle 证明验证、区块头链验证、完整 SPV 验证链（交易完整性 -> Merkle 证明 -> 区块头 -> 最长链）。区块头和交易存储接口。
 - **验收标准**：
@@ -100,8 +100,8 @@
 - **估计测试数**：35
 - **依赖**：crypto/sha256
 
-### 任务 6：internal/storage -- 内容存储
-- **包**：`internal/storage/`
+### 任务 6：libbitfs/storage -- 内容存储
+- **包**：`libbitfs/storage/`
 - **文件**：`store.go`、`filestore.go`、`storage_test.go`
 - **描述**：基于文件的内容寻址存储。扁平键值存储，key_hash 映射到密文文件，按哈希第一个字节进行目录分片。
 - **验收标准**：
@@ -120,8 +120,8 @@
 
 ## 第三阶段：网络（身份 + 支付 + 守护进程）
 
-### 任务 7：internal/paymail -- Paymail 身份解析
-- **包**：`internal/paymail/`
+### 任务 7：libbitfs/paymail -- Paymail 身份解析
+- **包**：`libbitfs/paymail/`
 - **文件**：`uri.go`、`resolve.go`、`dns.go`、`paymail_test.go`
 - **描述**：解析 bitfs:// URI，检测地址类型（Paymail/@、DNSLink、裸公钥），DNS SRV/TXT 解析，Paymail 能力发现，PKI 解析。
 - **验收标准**：
@@ -137,8 +137,8 @@
 - **估计测试数**：35
 - **依赖**：net、net/http、net/url
 
-### 任务 8：internal/x402 -- x402 支付协议
-- **包**：`internal/x402/`
+### 任务 8：libbitfs/x402 -- x402 支付协议
+- **包**：`libbitfs/x402/`
 - **文件**：`invoice.go`、`headers.go`、`htlc.go`、`verify.go`、`x402_test.go`
 - **描述**：发票创建、HTTP 402 头部、HTLC 脚本构建、支付验证。
 - **验收标准**：
@@ -150,7 +150,7 @@
   - [x] 过期发票被拒绝
   - [x] ParseHTLCPreimage 从花费交易中提取胶囊
 - **估计测试数**：30
-- **依赖**：go-sdk（transaction、script）、internal/method42
+- **依赖**：go-sdk（transaction、script）、libbitfs/method42
 
 ### 任务 9：internal/daemon -- BitFS 守护进程（LFCP）
 - **包**：`internal/daemon/`
@@ -208,7 +208,7 @@
   - [x] URI 解析处理所有三种地址类型
   - [x] 免费内容自动解密
 - **估计测试数**：75
-- **依赖**：cobra、internal/paymail、internal/method42、internal/x402
+- **依赖**：cobra、libbitfs/paymail、libbitfs/method42、libbitfs/x402
 
 ---
 

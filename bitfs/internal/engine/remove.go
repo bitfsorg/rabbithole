@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/hex"
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/tongxiaofeng/libbitfs/metanet"
@@ -20,6 +21,11 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 	nodeState := e.State.FindNodeByPath(opts.Path)
 	if nodeState == nil {
 		return nil, fmt.Errorf("engine: node %q not found", opts.Path)
+	}
+
+	// Reject non-empty directory removal.
+	if nodeState.Type == "dir" && len(nodeState.Children) > 0 {
+		return nil, fmt.Errorf("engine: directory %q is not empty (%d children)", opts.Path, len(nodeState.Children))
 	}
 
 	// Derive key pair.
@@ -83,10 +89,51 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 	nodeState.TxID = txIDHex
 	e.TrackNewUTXOs(mtx, nodeState.PubKeyHex, changePubHex)
 
+	// --- Update parent directory to remove child entry ---
+	parentDir := path.Dir(opts.Path)
+	parent, parentErr := e.resolveParentDir(parentDir, opts.VaultIndex)
+	if parentErr != nil {
+		// Best effort: return node-only result with a warning.
+		return &Result{
+			TxHex:   txHex,
+			TxID:    txIDHex,
+			Message: fmt.Sprintf("Removed %s (warning: parent update failed: %v)", opts.Path, parentErr),
+			NodePub: nodeState.PubKeyHex,
+		}, nil
+	}
+
+	// Build new children slice without the removed entry (don't mutate yet).
+	childName := path.Base(opts.Path)
+	childrenAfter := make([]*ChildState, 0, len(parent.Children))
+	for _, c := range parent.Children {
+		if c.Name != childName {
+			childrenAfter = append(childrenAfter, c)
+		}
+	}
+
+	// Temporarily swap children for the build, then restore.
+	origChildren := parent.Children
+	parent.Children = childrenAfter
+	parentTxHex, parentTxIDHex, parentBuildErr := e.buildParentSelfUpdate(parent)
+	parent.Children = origChildren // restore
+	if parentBuildErr != nil {
+		// Best effort: return node-only result with a warning.
+		return &Result{
+			TxHex:   txHex,
+			TxID:    txIDHex,
+			Message: fmt.Sprintf("Removed %s (warning: parent update failed: %v)", opts.Path, parentBuildErr),
+			NodePub: nodeState.PubKeyHex,
+		}, nil
+	}
+
+	// Both TXs succeeded — now apply state changes.
+	parent.Children = childrenAfter
+	parent.TxID = parentTxIDHex
+
 	return &Result{
-		TxHex:   txHex,
+		TxHex:   txHex + "\n" + parentTxHex,
 		TxID:    txIDHex,
-		Message: fmt.Sprintf("Removed %s", opts.Path),
+		Message: fmt.Sprintf("Removed %s (2 txs: node=%s, parent=%s)", opts.Path, txIDHex[:8], parentTxIDHex[:8]),
 		NodePub: nodeState.PubKeyHex,
 	}, nil
 }

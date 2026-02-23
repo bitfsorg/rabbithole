@@ -71,6 +71,13 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 		node.FileSize = nodeState.FileSize
 	}
 
+	// Preserve extended metadata in on-chain payload.
+	node.Keywords = nodeState.Keywords
+	node.Description = nodeState.Description
+	node.Domain = nodeState.Domain
+	node.OnChain = nodeState.OnChain
+	node.Compression = nodeState.Compression
+
 	payload, err := metanet.SerializePayload(node)
 	if err != nil {
 		return nil, fmt.Errorf("engine: serialize payload: %w", err)

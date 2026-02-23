@@ -42,6 +42,11 @@ type NodeState struct {
 	PricePerKB   uint64            `json:"price_per_kb,omitempty"`
 	LinkTarget   string            `json:"link_target,omitempty"` // target pubkey hex
 	Metadata     map[string]string `json:"metadata,omitempty"`
+	Keywords     string            `json:"keywords,omitempty"`
+	Description  string            `json:"description,omitempty"`
+	Domain       string            `json:"domain,omitempty"`
+	OnChain      bool              `json:"on_chain,omitempty"`
+	Compression  int32             `json:"compression,omitempty"`
 }
 
 // ChildState tracks a child entry within a directory.

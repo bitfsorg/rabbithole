@@ -142,7 +142,8 @@ func (e *Engine) createSoftLink(opts *LinkOpts, targetNode *NodeState) (*Result,
 }
 
 // createHardLink adds a ChildEntry in the parent pointing to the same PubKey.
-// This is a SelfUpdate on the parent directory.
+// This is a SelfUpdate on the parent directory. Uses build-then-apply pattern
+// to keep state consistent if the TX build fails.
 func (e *Engine) createHardLink(opts *LinkOpts, targetNode *NodeState) (*Result, error) {
 	parent, childName, err := e.ResolveParentNode(opts.LinkPath, opts.VaultIndex)
 	if err != nil {
@@ -155,86 +156,35 @@ func (e *Engine) createHardLink(opts *LinkOpts, targetNode *NodeState) (*Result,
 		}
 	}
 
-	// Add hard link: same pubkey, new name.
-	parent.Children = append(parent.Children, &ChildState{
+	// Prepare new children list with the hard link entry (don't mutate yet).
+	newChild := &ChildState{
 		Name:     childName,
 		Type:     targetNode.Type,
 		PubKey:   targetNode.PubKeyHex,
 		Index:    parent.NextChildIdx, // doesn't actually derive a new key
 		Hardened: false,
-	})
-	parent.NextChildIdx++
-
-	// Build SelfUpdate for parent.
-	parentKP, err := e.Wallet.DeriveNodeKey(parent.VaultIndex, parent.ChildIndices, nil)
-	if err != nil {
-		return nil, fmt.Errorf("engine: derive parent key: %w", err)
 	}
+	childrenAfter := make([]*ChildState, len(parent.Children)+1)
+	copy(childrenAfter, parent.Children)
+	childrenAfter[len(parent.Children)] = newChild
+	nextIdxAfter := parent.NextChildIdx + 1
 
-	var children []metanet.ChildEntry
-	for _, c := range parent.Children {
-		children = append(children, metanet.ChildEntry{
-			Index:    c.Index,
-			Name:     c.Name,
-			Type:     metanet.NodeType(nodeTypeInt(c.Type)),
-			PubKey:   mustDecodeHex(c.PubKey),
-			Hardened: c.Hardened,
-		})
-	}
-
-	parentNode := &metanet.Node{
-		Version:        1,
-		Type:           metanet.NodeTypeDir,
-		Op:             metanet.OpUpdate,
-		Access:         metanet.AccessFree,
-		Timestamp:      uint64(time.Now().Unix()),
-		Children:       children,
-		NextChildIndex: parent.NextChildIdx,
-	}
-
-	payload, err := metanet.SerializePayload(parentNode)
-	if err != nil {
-		return nil, fmt.Errorf("engine: serialize payload: %w", err)
-	}
-
-	var parentTxIDBytes []byte
-	if parent.ParentTxID != "" {
-		parentTxIDBytes, err = TxIDBytes(parent.ParentTxID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	parentUTXO, err := e.getNodeUTXO(parent.PubKeyHex)
-	if err != nil {
-		return nil, fmt.Errorf("engine: parent UTXO: %w", err)
-	}
-
-	changeAddr, changePriv, err := e.DeriveChangeAddr()
-	if err != nil {
-		return nil, err
-	}
-	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
-
-	feeUTXO, err := e.AllocateFeeUTXO(2000)
-	if err != nil {
-		return nil, err
-	}
-
-	mtx, err := buildUnsignedSelfUpdateTx(parentKP, parentTxIDBytes, payload, parentUTXO, feeUTXO, changeAddr)
+	// Temporarily swap children for the build, then restore.
+	origChildren := parent.Children
+	origNextIdx := parent.NextChildIdx
+	parent.Children = childrenAfter
+	parent.NextChildIdx = nextIdxAfter
+	txHex, txIDHex, err := e.buildParentSelfUpdate(parent)
+	parent.Children = origChildren     // restore
+	parent.NextChildIdx = origNextIdx  // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: build self-update tx: %w", err)
 	}
 
-	txHex, err := signSelfUpdateTx(mtx, parentUTXO, feeUTXO)
-	if err != nil {
-		return nil, fmt.Errorf("engine: sign self-update tx: %w", err)
-	}
-
-	txIDHex := hex.EncodeToString(mtx.TxID)
-
+	// TX build succeeded — apply state changes.
+	parent.Children = childrenAfter
+	parent.NextChildIdx = nextIdxAfter
 	parent.TxID = txIDHex
-	e.TrackNewUTXOs(mtx, parent.PubKeyHex, changePubHex)
 
 	return &Result{
 		TxHex:   txHex,

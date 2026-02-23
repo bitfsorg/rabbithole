@@ -1,4 +1,4 @@
-# 模块规范：internal/spv
+# 模块规范：libbitfs/spv
 
 ## 目的
 

@@ -8,8 +8,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -87,7 +85,17 @@ func newFullMockDaemon(t *testing.T,
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_DefaultFilename(t *testing.T) {
-	content := []byte("Hello, BitFS world!\nSecond line.\n")
+	plaintext := []byte("Hello, BitFS world!\nSecond line.\n")
+
+	// Encrypt content with Method 42 AccessFree using testPubKey.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -96,16 +104,16 @@ func TestFreeContent_DefaultFilename(t *testing.T) {
 				Type:     "file",
 				Path:     "/hello.txt",
 				MimeType: "text/plain",
-				FileSize: uint64(len(content)),
-				KeyHash:  testKeyHash("aa"),
+				FileSize: uint64(len(plaintext)),
+				KeyHash:  keyHashHex,
 				Access:   "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
-			assert.True(t, strings.HasSuffix(r.URL.Path, "/"+testKeyHash("aa")),
+			assert.True(t, strings.HasSuffix(r.URL.Path, "/"+keyHashHex),
 				"data request should include key_hash; got %s", r.URL.Path)
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -121,10 +129,10 @@ func TestFreeContent_DefaultFilename(t *testing.T) {
 	assert.Contains(t, stdout.String(), "Downloaded")
 	assert.Contains(t, stdout.String(), "hello.txt")
 
-	// Verify file was created with correct contents.
+	// Verify file was created with correct decrypted contents.
 	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
-	assert.Equal(t, content, data)
+	assert.Equal(t, plaintext, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +140,17 @@ func TestFreeContent_DefaultFilename(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_CustomOutputFilename(t *testing.T) {
-	content := []byte("custom output content")
+	plaintext := []byte("custom output content")
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -141,14 +159,14 @@ func TestFreeContent_CustomOutputFilename(t *testing.T) {
 				Type:     "file",
 				Path:     "/hello.txt",
 				MimeType: "text/plain",
-				FileSize: uint64(len(content)),
-				KeyHash:  testKeyHash("bb"),
+				FileSize: uint64(len(plaintext)),
+				KeyHash:  keyHashHex,
 				Access:   "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -166,7 +184,7 @@ func TestFreeContent_CustomOutputFilename(t *testing.T) {
 
 	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
-	assert.Equal(t, content, data)
+	assert.Equal(t, plaintext, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -598,7 +616,17 @@ func TestMissingKeyHash(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDefaultFilename_RootPath(t *testing.T) {
-	content := []byte("root content")
+	plaintext := []byte("root content")
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -606,13 +634,13 @@ func TestDefaultFilename_RootPath(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/",
-				KeyHash: testKeyHash("cc"),
+				KeyHash: keyHashHex,
 				Access:  "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -628,7 +656,7 @@ func TestDefaultFilename_RootPath(t *testing.T) {
 
 	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
-	assert.Equal(t, content, data)
+	assert.Equal(t, plaintext, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -636,10 +664,20 @@ func TestDefaultFilename_RootPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_BinaryData(t *testing.T) {
-	content := make([]byte, 256)
-	for i := range content {
-		content[i] = byte(i)
+	plaintext := make([]byte, 256)
+	for i := range plaintext {
+		plaintext[i] = byte(i)
 	}
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -648,14 +686,14 @@ func TestFreeContent_BinaryData(t *testing.T) {
 				Type:     "file",
 				Path:     "/binary.dat",
 				MimeType: "application/octet-stream",
-				FileSize: uint64(len(content)),
-				KeyHash:  testKeyHash("dd"),
+				FileSize: uint64(len(plaintext)),
+				KeyHash:  keyHashHex,
 				Access:   "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -670,7 +708,7 @@ func TestFreeContent_BinaryData(t *testing.T) {
 
 	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
-	assert.Equal(t, content, data, "binary content should be preserved exactly")
+	assert.Equal(t, plaintext, data, "binary content should be preserved exactly")
 }
 
 // ---------------------------------------------------------------------------
@@ -760,7 +798,17 @@ func TestEmptyURI(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestOutputLongFlag(t *testing.T) {
-	content := []byte("long flag content")
+	plaintext := []byte("long flag content")
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -768,13 +816,13 @@ func TestOutputLongFlag(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/doc.txt",
-				KeyHash: testKeyHash("11"),
+				KeyHash: keyHashHex,
 				Access:  "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -788,7 +836,7 @@ func TestOutputLongFlag(t *testing.T) {
 	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
-	assert.Equal(t, content, data)
+	assert.Equal(t, plaintext, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -841,10 +889,20 @@ func TestUnknownFlag(t *testing.T) {
 
 func TestFreeContent_LargeFile(t *testing.T) {
 	size := 1024 * 64 // 64 KB
-	content := make([]byte, size)
-	for i := range content {
-		content[i] = byte(i % 251)
+	plaintext := make([]byte, size)
+	for i := range plaintext {
+		plaintext[i] = byte(i % 251)
 	}
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -852,13 +910,13 @@ func TestFreeContent_LargeFile(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/large.bin",
-				KeyHash: testKeyHash("22"),
+				KeyHash: keyHashHex,
 				Access:  "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -869,11 +927,11 @@ func TestFreeContent_LargeFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/large.bin")}, &stdout, &stderr)
 
-	assert.Equal(t, 0, code)
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	data, err := os.ReadFile(outFile)
 	require.NoError(t, err)
 	require.Equal(t, size, len(data), "output size should match input")
-	assert.Equal(t, content, data)
+	assert.Equal(t, plaintext, data)
 }
 
 // ---------------------------------------------------------------------------
@@ -881,7 +939,17 @@ func TestFreeContent_LargeFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFreeContent_ByteCountInMessage(t *testing.T) {
-	content := []byte("12345678901234567890") // 20 bytes
+	plaintext := []byte("12345678901234567890") // 20 bytes
+
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 
 	srv := newMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -889,13 +957,13 @@ func TestFreeContent_ByteCountInMessage(t *testing.T) {
 				PNode:   testPubKey,
 				Type:    "file",
 				Path:    "/count.txt",
-				KeyHash: testKeyHash("33"),
+				KeyHash: keyHashHex,
 				Access:  "free",
 			})
 		},
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/octet-stream")
-			_, _ = w.Write(content)
+			_, _ = w.Write(encResult.Ciphertext)
 		},
 	)
 	defer srv.Close()
@@ -906,69 +974,47 @@ func TestFreeContent_ByteCountInMessage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/count.txt")}, &stdout, &stderr)
 
-	assert.Equal(t, 0, code)
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	assert.Contains(t, stdout.String(), "Downloaded 20 bytes")
 }
 
 // ---------------------------------------------------------------------------
-// Partial file cleanup on download failure
+// Decrypt failure — invalid ciphertext should not leave partial file on disk
 // ---------------------------------------------------------------------------
 
-func TestPartialFileCleanup_OnWriteError(t *testing.T) {
-	// Create a custom server that sends partial data then kills the connection.
-	// This simulates a mid-stream network failure so io.Copy returns an error.
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	// Serve meta endpoint normally, data endpoint via raw conn.
-	metaMux := http.NewServeMux()
-	metaMux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
-		serveJSON(w, client.MetaResponse{
-			PNode:   testPubKey,
-			Type:    "file",
-			Path:    "/partial.bin",
-			KeyHash: testKeyHash("44"),
-			Access:  "free",
-		})
-	})
-	metaMux.HandleFunc("/_bitfs/data/", func(w http.ResponseWriter, r *http.Request) {
-		// Advertise a large Content-Length but send only a few bytes,
-		// then close connection — io.Copy sees unexpected EOF.
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Length", "100000")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			_, _ = w.Write([]byte("partial"))
-			f.Flush()
-		}
-		// Hijack the connection and close it abruptly.
-		if hj, ok := w.(http.Hijacker); ok {
-			conn, _, _ := hj.Hijack()
-			if conn != nil {
-				conn.Close()
-			}
-		}
-	})
-
-	srv := &httptest.Server{
-		Listener: listener,
-		Config:   &http.Server{Handler: metaMux},
-	}
-	srv.Start()
+func TestDecryptFailure_NoPartialFile(t *testing.T) {
+	// Serve garbage data that cannot be decrypted — decryption should fail
+	// and no file should be left on disk.
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:   testPubKey,
+				Type:    "file",
+				Path:    "/corrupt.bin",
+				KeyHash: testKeyHash("44"),
+				Access:  "free",
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			// Write garbage that will fail AES-GCM decryption.
+			_, _ = w.Write([]byte("this is not valid ciphertext at all"))
+		},
+	)
 	defer srv.Close()
 
 	tmpDir := t.TempDir()
-	outFile := filepath.Join(tmpDir, "partial.bin")
+	outFile := filepath.Join(tmpDir, "corrupt.bin")
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/partial.bin")}, &stdout, &stderr)
+	code := run([]string{"-o", outFile, "--host", srv.URL, makeURI("/corrupt.bin")}, &stdout, &stderr)
 
-	assert.NotEqual(t, 0, code, "mid-stream failure should return non-zero exit code")
-	assert.Contains(t, stderr.String(), "write error",
-		"stderr should contain write error message")
+	assert.NotEqual(t, 0, code, "decrypt failure should return non-zero exit code")
+	assert.Contains(t, stderr.String(), "decrypt",
+		"stderr should contain decrypt error message")
 
-	// The critical assertion: partial file must not remain on disk.
+	// The critical assertion: no file should be created on decrypt failure.
 	_, statErr := os.Stat(outFile)
 	assert.True(t, os.IsNotExist(statErr),
-		fmt.Sprintf("partial file should be removed on failure, but got: %v", statErr))
+		"no file should be left on disk after decrypt failure, but got: %v", statErr)
 }

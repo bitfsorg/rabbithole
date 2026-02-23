@@ -1,4 +1,4 @@
-# 模块规范：internal/metanet
+# 模块规范：libbitfs/metanet
 
 ## 目的
 
@@ -163,7 +163,7 @@ func InheritPricePerKB(store NodeStore, node *Node) (uint64, error)
 
 ## 依赖
 
-- `internal/tx` -- OP_RETURN 解析，交易格式
+- `libbitfs/tx` -- OP_RETURN 解析，交易格式
 - `google.golang.org/protobuf` -- Protobuf 反序列化
 - `github.com/bsv-blockchain/go-sdk/primitives/ec` -- 公钥处理
 

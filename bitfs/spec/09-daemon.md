@@ -122,13 +122,13 @@ GET  /api/v1/pki/{alias}@{domain}   Paymail PKI 端点
 ## 依赖
 
 - `net/http` -- HTTP 服务器
-- `internal/wallet` -- 密钥管理
-- `internal/storage` -- 内容存储
-- `internal/method42` -- 加密/解密与握手
-- `internal/metanet` -- DAG 遍历
-- `internal/x402` -- 支付协议
-- `internal/paymail` -- Paymail 服务器能力
-- `internal/spv` -- 交易验证
+- `libbitfs/wallet` -- 密钥管理
+- `libbitfs/storage` -- 内容存储
+- `libbitfs/method42` -- 加密/解密与握手
+- `libbitfs/metanet` -- DAG 遍历
+- `libbitfs/x402` -- 支付协议
+- `libbitfs/paymail` -- Paymail 服务器能力
+- `libbitfs/spv` -- 交易验证
 
 ## 数据结构
 

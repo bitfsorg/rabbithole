@@ -109,16 +109,21 @@ func (e *Engine) Copy(opts *CopyOpts) (*Result, error) {
 	}
 
 	node := &metanet.Node{
-		Version:   1,
-		Type:      metanet.NodeTypeFile,
-		Op:        metanet.OpCreate,
-		MimeType:  srcNode.MimeType,
-		FileSize:  srcNode.FileSize,
-		KeyHash:   encResult.KeyHash,
-		Access:    accessLevel,
-		Timestamp: uint64(time.Now().Unix()),
-		Parent:    mustDecodeHex(dstParent.PubKeyHex),
-		Index:     childIdx,
+		Version:     1,
+		Type:        metanet.NodeTypeFile,
+		Op:          metanet.OpCreate,
+		MimeType:    srcNode.MimeType,
+		FileSize:    srcNode.FileSize,
+		KeyHash:     encResult.KeyHash,
+		Access:      accessLevel,
+		Timestamp:   uint64(time.Now().Unix()),
+		Parent:      mustDecodeHex(dstParent.PubKeyHex),
+		Index:       childIdx,
+		Keywords:    srcNode.Keywords,
+		Description: srcNode.Description,
+		Domain:      srcNode.Domain,
+		OnChain:     srcNode.OnChain,
+		Compression: srcNode.Compression,
 	}
 
 	payload, err := metanet.SerializePayload(node)
@@ -173,6 +178,11 @@ func (e *Engine) Copy(opts *CopyOpts) (*Result, error) {
 		KeyHash:      hex.EncodeToString(encResult.KeyHash),
 		FileSize:     srcNode.FileSize,
 		MimeType:     srcNode.MimeType,
+		Keywords:     srcNode.Keywords,
+		Description:  srcNode.Description,
+		Domain:       srcNode.Domain,
+		OnChain:      srcNode.OnChain,
+		Compression:  srcNode.Compression,
 	}
 	if srcNode.PricePerKB > 0 {
 		childState.PricePerKB = srcNode.PricePerKB

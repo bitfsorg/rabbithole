@@ -1,4 +1,4 @@
-# 模块规范：internal/wallet
+# 模块规范：libbitfs/wallet
 
 ## 目的
 
