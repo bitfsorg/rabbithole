@@ -63,6 +63,13 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 		NextChildIndex: parent.NextChildIdx,
 	}
 
+	// Preserve extended metadata in on-chain payload.
+	parentNode.Keywords = parent.Keywords
+	parentNode.Description = parent.Description
+	parentNode.Domain = parent.Domain
+	parentNode.OnChain = parent.OnChain
+	parentNode.Compression = parent.Compression
+
 	payload, err := metanet.SerializePayload(parentNode)
 	if err != nil {
 		return "", "", fmt.Errorf("serialize payload: %w", err)

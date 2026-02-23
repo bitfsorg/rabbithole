@@ -367,6 +367,41 @@ func TestPutFile_FileNotExist(t *testing.T) {
 
 // --- ResolveParentNode tests ---
 
+func TestPutFile_PreservesExtendedMetadata(t *testing.T) {
+	eng := initTestEngine(t)
+
+	testFile := filepath.Join(eng.DataDir, "meta.txt")
+	if err := os.WriteFile(testFile, []byte("metadata test"), 0644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	addFeeUTXO(t, eng, 100000)
+	_, err := eng.Mkdir(&MkdirOpts{VaultIndex: 0, Path: "/"})
+	require.NoError(t, err)
+
+	addFeeUTXO(t, eng, 100000)
+	_, err = eng.PutFile(&PutOpts{
+		VaultIndex:  0,
+		LocalFile:   testFile,
+		RemotePath:  "/meta.txt",
+		Access:      "free",
+		Keywords:    "test,metadata",
+		Description: "A test file with metadata",
+		Domain:      "example.com",
+		OnChain:     true,
+		Compression: 2,
+	})
+	require.NoError(t, err)
+
+	node := eng.State.FindNodeByPath("/meta.txt")
+	require.NotNil(t, node)
+	assert.Equal(t, "test,metadata", node.Keywords)
+	assert.Equal(t, "A test file with metadata", node.Description)
+	assert.Equal(t, "example.com", node.Domain)
+	assert.True(t, node.OnChain)
+	assert.Equal(t, int32(2), node.Compression)
+}
+
 func TestResolveParentNode_RootNotInitialized(t *testing.T) {
 	eng := initTestEngine(t)
 
@@ -537,6 +572,95 @@ func TestMetanetAdapter_GetNodeByPath_Found(t *testing.T) {
 }
 
 // --- Remove + parent update tests ---
+
+// TestRemove_ParentUpdateFailure_PreservesState verifies that when the parent
+// update TX build fails, the parent's Children list is NOT mutated (P1 fix).
+func TestRemove_NonEmptyDirectory_Fails(t *testing.T) {
+	eng, _ := setupCopyTestEngine(t) // root has /test.txt as child
+
+	rootPubHex, err := eng.getRootPubHex(0)
+	require.NoError(t, err)
+	root := eng.State.GetNode(rootPubHex)
+	require.NotNil(t, root)
+	require.Greater(t, len(root.Children), 0, "root should have children")
+
+	addFeeUTXO(t, eng, 100000)
+
+	_, err = eng.Remove(&RemoveOpts{VaultIndex: 0, Path: "/"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not empty")
+}
+
+func TestRemove_EmptyDirectory_Succeeds(t *testing.T) {
+	eng := initTestEngine(t)
+
+	// Create root + empty subdirectory.
+	addFeeUTXO(t, eng, 100000)
+	_, err := eng.Mkdir(&MkdirOpts{VaultIndex: 0, Path: "/"})
+	require.NoError(t, err)
+
+	addFeeUTXO(t, eng, 100000)
+	_, err = eng.Mkdir(&MkdirOpts{VaultIndex: 0, Path: "/emptydir"})
+	require.NoError(t, err)
+
+	emptyDir := eng.State.FindNodeByPath("/emptydir")
+	require.NotNil(t, emptyDir)
+	require.Empty(t, emptyDir.Children, "/emptydir should have no children")
+
+	// Add fee UTXOs for removal (node delete + parent update).
+	addFeeUTXO(t, eng, 100000)
+	addFeeUTXO(t, eng, 100000)
+
+	result, err := eng.Remove(&RemoveOpts{VaultIndex: 0, Path: "/emptydir"})
+	require.NoError(t, err)
+	assert.Contains(t, result.Message, "Removed")
+
+	// Verify /emptydir is removed from root's children.
+	rootPubHex, _ := eng.getRootPubHex(0)
+	root := eng.State.GetNode(rootPubHex)
+	for _, c := range root.Children {
+		assert.NotEqual(t, "emptydir", c.Name)
+	}
+}
+
+func TestRemove_ParentUpdateFailure_PreservesState(t *testing.T) {
+	eng, _ := setupCopyTestEngine(t) // gives us root + /test.txt
+
+	rootPubHex, err := eng.getRootPubHex(0)
+	require.NoError(t, err)
+	root := eng.State.GetNode(rootPubHex)
+	require.NotNil(t, root)
+
+	// Snapshot parent's children before remove.
+	childrenBefore := make([]string, len(root.Children))
+	for i, c := range root.Children {
+		childrenBefore[i] = c.Name
+	}
+	require.Contains(t, childrenBefore, "test.txt")
+
+	// Add fee UTXO only for the node deletion TX.
+	addFeeUTXO(t, eng, 100000)
+
+	// Mark root's node UTXO as spent so buildParentSelfUpdate fails.
+	for _, u := range eng.State.UTXOs {
+		if u.PubKeyHex == rootPubHex && u.Type == "node" && !u.Spent {
+			u.Spent = true
+		}
+	}
+
+	// Remove should still succeed (best-effort), but with a warning.
+	result, err := eng.Remove(&RemoveOpts{VaultIndex: 0, Path: "/test.txt"})
+	require.NoError(t, err)
+	assert.Contains(t, result.Message, "warning")
+
+	// Parent's children list must still contain test.txt (not mutated).
+	rootAfter := eng.State.GetNode(rootPubHex)
+	childrenAfter := make([]string, len(rootAfter.Children))
+	for i, c := range rootAfter.Children {
+		childrenAfter[i] = c.Name
+	}
+	assert.Equal(t, childrenBefore, childrenAfter, "parent children should be unchanged after failed parent update")
+}
 
 func TestRemove_UpdatesParentChildList(t *testing.T) {
 	eng, _ := setupCopyTestEngine(t) // gives us root + /test.txt

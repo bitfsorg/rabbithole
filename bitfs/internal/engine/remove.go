@@ -23,6 +23,11 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 		return nil, fmt.Errorf("engine: node %q not found", opts.Path)
 	}
 
+	// Reject non-empty directory removal.
+	if nodeState.Type == "dir" && len(nodeState.Children) > 0 {
+		return nil, fmt.Errorf("engine: directory %q is not empty (%d children)", opts.Path, len(nodeState.Children))
+	}
+
 	// Derive key pair.
 	kp, err := e.Wallet.DeriveNodeKey(nodeState.VaultIndex, nodeState.ChildIndices, nil)
 	if err != nil {
@@ -97,17 +102,20 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 		}, nil
 	}
 
-	// Remove child entry from parent's Children slice.
+	// Build new children slice without the removed entry (don't mutate yet).
 	childName := path.Base(opts.Path)
-	for i, c := range parent.Children {
-		if c.Name == childName {
-			parent.Children = append(parent.Children[:i], parent.Children[i+1:]...)
-			break
+	childrenAfter := make([]*ChildState, 0, len(parent.Children))
+	for _, c := range parent.Children {
+		if c.Name != childName {
+			childrenAfter = append(childrenAfter, c)
 		}
 	}
 
-	// Build and sign SelfUpdate tx for parent to commit the updated children list.
+	// Temporarily swap children for the build, then restore.
+	origChildren := parent.Children
+	parent.Children = childrenAfter
 	parentTxHex, parentTxIDHex, parentBuildErr := e.buildParentSelfUpdate(parent)
+	parent.Children = origChildren // restore
 	if parentBuildErr != nil {
 		// Best effort: return node-only result with a warning.
 		return &Result{
@@ -117,6 +125,9 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 			NodePub: nodeState.PubKeyHex,
 		}, nil
 	}
+
+	// Both TXs succeeded — now apply state changes.
+	parent.Children = childrenAfter
 	parent.TxID = parentTxIDHex
 
 	return &Result{

@@ -43,21 +43,26 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 		}
 	}
 
-	// Rename in parent's children list.
+	// Temporarily rename in parent's children list for the build.
+	var renamedIdx int = -1
 	for i, c := range parent.Children {
 		if c.Name == srcName {
-			parent.Children[i].Name = dstName
+			renamedIdx = i
 			break
 		}
 	}
+	if renamedIdx == -1 {
+		return nil, fmt.Errorf("engine: %q not found in parent children", srcName)
+	}
 
-	// Build and sign SelfUpdate tx for parent to commit the rename.
+	parent.Children[renamedIdx].Name = dstName
 	txHex, txIDHex, err := e.buildParentSelfUpdate(parent)
 	if err != nil {
+		parent.Children[renamedIdx].Name = srcName // restore on failure
 		return nil, fmt.Errorf("engine: update parent: %w", err)
 	}
 
-	// Update local state.
+	// TX build succeeded — apply remaining state changes.
 	parent.TxID = txIDHex
 	nodeState.Path = opts.DstPath
 

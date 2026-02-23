@@ -13,10 +13,15 @@ import (
 
 // PutOpts holds options for the Put (upload file) operation.
 type PutOpts struct {
-	VaultIndex uint32
-	LocalFile  string // local file path
-	RemotePath string // remote path, e.g. "/docs/readme.txt"
-	Access     string // "free" or "private"
+	VaultIndex  uint32
+	LocalFile   string // local file path
+	RemotePath  string // remote path, e.g. "/docs/readme.txt"
+	Access      string // "free" or "private"
+	Keywords    string // optional comma-separated keywords
+	Description string // optional file description
+	Domain      string // optional associated domain
+	OnChain     bool   // store content on-chain
+	Compression int32  // compression type (0=none)
 }
 
 // PutFile uploads a local file to the BitFS filesystem.
@@ -81,16 +86,21 @@ func (e *Engine) PutFile(opts *PutOpts) (*Result, error) {
 	// Build payload.
 	mimeType := DetectMimeType(opts.LocalFile)
 	node := &metanet.Node{
-		Version:   1,
-		Type:      metanet.NodeTypeFile,
-		Op:        metanet.OpCreate,
-		MimeType:  mimeType,
-		FileSize:  uint64(len(plaintext)),
-		KeyHash:   encResult.KeyHash,
-		Access:    accessLevel,
-		Timestamp: uint64(time.Now().Unix()),
-		Parent:    mustDecodeHex(parent.PubKeyHex),
-		Index:     childIdx,
+		Version:     1,
+		Type:        metanet.NodeTypeFile,
+		Op:          metanet.OpCreate,
+		MimeType:    mimeType,
+		FileSize:    uint64(len(plaintext)),
+		KeyHash:     encResult.KeyHash,
+		Access:      accessLevel,
+		Timestamp:   uint64(time.Now().Unix()),
+		Parent:      mustDecodeHex(parent.PubKeyHex),
+		Index:       childIdx,
+		Keywords:    opts.Keywords,
+		Description: opts.Description,
+		Domain:      opts.Domain,
+		OnChain:     opts.OnChain,
+		Compression: opts.Compression,
 	}
 
 	payload, err := metanet.SerializePayload(node)
@@ -146,6 +156,11 @@ func (e *Engine) PutFile(opts *PutOpts) (*Result, error) {
 		KeyHash:      hex.EncodeToString(encResult.KeyHash),
 		FileSize:     uint64(len(plaintext)),
 		MimeType:     mimeType,
+		Keywords:     opts.Keywords,
+		Description:  opts.Description,
+		Domain:       opts.Domain,
+		OnChain:      opts.OnChain,
+		Compression:  opts.Compression,
 	}
 	e.State.SetNode(childPubHex, childState)
 
