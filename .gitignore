@@ -5,6 +5,7 @@
 node_modules/
 *.out
 .sisyphus/
+.specify/
 
 # Go build artifacts
 bitfs/bitfs

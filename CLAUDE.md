@@ -19,20 +19,26 @@
 
 ```
 RabbitHole/
-├── design/          ← 设计文档 (md 源文件 + HTML→PDF)
+├── design/            ← 设计文档 (md 源文件 + HTML→PDF)
 │   ├── 0-OverallDesign.zh.md
-│   ├── bitfs/       ← BitFS 四层设计文档
-│   ├── metanet/     ← Metanet 四层设计文档
-│   └── pdf/         ← 生成的 PDF + HTML 模板
-├── whitepaper/      ← 白皮书 (md 大纲 → LaTeX → PDF)
-├── website/         ← 官网 (bitfs.org + metanet.org)
-├── slides/          ← 演示文稿
-├── references/      ← 研究论文 (6 篇 PDF)
-├── vi/              ← 视觉识别系统
-├── bitfs/           ← BitFS Go 实现
-├── metanet/         ← Metanet Go 实现
-├── libbitfs-go/     ← 共享核心库 Go 实现 (独立 git repo，module: github.com/tongxiaofeng/libbitfs-go)
-└── libbitfs-ts/     ← 共享核心库 TypeScript 实现 (待开发，功能与 libbitfs-go 一致，目标: 浏览器 + Node.js)
+│   ├── bitfs/         ← BitFS 四层设计文档
+│   ├── metanet/       ← Metanet 四层设计文档
+│   ├── diagrams/      ← Mermaid 图表源文件 + SVG
+│   └── pdf/           ← 生成的 PDF + HTML 模板
+├── whitepaper/        ← 白皮书 (md 大纲 → LaTeX → PDF)
+├── website/           ← 官网 (bitfs.org + metanet.org)
+├── slides/            ← 演示文稿
+├── references/        ← 研究论文 (6 篇 PDF)
+├── vi/                ← 视觉识别系统
+├── bitfs/             ← BitFS Go 实现 (CLI + daemon)
+├── metanet/           ← Metanet Go 实现 (CDN 节点)
+├── libbitfs-go/       ← 共享核心库 Go (独立 repo, module: github.com/tongxiaofeng/libbitfs-go)
+├── libbitfs-ts/       ← 共享核心库 TypeScript (待开发，目标: 浏览器 + Node.js)
+├── den/               ← BitFS 区块链浏览器 (Go + htmx, regtest/testnet 调试工具)
+├── git-remote-bitfs/  ← Git remote helper (独立 repo, bitfs:// 协议)
+├── bitfs-app/         ← BitFS 桌面/移动客户端 (Flutter, 独立 repo)
+├── bitfs-extension/   ← BitFS 浏览器扩展 (TypeScript, 独立 repo)
+└── tools/             ← 构建工具 (Mermaid 图表渲染等)
 ```
 
 ## 文档生成工作流
@@ -69,9 +75,7 @@ RabbitHole/
 - 源代码: OpenBSV License
 - website/, whitepaper/, design/: 单独许可
 
-## Active Technologies
-- Go 1.25.6 + `github.com/bsv-blockchain/go-sdk` v1.2.18 (only BSV dependency), `github.com/stretchr/testify` v1.11.1, `golang.org/x/crypto` v0.47.0 (001-bitfs-core)
-- Content-addressed file store with hash-sharded directories (~/.bitfs/storage/) (001-bitfs-core)
-
-## Recent Changes
-- 001-bitfs-core: Added Go 1.25.6 + `github.com/bsv-blockchain/go-sdk` v1.2.18 (only BSV dependency), `github.com/stretchr/testify` v1.11.1, `golang.org/x/crypto` v0.47.0
+## 技术栈
+- Go 1.25.6 + `github.com/bsv-blockchain/go-sdk` v1.2.18 (唯一 BSV 依赖)
+- `github.com/stretchr/testify` v1.11.1, `golang.org/x/crypto` v0.47.0
+- Content-addressed file store with hash-sharded directories (~/.bitfs/storage/)
