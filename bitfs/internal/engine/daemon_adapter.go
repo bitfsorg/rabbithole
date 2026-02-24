@@ -158,6 +158,25 @@ func (a *SPVAdapter) VerifyTx(ctx context.Context, txid string) (*daemon.SPVResu
 	}, nil
 }
 
+// ChainAdapter implements daemon.ChainService using the engine's blockchain service.
+type ChainAdapter struct {
+	engine *Engine
+}
+
+// NewChainAdapter creates a ChainAdapter wrapping the engine.
+// Returns nil if the engine has no blockchain service configured (offline mode).
+func NewChainAdapter(e *Engine) *ChainAdapter {
+	if e.Chain == nil {
+		return nil
+	}
+	return &ChainAdapter{engine: e}
+}
+
+// BroadcastTx implements daemon.ChainService.
+func (a *ChainAdapter) BroadcastTx(ctx context.Context, rawTxHex string) (string, error) {
+	return a.engine.BroadcastTx(ctx, rawTxHex)
+}
+
 // nodeTypeFromString converts string to metanet.NodeType (used internally).
 func nodeTypeFromString(s string) metanet.NodeType {
 	switch s {

@@ -85,6 +85,7 @@ func runDaemonStart(args []string) int {
 	// Create daemon with adapter types.
 	cfg := daemon.DefaultConfig()
 	cfg.ListenAddr = *listen
+	cfg.Mainnet = eng.Wallet.Network().Name == "mainnet"
 
 	walletAdapter := engine.NewWalletAdapter(eng)
 	storeAdapter := engine.NewStoreAdapter(eng)
@@ -99,6 +100,11 @@ func runDaemonStart(args []string) int {
 	// Attach SPV service if available.
 	if spvAdapter := engine.NewSPVAdapter(eng); spvAdapter != nil {
 		d.SetSPV(spvAdapter)
+	}
+
+	// Attach chain service for payment broadcast verification.
+	if chainAdapter := engine.NewChainAdapter(eng); chainAdapter != nil {
+		d.SetChain(chainAdapter)
 	}
 
 	// Write PID file.

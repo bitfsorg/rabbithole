@@ -53,7 +53,7 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 	}
 
 	// Derive payment address from seller's public key (proper P2PKH address).
-	sellerAddr, err := script.NewAddressFromPublicKey(sellerPriv.PubKey(), true)
+	sellerAddr, err := script.NewAddressFromPublicKey(sellerPriv.PubKey(), d.config.Mainnet)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "ADDR_ERROR", "Failed to derive payment address")
 		return

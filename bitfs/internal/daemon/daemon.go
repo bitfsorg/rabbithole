@@ -96,6 +96,7 @@ type Config struct {
 	Security   SecurityConfig `toml:"security"`
 	Storage    StorageConfig  `toml:"storage"`
 	Log        LogConfig      `toml:"log"`
+	Mainnet    bool           `toml:"mainnet"` // true = mainnet addresses, false = testnet/regtest
 }
 
 // TLSConfig holds TLS configuration.
