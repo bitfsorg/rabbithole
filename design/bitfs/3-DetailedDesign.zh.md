@@ -2144,19 +2144,20 @@ ECDH 对称性保证:
 
 ```
 OP_IF
+  // Seller 领取路径: 揭示 capsule preimage + seller 签名
   OP_SHA256 <capsule_hash(32B)> OP_EQUALVERIFY
   <seller_pubkey(33B)> OP_CHECKSIG
 OP_ELSE
-  <timeout> OP_CHECKSEQUENCEVERIFY OP_DROP
-  <buyer_pubkey(33B)> OP_CHECKSIG
+  // Buyer 退款路径: 2-of-2 多签 (通过 nLockTime 预签名退款交易实现)
+  OP_2 <buyer_pubkey(33B)> <seller_pubkey(33B)> OP_2 OP_CHECKMULTISIG
 OP_ENDIF
 
 Seller 领取 (揭示 capsule):
   scriptSig: <sig_seller> <capsule> OP_TRUE
   → SHA256(capsule) == capsule_hash ✓, Sig(seller) ✓
 
-Buyer 退款 (超时后):
-  scriptSig: <sig_buyer> OP_FALSE
+Buyer 退款 (通过预签名 2-of-2 多签交易, nLockTime 超时后广播):
+  scriptSig: OP_0 <sig_buyer> <sig_seller_presigned> OP_FALSE
   → timeout 已过, Sig(buyer) ✓
 
 默认超时: 144 blocks (约 1 天)
@@ -2263,8 +2264,7 @@ NegotiateFormat(accept):
     OP_IF
       <P_seller> OP_CHECKSIG        ← Seller 签名领取
     OP_ELSE
-      <timeout> OP_CHECKSEQUENCEVERIFY OP_DROP
-      <P_buyer> OP_CHECKSIG          ← Buyer 超时退款
+      OP_2 <P_buyer> <P_seller> OP_2 OP_CHECKMULTISIG  ← 2-of-2 多签退款 (nLockTime)
     OP_ENDIF
 
 阶段 2: 兑换 (Redeem)
@@ -2331,8 +2331,8 @@ type TokenState struct {
   - 知道 T_{N-k} 无法推导出 T_{N-k-1} (单向哈希)
 
 退款保证:
-  - 超时后 Buyer 可赎回未使用的锁定金额
-  - HTLC 风格的 OP_CHECKSEQUENCEVERIFY 保证
+  - 超时后 Buyer 可广播预签名的 2-of-2 多签退款交易 (nLockTime)
+  - 赎回未使用的锁定金额
 ```
 
 ---

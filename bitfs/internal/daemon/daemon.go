@@ -23,6 +23,11 @@ type WalletService interface {
 	// DeriveNodePubKey returns the public key for a node at the given vault/path.
 	DeriveNodePubKey(vaultIndex uint32, filePath []uint32, hardened []bool) (*ec.PublicKey, error)
 
+	// DeriveNodeKeyPair returns the private/public key pair for a node
+	// identified by its compressed public key bytes.
+	// Used for capsule computation in the paid content flow.
+	DeriveNodeKeyPair(pnode []byte) (*ec.PrivateKey, *ec.PublicKey, error)
+
 	// GetSellerKeyPair returns the seller's key pair for the daemon.
 	// Returns (privateKey, publicKey) for the default vault root.
 	GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error)

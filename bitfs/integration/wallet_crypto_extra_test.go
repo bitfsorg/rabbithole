@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // TestMnemonic24Words generates a 24-word mnemonic, derives a seed, creates a wallet,
@@ -514,25 +514,35 @@ func TestSeedEncryptionDeterministic(t *testing.T) {
 	assert.Equal(t, seed, dec2)
 }
 
-// TestCapsuleComputationConsistency verifies ComputeCapsule == ECDH for same keys
-// and that repeated calls produce the same result.
+// TestCapsuleComputationConsistency verifies ComputeCapsule is deterministic
+// (same inputs produce the same output) and that the capsule round-trips
+// correctly through DecryptWithCapsule.
 func TestCapsuleComputationConsistency(t *testing.T) {
 	w, _, _ := createTestWallet(t, &wallet.MainNet)
 	nodeKey, err := w.DeriveNodeKey(0, []uint32{1}, nil)
 	require.NoError(t, err)
 
-	capsule1, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey)
+	buyerKey, err := w.DeriveNodeKey(0, []uint32{2}, nil)
 	require.NoError(t, err)
 
-	ecdhResult, err := method42.ECDH(nodeKey.PrivateKey, nodeKey.PublicKey)
+	// Encrypt content to get a keyHash
+	plaintext := []byte("capsule consistency test content")
+	encResult, err := method42.Encrypt(plaintext, nodeKey.PrivateKey, nodeKey.PublicKey, method42.AccessPrivate)
 	require.NoError(t, err)
 
-	assert.Equal(t, ecdhResult, capsule1, "ComputeCapsule must equal ECDH for same keys")
+	// ComputeCapsule should be deterministic
+	capsule1, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerKey.PublicKey, encResult.KeyHash)
+	require.NoError(t, err)
 
-	capsule2, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey)
+	capsule2, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerKey.PublicKey, encResult.KeyHash)
 	require.NoError(t, err)
 
 	assert.Equal(t, capsule1, capsule2, "repeated ComputeCapsule must produce same result")
+
+	// Capsule should round-trip: ComputeCapsule -> DecryptWithCapsule -> correct plaintext
+	decResult, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule1, encResult.KeyHash, buyerKey.PrivateKey, nodeKey.PublicKey)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, decResult.Plaintext, "capsule round-trip must recover original plaintext")
 }
 
 // TestCapsuleHashIsSHA256 verifies ComputeCapsuleHash == SHA256(capsule).
@@ -541,7 +551,14 @@ func TestCapsuleHashIsSHA256(t *testing.T) {
 	nodeKey, err := w.DeriveNodeKey(0, []uint32{1}, nil)
 	require.NoError(t, err)
 
-	capsule, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey)
+	buyerKey, err := w.DeriveNodeKey(0, []uint32{2}, nil)
+	require.NoError(t, err)
+
+	// Generate a plaintext, compute keyHash, then call ComputeCapsule with all 4 args
+	plaintext := []byte("capsule hash SHA256 test")
+	keyHash := method42.ComputeKeyHash(plaintext)
+
+	capsule, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerKey.PublicKey, keyHash)
 	require.NoError(t, err)
 
 	capsuleHash := method42.ComputeCapsuleHash(capsule)
@@ -551,25 +568,30 @@ func TestCapsuleHashIsSHA256(t *testing.T) {
 }
 
 // TestDecryptWithCapsuleMatchesRegularDecrypt verifies that DecryptWithCapsule
-// produces the same plaintext as regular Decrypt.
+// produces the same plaintext as regular Decrypt. A buyer keypair is generated,
+// the XOR capsule is computed, and DecryptWithCapsule recovers the same plaintext.
 func TestDecryptWithCapsuleMatchesRegularDecrypt(t *testing.T) {
 	w, _, _ := createTestWallet(t, &wallet.MainNet)
 	nodeKey, err := w.DeriveNodeKey(0, []uint32{1}, nil)
+	require.NoError(t, err)
+
+	// Generate a buyer keypair
+	buyerKey, err := w.DeriveNodeKey(0, []uint32{2}, nil)
 	require.NoError(t, err)
 
 	plaintext := []byte("capsule vs regular decrypt test")
 	encResult, err := method42.Encrypt(plaintext, nodeKey.PrivateKey, nodeKey.PublicKey, method42.AccessPrivate)
 	require.NoError(t, err)
 
-	// Regular decrypt.
+	// Regular decrypt (owner side).
 	decRegular, err := method42.Decrypt(encResult.Ciphertext, nodeKey.PrivateKey, nodeKey.PublicKey, encResult.KeyHash, method42.AccessPrivate)
 	require.NoError(t, err)
 
-	// Capsule decrypt: capsule = ECDH(D_node, P_node).
-	capsule, err := method42.ECDH(nodeKey.PrivateKey, nodeKey.PublicKey)
+	// Capsule decrypt: compute XOR capsule (seller side), then decrypt (buyer side).
+	capsule, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerKey.PublicKey, encResult.KeyHash)
 	require.NoError(t, err)
 
-	decCapsule, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash)
+	decCapsule, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash, buyerKey.PrivateKey, nodeKey.PublicKey)
 	require.NoError(t, err)
 
 	assert.Equal(t, decRegular.Plaintext, decCapsule.Plaintext,

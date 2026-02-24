@@ -17,10 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 // TestPaidPurchaseFlow exercises the full x402 paid purchase flow:
@@ -169,11 +169,12 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	// ==================================================================
 	// Step 5: Buyer requests purchase -- seller computes capsule.
 	// ==================================================================
-	// Capsule = ECDH(D_file, P_buyer).x
-	// This is the shared secret between seller's file key and buyer's public key.
-	capsule, err := method42.ComputeCapsule(sellerFileKey.PrivateKey, buyerFeeKey.PublicKey)
+	// Capsule = AES_key XOR BuyerMask, where:
+	//   AES_key   = HKDF(ECDH(D_file, P_file).x, keyHash)
+	//   BuyerMask = HKDF(ECDH(D_file, P_buyer).x, keyHash)
+	capsule, err := method42.ComputeCapsule(sellerFileKey.PrivateKey, sellerFileKey.PublicKey, buyerFeeKey.PublicKey, encResult.KeyHash)
 	require.NoError(t, err, "compute capsule")
-	require.Len(t, capsule, 32, "capsule should be 32 bytes (x-coordinate)")
+	require.Len(t, capsule, 32, "capsule should be 32 bytes")
 	t.Logf("capsule: %x", capsule[:16])
 
 	// CapsuleHash = SHA256(capsule) -- used to lock the HTLC.
@@ -209,12 +210,14 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	sellerPKH := sellerFeeKey.PublicKey.Hash()
 	require.Len(t, sellerPKH, 20, "seller PKH should be 20 bytes")
 
+	sellerPubKeyCompressed := sellerFeeKey.PublicKey.Compressed()
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerFeeKey.PublicKey.Compressed(),
-		SellerAddr:  sellerPKH,
-		CapsuleHash: capsuleHash,
-		Amount:      invoice.Price,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerFeeKey.PublicKey.Compressed(),
+		SellerPubKey: sellerPubKeyCompressed,
+		SellerAddr:   sellerPKH,
+		CapsuleHash:  capsuleHash,
+		Amount:       invoice.Price,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err, "build HTLC script")
 	require.NotEmpty(t, htlcScript, "HTLC script should not be empty")
@@ -225,11 +228,10 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	chunks, err := htlcScriptObj.Chunks()
 	require.NoError(t, err, "parse HTLC script chunks")
 
-	// Expected structure:
+	// Expected structure (2-of-2 multisig refund):
 	// OP_IF OP_SHA256 <capsule_hash> OP_EQUALVERIFY
 	// OP_DUP OP_HASH160 <seller_addr> OP_EQUALVERIFY OP_CHECKSIG
-	// OP_ELSE <timeout> OP_CHECKLOCKTIMEVERIFY OP_DROP
-	// <buyer_pubkey> OP_CHECKSIG OP_ENDIF
+	// OP_ELSE OP_2 <buyer_pubkey> <seller_pubkey> OP_2 OP_CHECKMULTISIG OP_ENDIF
 	require.GreaterOrEqual(t, len(chunks), 13,
 		"HTLC script should have at least 13 chunks")
 
@@ -244,15 +246,15 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	assert.Equal(t, capsuleHash, chunks[2].Data,
 		"third chunk should contain capsule hash")
 
-	// Verify OP_CHECKLOCKTIMEVERIFY is present (buyer refund path).
-	foundCLTV := false
+	// Verify OP_CHECKMULTISIG is present (buyer 2-of-2 multisig refund path).
+	foundMultisig := false
 	for _, chunk := range chunks {
-		if chunk.Op == script.OpCHECKLOCKTIMEVERIFY {
-			foundCLTV = true
+		if chunk.Op == script.OpCHECKMULTISIG {
+			foundMultisig = true
 			break
 		}
 	}
-	assert.True(t, foundCLTV, "HTLC should contain OP_CHECKLOCKTIMEVERIFY")
+	assert.True(t, foundMultisig, "HTLC should contain OP_CHECKMULTISIG for 2-of-2 refund")
 
 	// Verify buyer pubkey is embedded in the script.
 	buyerPubKeyBytes := buyerFeeKey.PublicKey.Compressed()
@@ -289,6 +291,7 @@ func TestPaidPurchaseFlow(t *testing.T) {
 
 	fundingResult, err := x402.BuildHTLCFundingTx(&x402.HTLCFundingParams{
 		BuyerPrivKey: buyerFeeKey.PrivateKey,
+		SellerPubKey: sellerPubKeyCompressed,
 		SellerAddr:   sellerPKH,
 		CapsuleHash:  capsuleHash,
 		Amount:       invoice.Price,
@@ -405,15 +408,18 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	assert.Equal(t, originalContent, ownerDecResult.Plaintext,
 		"owner decrypted content should match original")
 
-	// Path B: Compute the owner capsule = ECDH(D_file, P_file).x
-	// In the real protocol, this is the preimage the seller reveals in HTLC.
-	ownerCapsule, err := method42.ECDH(sellerFileKey.PrivateKey, sellerFileKey.PublicKey)
+	// Path B: Owner acts as their own "buyer" to test DecryptWithCapsule.
+	// ComputeCapsule(D_file, P_file, P_file, keyHash) produces a capsule
+	// that the owner can decrypt using their own private key as the "buyer".
+	ownerCapsule, err := method42.ComputeCapsule(sellerFileKey.PrivateKey, sellerFileKey.PublicKey, sellerFileKey.PublicKey, onChainKeyHash)
 	require.NoError(t, err, "compute owner capsule")
 
 	capsuleDecResult, err := method42.DecryptWithCapsule(
 		onChainCiphertext,
 		ownerCapsule,
 		onChainKeyHash,
+		sellerFileKey.PrivateKey,
+		sellerFileKey.PublicKey,
 	)
 	require.NoError(t, err, "decrypt with owner capsule")
 	assert.Equal(t, originalContent, capsuleDecResult.Plaintext,
@@ -422,54 +428,38 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	// ==================================================================
 	// Step 12: Full buyer-specific capsule flow (encrypt for buyer).
 	// ==================================================================
-	// In the real protocol, the seller computes a buyer-specific capsule:
-	//   buyerCapsule = ECDH(D_file, P_buyer).x
-	// and the content would be encrypted such that the buyer can decrypt with it.
+	// In the real protocol, the seller computes a buyer-specific XOR capsule:
+	//   capsule = AES_key XOR BuyerMask
+	// where AES_key = HKDF(ECDH(D_file, P_file), keyHash)
+	//   and BuyerMask = HKDF(ECDH(D_file, P_buyer), keyHash)
 	//
-	// Here we demonstrate the complete capsule-based encryption/decryption cycle:
-	// 1. Seller encrypts with their key pair (already done above).
-	// 2. Seller computes buyer capsule = ECDH(D_file, P_buyer).x
-	// 3. Buyer can verify: ECDH(D_buyer, P_file).x == buyer capsule
-	//    (ECDH commutativity: D_file * P_buyer == D_buyer * P_file)
+	// The buyer receives the capsule (via HTLC reveal) and recovers AES_key:
+	//   buyerMask = HKDF(ECDH(D_buyer, P_file), keyHash)   [== BuyerMask by ECDH symmetry]
+	//   aesKey    = capsule XOR buyerMask
 
-	// Seller computes: capsule = ECDH(D_file, P_buyer).x
-	sellerSideCapsule, err := method42.ComputeCapsule(sellerFileKey.PrivateKey, buyerFeeKey.PublicKey)
-	require.NoError(t, err, "seller compute buyer capsule")
-
-	// Buyer independently computes: capsule = ECDH(D_buyer, P_file).x
-	buyerSideCapsule, err := method42.ECDH(buyerFeeKey.PrivateKey, sellerFileKey.PublicKey)
-	require.NoError(t, err, "buyer compute capsule from own key")
-
-	// ECDH commutativity: both sides should get the same capsule.
-	assert.Equal(t, sellerSideCapsule, buyerSideCapsule,
-		"ECDH commutativity: seller and buyer capsules should match")
-	t.Logf("ECDH commutativity verified: seller capsule == buyer capsule")
-
-	// Now encrypt content specifically for the buyer using the buyer's capsule.
-	// This simulates what happens in the paid flow: seller derives a key using
-	// the buyer capsule and encrypts content.
-	buyerKeyHash := method42.ComputeKeyHash(originalContent)
-	buyerAESKey, err := method42.DeriveAESKey(sellerSideCapsule, buyerKeyHash)
-	require.NoError(t, err, "derive AES key from buyer capsule")
-	require.Len(t, buyerAESKey, 32, "AES key should be 32 bytes")
-
-	// Decrypt using DecryptWithCapsule with the buyer-side capsule.
-	// First, re-encrypt for the buyer (using the seller-side capsule as shared secret).
+	// Seller encrypts content with their own key pair (AccessPaid uses ECDH(D_file, P_file)).
 	buyerEncResult, err := method42.Encrypt(
 		originalContent,
 		sellerFileKey.PrivateKey,
-		buyerFeeKey.PublicKey,
+		sellerFileKey.PublicKey,
 		method42.AccessPaid,
 	)
-	require.NoError(t, err, "encrypt for buyer (AccessPaid with buyer pubkey)")
+	require.NoError(t, err, "encrypt for buyer (AccessPaid)")
 
-	// Buyer decrypts using their capsule.
+	// Seller computes XOR capsule for this specific buyer.
+	sellerSideCapsule, err := method42.ComputeCapsule(sellerFileKey.PrivateKey, sellerFileKey.PublicKey, buyerFeeKey.PublicKey, buyerEncResult.KeyHash)
+	require.NoError(t, err, "seller compute buyer capsule")
+	require.Len(t, sellerSideCapsule, 32, "capsule should be 32 bytes")
+
+	// Buyer receives the capsule (via HTLC reveal) and decrypts.
 	buyerDecResult, err := method42.DecryptWithCapsule(
 		buyerEncResult.Ciphertext,
-		buyerSideCapsule,
+		sellerSideCapsule,
 		buyerEncResult.KeyHash,
+		buyerFeeKey.PrivateKey,
+		sellerFileKey.PublicKey,
 	)
-	require.NoError(t, err, "buyer decrypt with own capsule")
+	require.NoError(t, err, "buyer decrypt with capsule from seller")
 	assert.Equal(t, originalContent, buyerDecResult.Plaintext,
 		"buyer decrypted content should match original")
 	t.Logf("buyer successfully decrypted %d bytes using capsule from HTLC", len(buyerDecResult.Plaintext))
@@ -541,9 +531,9 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 	require.Len(t, encResult.KeyHash, 32)
 
 	// ------------------------------------------------------------------
-	// 2. Seller computes buyer-specific capsule.
+	// 2. Seller computes buyer-specific XOR capsule.
 	// ------------------------------------------------------------------
-	capsule, err := method42.ComputeCapsule(sellerPrivKey, buyerPubKey)
+	capsule, err := method42.ComputeCapsule(sellerPrivKey, sellerPubKey, buyerPubKey, encResult.KeyHash)
 	require.NoError(t, err)
 	require.Len(t, capsule, 32)
 
@@ -551,40 +541,32 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 	require.Len(t, capsuleHash, 32)
 
 	// ------------------------------------------------------------------
-	// 3. ECDH commutativity: buyer can independently compute same capsule.
+	// 3. Buyer decrypts using capsule received from seller (via HTLC).
 	// ------------------------------------------------------------------
-	buyerCapsule, err := method42.ECDH(buyerPrivKey, sellerPubKey)
-	require.NoError(t, err)
-	assert.Equal(t, capsule, buyerCapsule, "ECDH commutativity must hold")
-
-	// ------------------------------------------------------------------
-	// 4. Seller re-encrypts content for the buyer.
-	// ------------------------------------------------------------------
-	buyerEncResult, err := method42.Encrypt(plaintext, sellerPrivKey, buyerPubKey, method42.AccessPaid)
-	require.NoError(t, err)
-
-	// ------------------------------------------------------------------
-	// 5. Buyer decrypts using capsule.
-	// ------------------------------------------------------------------
+	// The XOR capsule is buyer-specific; the buyer uses their own private key
+	// and the seller's public key to unmask it and recover the AES key.
 	decResult, err := method42.DecryptWithCapsule(
-		buyerEncResult.Ciphertext,
-		buyerCapsule,
-		buyerEncResult.KeyHash,
+		encResult.Ciphertext,
+		capsule,
+		encResult.KeyHash,
+		buyerPrivKey,
+		sellerPubKey,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decResult.Plaintext)
 
 	// ------------------------------------------------------------------
-	// 6. Build HTLC script and verify structure.
+	// 4. Build HTLC script and verify structure.
 	// ------------------------------------------------------------------
 	sellerPKH := sellerPubKey.Hash()
 
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPubKey.Compressed(),
-		SellerAddr:  sellerPKH,
-		CapsuleHash: capsuleHash,
-		Amount:      1000,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerPubKey.Compressed(),
+		SellerPubKey: sellerPubKey.Compressed(),
+		SellerAddr:   sellerPKH,
+		CapsuleHash:  capsuleHash,
+		Amount:       1000,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, htlcScript)
@@ -602,7 +584,7 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 		"HTLC script should embed seller address hash")
 
 	// ------------------------------------------------------------------
-	// 7. Build a simulated claim tx and extract preimage.
+	// 5. Build a simulated claim tx and extract preimage.
 	// ------------------------------------------------------------------
 	claimTx := transaction.NewTransaction()
 	dummyTxID := chainhash.DoubleHashH([]byte("dummy-htlc-txid"))
@@ -634,7 +616,7 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 	assert.Equal(t, capsuleHash, h[:], "SHA256(extracted) should equal capsule hash")
 
 	// ------------------------------------------------------------------
-	// 8. Verify x402 invoice creation.
+	// 6. Verify x402 invoice creation.
 	// ------------------------------------------------------------------
 	inv := x402.NewInvoice(50, uint64(len(plaintext)), "1SellerAddr", capsuleHash, 300)
 	assert.Equal(t, x402.CalculatePrice(50, uint64(len(plaintext))), inv.Price)
@@ -668,6 +650,7 @@ func TestPaidPurchase_BuyerRefund(t *testing.T) {
 	buyerUTXO := getFundedUTXO(t, ctx, node, buyerFeeAddr.AddressString, buyerFeeKey)
 
 	sellerPKH := sellerFeeKey.PublicKey.Hash()
+	sellerPubKeyCompressed := sellerFeeKey.PublicKey.Compressed()
 	buyerPKH := buyerFeeKey.PublicKey.Hash()
 	capsuleHash := bytes.Repeat([]byte{0xab}, 32)
 
@@ -682,6 +665,7 @@ func TestPaidPurchase_BuyerRefund(t *testing.T) {
 	// Build and broadcast HTLC funding tx.
 	fundingResult, err := x402.BuildHTLCFundingTx(&x402.HTLCFundingParams{
 		BuyerPrivKey: buyerFeeKey.PrivateKey,
+		SellerPubKey: sellerPubKeyCompressed,
 		SellerAddr:   sellerPKH,
 		CapsuleHash:  capsuleHash,
 		Amount:       1000,
@@ -701,23 +685,36 @@ func TestPaidPurchase_BuyerRefund(t *testing.T) {
 	require.NoError(t, err)
 	t.Logf("HTLC funding txid: %s (timeout at block %d)", htlcTxID, timeout)
 
-	// Mine past the timeout.
+	// Step 1: Seller pre-signs the refund tx (seller's half of 2-of-2 multisig).
+	preSignResult, err := x402.BuildSellerPreSignedRefund(&x402.SellerPreSignParams{
+		FundingTxID:     fundingResult.TxID,
+		FundingVout:     fundingResult.HTLCVout,
+		FundingAmount:   fundingResult.HTLCAmount,
+		HTLCScript:      fundingResult.HTLCScript,
+		SellerPrivKey:   sellerFeeKey.PrivateKey,
+		BuyerOutputAddr: buyerPKH,
+		Timeout:         timeout,
+		FeeRate:         1,
+	})
+	require.NoError(t, err, "seller pre-sign refund tx")
+	t.Logf("seller pre-signed refund: %d bytes, sig %d bytes",
+		len(preSignResult.TxBytes), len(preSignResult.SellerSig))
+
+	// Step 2: Buyer counter-signs (adds their half of 2-of-2 multisig).
+	refundTx, err := x402.BuildBuyerRefundTx(&x402.BuyerRefundParams{
+		SellerPreSignedTx: preSignResult.TxBytes,
+		SellerSig:         preSignResult.SellerSig,
+		HTLCScript:        fundingResult.HTLCScript,
+		FundingAmount:     fundingResult.HTLCAmount,
+		BuyerPrivKey:      buyerFeeKey.PrivateKey,
+	})
+	require.NoError(t, err, "buyer counter-sign refund tx")
+
+	// Mine past the timeout so the nLockTime refund becomes valid.
 	_, err = node.MineBlocks(ctx, 2, mineAddr)
 	require.NoError(t, err)
 
-	// Build and broadcast buyer refund tx.
-	refundTx, err := x402.BuildBuyerRefundTx(&x402.BuyerRefundParams{
-		FundingTxID:   fundingResult.TxID,
-		FundingVout:   fundingResult.HTLCVout,
-		FundingAmount: fundingResult.HTLCAmount,
-		HTLCScript:    fundingResult.HTLCScript,
-		BuyerPrivKey:  buyerFeeKey.PrivateKey,
-		OutputAddr:    buyerPKH,
-		Locktime:      timeout,
-		FeeRate:       1,
-	})
-	require.NoError(t, err)
-
+	// Broadcast the fully-signed refund tx.
 	refundTxHex := hex.EncodeToString(refundTx.Bytes())
 	refundTxID, err := node.SendRawTransaction(ctx, refundTxHex)
 	require.NoError(t, err, "broadcast buyer refund tx")

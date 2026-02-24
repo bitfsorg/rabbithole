@@ -17,9 +17,9 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/wallet"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 // --- Mock wallet service for daemon ---
@@ -34,6 +34,10 @@ func (m *mockWalletService) DeriveNodePubKey(vaultIndex uint32, filePath []uint3
 }
 
 func (m *mockWalletService) GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error) {
+	return m.privKey, m.pubKey, nil
+}
+
+func (m *mockWalletService) DeriveNodeKeyPair(pnode []byte) (*ec.PrivateKey, *ec.PublicKey, error) {
 	return m.privKey, m.pubKey, nil
 }
 
@@ -168,7 +172,12 @@ func TestHTLCScriptConstruction(t *testing.T) {
 	require.NoError(t, err)
 
 	// 2. Compute capsule and capsule_hash
-	capsule, err := method42.ComputeCapsule(sellerKey.PrivateKey, buyerKey.PublicKey)
+	// Encrypt a dummy content to get a keyHash for ComputeCapsule
+	dummyPlaintext := []byte("dummy content for capsule test")
+	dummyEnc, err := method42.Encrypt(dummyPlaintext, sellerKey.PrivateKey, sellerKey.PublicKey, method42.AccessPrivate)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(sellerKey.PrivateKey, sellerKey.PublicKey, buyerKey.PublicKey, dummyEnc.KeyHash)
 	require.NoError(t, err)
 	assert.Len(t, capsule, 32)
 
@@ -179,25 +188,27 @@ func TestHTLCScriptConstruction(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x11}, 20)
 
 	// 3. Build HTLC script
+	sellerPubKey := sellerKey.PublicKey.Compressed()
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerKey.PublicKey.Compressed(),
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      1000,
-		Timeout:     144,
+		BuyerPubKey:  buyerKey.PublicKey.Compressed(),
+		SellerPubKey: sellerPubKey,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       1000,
+		Timeout:      144,
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, htlcScript)
 
 	// 4. Verify script contains correct opcodes
 	// OP_IF = 0x63, OP_SHA256 = 0xa8, OP_EQUALVERIFY = 0x88
-	// OP_ELSE = 0x67, OP_CHECKLOCKTIMEVERIFY = 0xb1, OP_CHECKSIG = 0xac
+	// OP_ELSE = 0x67, OP_CHECKMULTISIG = 0xae, OP_CHECKSIG = 0xac
 	// OP_ENDIF = 0x68
 	assert.True(t, bytes.Contains(htlcScript, []byte{0x63}), "script should contain OP_IF")
 	assert.True(t, bytes.Contains(htlcScript, []byte{0xa8}), "script should contain OP_SHA256")
 	assert.True(t, bytes.Contains(htlcScript, []byte{0x88}), "script should contain OP_EQUALVERIFY")
 	assert.True(t, bytes.Contains(htlcScript, []byte{0x67}), "script should contain OP_ELSE")
-	assert.True(t, bytes.Contains(htlcScript, []byte{0xb1}), "script should contain OP_CHECKLOCKTIMEVERIFY")
+	assert.True(t, bytes.Contains(htlcScript, []byte{0xae}), "script should contain OP_CHECKMULTISIG")
 	assert.True(t, bytes.Contains(htlcScript, []byte{0xac}), "script should contain OP_CHECKSIG")
 	assert.True(t, bytes.Contains(htlcScript, []byte{0x68}), "script should contain OP_ENDIF")
 
@@ -218,33 +229,38 @@ func TestHTLCScriptValidation(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x11}, 20)
 	capsuleHash := bytes.Repeat([]byte{0xab}, 32)
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
+
 	// Missing buyer pubkey
 	_, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: []byte{0x02, 0x03}, // too short
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      1000,
-		Timeout:     144,
+		BuyerPubKey:  []byte{0x02, 0x03}, // too short
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       1000,
+		Timeout:      144,
 	})
 	assert.ErrorIs(t, err, x402.ErrHTLCBuildFailed)
 
 	// Missing seller address
 	_, err = x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  []byte{0x11}, // too short
-		CapsuleHash: capsuleHash,
-		Amount:      1000,
-		Timeout:     144,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   []byte{0x11}, // too short
+		CapsuleHash:  capsuleHash,
+		Amount:       1000,
+		Timeout:      144,
 	})
 	assert.ErrorIs(t, err, x402.ErrHTLCBuildFailed)
 
 	// Zero amount
 	_, err = x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      0,
-		Timeout:     144,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       0,
+		Timeout:      144,
 	})
 	assert.ErrorIs(t, err, x402.ErrHTLCBuildFailed)
 
@@ -431,8 +447,12 @@ func TestEndToEndPaymentFlow(t *testing.T) {
 	encResult, err := method42.Encrypt(plaintext, sellerKey.PrivateKey, sellerKey.PublicKey, method42.AccessPrivate)
 	require.NoError(t, err)
 
-	// Compute capsule for HTLC
-	capsule, err := method42.ECDH(sellerKey.PrivateKey, sellerKey.PublicKey)
+	// Buyer keypair
+	buyerKey, err := w.DeriveNodeKey(0, []uint32{2}, nil)
+	require.NoError(t, err)
+
+	// Compute capsule for HTLC (seller side)
+	capsule, err := method42.ComputeCapsule(sellerKey.PrivateKey, sellerKey.PublicKey, buyerKey.PublicKey, encResult.KeyHash)
 	require.NoError(t, err)
 	capsuleHash := method42.ComputeCapsuleHash(capsule)
 
@@ -442,21 +462,20 @@ func TestEndToEndPaymentFlow(t *testing.T) {
 	assert.False(t, invoice.IsExpired())
 
 	// Build HTLC (buyer creates this)
-	buyerKey, err := w.DeriveNodeKey(0, []uint32{2}, nil)
-	require.NoError(t, err)
-
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerKey.PublicKey.Compressed(),
-		SellerAddr:  bytes.Repeat([]byte{0x11}, 20),
-		CapsuleHash: capsuleHash,
-		Amount:      invoice.Price,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerKey.PublicKey.Compressed(),
+		SellerPubKey: sellerPub,
+		SellerAddr:   bytes.Repeat([]byte{0x11}, 20),
+		CapsuleHash:  capsuleHash,
+		Amount:       invoice.Price,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, htlcScript)
 
 	// After HTLC resolves, buyer gets the capsule and decrypts
-	decResult, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash)
+	decResult, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash, buyerKey.PrivateKey, sellerKey.PublicKey)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decResult.Plaintext)
 }

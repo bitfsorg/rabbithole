@@ -3,11 +3,12 @@ package engine
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
 )
 
 // WalletAdapter implements daemon.WalletService using the engine's wallet.
@@ -23,6 +24,22 @@ func NewWalletAdapter(e *Engine) *WalletAdapter {
 // DeriveNodePubKey implements daemon.WalletService.
 func (a *WalletAdapter) DeriveNodePubKey(vaultIndex uint32, filePath []uint32, hardened []bool) (*ec.PublicKey, error) {
 	return a.engine.Wallet.DeriveNodePubKey(vaultIndex, filePath, hardened)
+}
+
+// DeriveNodeKeyPair implements daemon.WalletService.
+// Looks up the node by its compressed public key, retrieves the BIP32
+// derivation path from local state, and derives the full key pair.
+func (a *WalletAdapter) DeriveNodeKeyPair(pnode []byte) (*ec.PrivateKey, *ec.PublicKey, error) {
+	pubHex := hex.EncodeToString(pnode)
+	nodeState := a.engine.State.GetNode(pubHex)
+	if nodeState == nil {
+		return nil, nil, fmt.Errorf("engine: node not found for pubkey %s", pubHex)
+	}
+	kp, err := a.engine.Wallet.DeriveNodeKey(nodeState.VaultIndex, nodeState.ChildIndices, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return kp.PrivateKey, kp.PublicKey, nil
 }
 
 // GetSellerKeyPair implements daemon.WalletService.

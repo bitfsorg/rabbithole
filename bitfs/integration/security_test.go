@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 // --- TestWrongKeyDecryptionFails ---
@@ -357,11 +357,16 @@ func TestPaidContentRequiresCapsule(t *testing.T) {
 	_, err = method42.Decrypt(enc.Ciphertext, wrongKey.PrivateKey, wrongKey.PublicKey, enc.KeyHash, method42.AccessPrivate)
 	assert.Error(t, err, "wrong key should not decrypt")
 
-	// DecryptWithCapsule with correct capsule succeeds
-	capsule, err := method42.ECDH(nodeKey.PrivateKey, nodeKey.PublicKey)
+	// Generate a buyer keypair for capsule-based decryption
+	buyerKey, err := w.DeriveNodeKey(0, []uint32{3}, nil)
 	require.NoError(t, err)
 
-	dec, err := method42.DecryptWithCapsule(enc.Ciphertext, capsule, enc.KeyHash)
+	// Compute capsule (seller side)
+	capsule, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerKey.PublicKey, enc.KeyHash)
+	require.NoError(t, err)
+
+	// DecryptWithCapsule with correct capsule succeeds (buyer side)
+	dec, err := method42.DecryptWithCapsule(enc.Ciphertext, capsule, enc.KeyHash, buyerKey.PrivateKey, nodeKey.PublicKey)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, dec.Plaintext)
 }
@@ -516,6 +521,7 @@ func TestInputValidationNilPubKey(t *testing.T) {
 
 func TestInputValidationHTLCBadParams(t *testing.T) {
 	validBuyerPub := bytes.Repeat([]byte{0x02}, 33)
+	validSellerPub := bytes.Repeat([]byte{0x03}, 33)
 	validSellerAddr := bytes.Repeat([]byte{0x11}, 20)
 	validCapsuleHash := bytes.Repeat([]byte{0xab}, 32)
 
@@ -525,32 +531,36 @@ func TestInputValidationHTLCBadParams(t *testing.T) {
 	}{
 		{"nil params", nil},
 		{"empty BuyerPubKey", &x402.HTLCParams{
-			BuyerPubKey: []byte{},
-			SellerAddr:  validSellerAddr,
-			CapsuleHash: validCapsuleHash,
-			Amount:      1000,
-			Timeout:     144,
+			BuyerPubKey:  []byte{},
+			SellerPubKey: validSellerPub,
+			SellerAddr:   validSellerAddr,
+			CapsuleHash:  validCapsuleHash,
+			Amount:       1000,
+			Timeout:      144,
 		}},
 		{"wrong-length SellerAddr", &x402.HTLCParams{
-			BuyerPubKey: validBuyerPub,
-			SellerAddr:  []byte{0x11, 0x22}, // too short
-			CapsuleHash: validCapsuleHash,
-			Amount:      1000,
-			Timeout:     144,
+			BuyerPubKey:  validBuyerPub,
+			SellerPubKey: validSellerPub,
+			SellerAddr:   []byte{0x11, 0x22}, // too short
+			CapsuleHash:  validCapsuleHash,
+			Amount:       1000,
+			Timeout:      144,
 		}},
 		{"nil CapsuleHash", &x402.HTLCParams{
-			BuyerPubKey: validBuyerPub,
-			SellerAddr:  validSellerAddr,
-			CapsuleHash: nil,
-			Amount:      1000,
-			Timeout:     144,
+			BuyerPubKey:  validBuyerPub,
+			SellerPubKey: validSellerPub,
+			SellerAddr:   validSellerAddr,
+			CapsuleHash:  nil,
+			Amount:       1000,
+			Timeout:      144,
 		}},
 		{"zero Amount", &x402.HTLCParams{
-			BuyerPubKey: validBuyerPub,
-			SellerAddr:  validSellerAddr,
-			CapsuleHash: validCapsuleHash,
-			Amount:      0,
-			Timeout:     144,
+			BuyerPubKey:  validBuyerPub,
+			SellerPubKey: validSellerPub,
+			SellerAddr:   validSellerAddr,
+			CapsuleHash:  validCapsuleHash,
+			Amount:       0,
+			Timeout:      144,
 		}},
 	}
 

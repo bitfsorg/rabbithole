@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 // testPaymentAddr is a well-known Bitcoin address used in tests.
@@ -587,8 +588,11 @@ func TestFullPurchaseFlow(t *testing.T) {
 	assert.NotEmpty(t, invoiceID)
 	assert.NotZero(t, invoiceResp["total_price"])
 
-	// Step 2: GET buy info for the invoice.
-	req2 := httptest.NewRequest("GET", "/_bitfs/buy/"+invoiceID, nil)
+	// Step 2: GET buy info for the invoice, passing buyer_pubkey to trigger capsule computation.
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPubHex := hex.EncodeToString(buyerPriv.PubKey().Compressed())
+	req2 := httptest.NewRequest("GET", "/_bitfs/buy/"+invoiceID+"?buyer_pubkey="+buyerPubHex, nil)
 	w2 := httptest.NewRecorder()
 	d.Handler().ServeHTTP(w2, req2)
 
@@ -601,6 +605,7 @@ func TestFullPurchaseFlow(t *testing.T) {
 	assert.Equal(t, float64(200), buyInfo["price_per_kb"])
 	assert.NotZero(t, buyInfo["total_price"])
 	assert.Equal(t, false, buyInfo["paid"])
+	assert.NotEmpty(t, buyInfo["capsule_hash"], "capsule_hash should be set after providing buyer_pubkey")
 
 	// Read the stored invoice to get total price and payment address for the tx.
 	d.invoicesMu.RLock()
@@ -627,8 +632,8 @@ func TestFullPurchaseFlow(t *testing.T) {
 	err = json.Unmarshal(w3.Body.Bytes(), &capsuleResp)
 	require.NoError(t, err)
 	assert.Equal(t, invoiceID, capsuleResp["invoice_id"])
-	// The capsule is an ECDH shared secret computed during invoice creation,
-	// not the encrypted content. Verify it's a non-empty hex string (32 bytes = 64 hex chars).
+	// The capsule is an XOR-masked key computed during buy info retrieval.
+	// Verify it's a non-empty hex string (32 bytes = 64 hex chars).
 	capsuleHex, ok := capsuleResp["capsule"].(string)
 	assert.True(t, ok, "capsule should be a string")
 	assert.Len(t, capsuleHex, 64, "capsule should be 32 bytes (64 hex chars)")

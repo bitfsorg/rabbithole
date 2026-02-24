@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // --- Mock implementations for daemon integration ---
@@ -36,6 +36,15 @@ func (s *testWalletService) DeriveNodePubKey(vaultIndex uint32, filePath []uint3
 }
 
 func (s *testWalletService) GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error) {
+	kp, err := s.w.DeriveNodeKey(0, nil, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return kp.PrivateKey, kp.PublicKey, nil
+}
+
+func (s *testWalletService) DeriveNodeKeyPair(pnode []byte) (*ec.PrivateKey, *ec.PublicKey, error) {
+	// In e2e tests, return the vault root key pair.
 	kp, err := s.w.DeriveNodeKey(0, nil, nil)
 	if err != nil {
 		return nil, nil, err

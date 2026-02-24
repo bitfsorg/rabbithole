@@ -9,24 +9,25 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 // InvoiceRecord tracks a pending or completed content purchase.
 type InvoiceRecord struct {
-	ID          string    `json:"invoice_id"`
-	TotalPrice  uint64    `json:"total_price"`
-	NodePNode   []byte    `json:"-"`
-	KeyHash     []byte    `json:"-"`
-	PricePerKB  uint64    `json:"price_per_kb"`
-	FileSize    uint64    `json:"file_size"`
-	PaymentAddr string    `json:"payment_addr"`
-	CapsuleHash string    `json:"capsule_hash"`
-	HTLCScript  []byte    `json:"-"` // Precomputed HTLC script for verification
-	Capsule     []byte    `json:"-"` // ECDH capsule for buyer
-	Expiry      time.Time `json:"-"`
-	Paid        bool      `json:"-"`
+	ID           string    `json:"invoice_id"`
+	TotalPrice   uint64    `json:"total_price"`
+	NodePNode    []byte    `json:"-"`
+	KeyHash      []byte    `json:"-"`
+	PricePerKB   uint64    `json:"price_per_kb"`
+	FileSize     uint64    `json:"file_size"`
+	PaymentAddr  string    `json:"payment_addr"`
+	SellerPubKey string    `json:"seller_pubkey"` // Hex-encoded compressed seller pubkey (for HTLC 2-of-2 multisig)
+	CapsuleHash  string    `json:"capsule_hash"`
+	HTLCScript   []byte    `json:"-"` // Precomputed HTLC script for verification
+	Capsule      []byte    `json:"-"` // ECDH capsule for buyer
+	Expiry       time.Time `json:"-"`
+	Paid         bool      `json:"-"`
 }
 
 // DefaultInvoiceExpiry is the default invoice time-to-live.
@@ -38,32 +39,15 @@ const maxHTLCBodySize = 1 << 20
 // servePaidContent returns 402 Payment Required for paid content,
 // generating and storing an invoice for the purchase flow.
 // Uses libbitfs/x402 for invoice creation, price calculation, and HTTP headers.
+//
+// Capsule computation is deferred to handleGetBuyInfo, where the buyer
+// provides their public key. This is required because the capsule is
+// XOR-masked with a buyer-specific mask derived from ECDH(D_node, P_buyer).
 func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
-	// Compute ECDH capsule = ECDH(D_seller, P_node).x for the buyer.
 	sellerPriv, _, err := d.wallet.GetSellerKeyPair()
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "WALLET_ERROR", "Failed to get seller key pair")
 		return
-	}
-
-	var capsule []byte
-	var capsuleHashBytes []byte
-	capsuleHashHex := ""
-
-	if len(node.PNode) > 0 {
-		nodePubKey, pubErr := ec.PublicKeyFromBytes(node.PNode)
-		if pubErr != nil {
-			writeJSONError(w, http.StatusInternalServerError, "KEY_ERROR", "Invalid node public key")
-			return
-		}
-
-		capsule, err = method42.ComputeCapsule(sellerPriv, nodePubKey)
-		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "CAPSULE_ERROR", "Failed to compute capsule")
-			return
-		}
-		capsuleHashBytes = method42.ComputeCapsuleHash(capsule)
-		capsuleHashHex = hex.EncodeToString(capsuleHashBytes)
 	}
 
 	// Derive payment address from seller's public key hash.
@@ -76,22 +60,22 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 		ttlSeconds = d.config.X402.InvoiceExpiry
 	}
 
-	// Create invoice via libbitfs/x402.
-	inv := x402.NewInvoice(node.PricePerKB, node.FileSize, paymentAddr, capsuleHashBytes, ttlSeconds)
+	// Create invoice without capsule hash (deferred until buyer identifies themselves).
+	inv := x402.NewInvoice(node.PricePerKB, node.FileSize, paymentAddr, nil, ttlSeconds)
 
 	// Convert x402.Invoice to daemon's InvoiceRecord for internal state management.
+	sellerPubKeyHex := hex.EncodeToString(sellerPriv.PubKey().Compressed())
 	record := &InvoiceRecord{
-		ID:          inv.ID,
-		TotalPrice:  inv.Price,
-		NodePNode:   node.PNode,
-		KeyHash:     node.KeyHash,
-		PricePerKB:  inv.PricePerKB,
-		FileSize:    inv.FileSize,
-		PaymentAddr: inv.PaymentAddr,
-		CapsuleHash: capsuleHashHex,
-		Capsule:     capsule,
-		Expiry:      time.Unix(inv.Expiry, 0),
-		Paid:        false,
+		ID:           inv.ID,
+		TotalPrice:   inv.Price,
+		NodePNode:    node.PNode,
+		KeyHash:      node.KeyHash,
+		PricePerKB:   inv.PricePerKB,
+		FileSize:     inv.FileSize,
+		PaymentAddr:  inv.PaymentAddr,
+		SellerPubKey: sellerPubKeyHex,
+		Expiry:       time.Unix(inv.Expiry, 0),
+		Paid:         false,
 	}
 
 	// Store the invoice.
@@ -116,6 +100,14 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 
 // handleGetBuyInfo handles GET /_bitfs/buy/{txid} and returns buy information
 // for a previously generated invoice.
+//
+// The buyer must provide their public key via the "buyer_pubkey" query parameter
+// (hex-encoded compressed 33-byte key). On first call with a valid buyer_pubkey,
+// the server computes the XOR-masked capsule using:
+//
+//	capsule = aes_key XOR HKDF(ECDH(D_node, P_buyer).x, key_hash, "bitfs-buyer-mask")
+//
+// and stores the capsule + capsule_hash in the invoice for the HTLC flow.
 func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 	txid := r.PathValue("txid")
 	if txid == "" {
@@ -134,7 +126,6 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 
 	// Check if the invoice has expired.
 	if time.Now().After(invoice.Expiry) {
-		// Clean up expired invoice.
 		d.invoicesMu.Lock()
 		delete(d.invoices, txid)
 		d.invoicesMu.Unlock()
@@ -142,15 +133,40 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Compute capsule on demand when buyer provides their pubkey.
+	if len(invoice.Capsule) == 0 && len(invoice.NodePNode) > 0 {
+		buyerPubHex := r.URL.Query().Get("buyer_pubkey")
+		if buyerPubHex != "" {
+			buyerPubBytes, err := hex.DecodeString(buyerPubHex)
+			if err == nil && len(buyerPubBytes) == 33 {
+				buyerPub, err := ec.PublicKeyFromBytes(buyerPubBytes)
+				if err == nil {
+					nodePriv, nodePub, err := d.wallet.DeriveNodeKeyPair(invoice.NodePNode)
+					if err == nil {
+						capsule, err := method42.ComputeCapsule(nodePriv, nodePub, buyerPub, invoice.KeyHash)
+						if err == nil {
+							capsuleHash := method42.ComputeCapsuleHash(capsule)
+							d.invoicesMu.Lock()
+							invoice.Capsule = capsule
+							invoice.CapsuleHash = hex.EncodeToString(capsuleHash)
+							d.invoicesMu.Unlock()
+						}
+					}
+				}
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"invoice_id":   invoice.ID,
-		"total_price":  invoice.TotalPrice,
-		"capsule_hash": invoice.CapsuleHash,
-		"price_per_kb": invoice.PricePerKB,
-		"file_size":    invoice.FileSize,
-		"payment_addr": invoice.PaymentAddr,
-		"paid":         invoice.Paid,
+		"invoice_id":    invoice.ID,
+		"total_price":   invoice.TotalPrice,
+		"capsule_hash":  invoice.CapsuleHash,
+		"price_per_kb":  invoice.PricePerKB,
+		"file_size":     invoice.FileSize,
+		"payment_addr":  invoice.PaymentAddr,
+		"seller_pubkey": invoice.SellerPubKey,
+		"paid":          invoice.Paid,
 	})
 }
 

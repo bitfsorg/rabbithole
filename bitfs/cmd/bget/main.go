@@ -19,9 +19,9 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/paymail"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/paymail"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 func main() {
@@ -283,7 +283,9 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 	}
 
 	// Step 1: Get buy info (capsule_hash, price, payment_addr).
-	buyInfo, err := c.GetBuyInfo(meta.TxID)
+	// Pass buyer's pubkey so the server computes the buyer-specific capsule.
+	buyerPubHex := hex.EncodeToString(privKey.PubKey().Compressed())
+	buyInfo, err := c.GetBuyInfo(meta.TxID, buyerPubHex)
 	if err != nil {
 		fmt.Fprintf(stderr, "bget: get buy info: %v\n", err)
 		return handleError(err, stderr)
@@ -303,10 +305,18 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 5
 	}
 
+	// Decode seller pubkey (hex-encoded 33-byte compressed public key).
+	sellerPubKey, err := hex.DecodeString(buyInfo.SellerPubKey)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid seller pubkey hex: %v\n", err)
+		return 5
+	}
+
 	// Step 2: Build HTLC funding transaction.
 	fundingResult, err := x402.BuildHTLCFundingTx(&x402.HTLCFundingParams{
 		BuyerPrivKey: privKey,
 		SellerAddr:   sellerAddr,
+		SellerPubKey: sellerPubKey,
 		CapsuleHash:  capsuleHash,
 		Amount:       buyInfo.Price,
 		Timeout:      x402.DefaultHTLCTimeout,
@@ -358,8 +368,20 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 5
 	}
 
+	// Decode the node's public key for capsule decryption.
+	nodePubBytes, err := hex.DecodeString(meta.PNode)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid pnode hex: %v\n", err)
+		return 5
+	}
+	nodePub, err := ec.PublicKeyFromBytes(nodePubBytes)
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: invalid pnode key: %v\n", err)
+		return 5
+	}
+
 	// Step 5: Decrypt with capsule.
-	result, err := method42.DecryptWithCapsule(ciphertext, capsule, keyHashBytes)
+	result, err := method42.DecryptWithCapsule(ciphertext, capsule, keyHashBytes, privKey, nodePub)
 	if err != nil {
 		fmt.Fprintf(stderr, "bget: decrypt: %v\n", err)
 		return 5

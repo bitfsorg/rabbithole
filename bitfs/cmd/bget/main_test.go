@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/libbitfs/method42"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
 // testPubKey is a well-known compressed public key hex (33 bytes, prefix 02).
@@ -349,25 +349,27 @@ func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
 	require.NoError(t, err)
 	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
 
-	// Encrypt test content using buyer's pubkey so capsule-based decryption works.
+	// Encrypt test content using node's own pubkey (correct Method 42 encryption).
 	plaintext := []byte("paid premium content")
-	encResult, err := method42.Encrypt(plaintext, nodePriv, buyerPriv.PubKey(), method42.AccessPaid)
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
 	require.NoError(t, err)
 
-	// Compute capsule = ECDH(D_node, P_buyer).x
-	capsule, err := method42.ComputeCapsule(nodePriv, buyerPriv.PubKey())
+	// Compute XOR-masked capsule for buyer.
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
 	require.NoError(t, err)
 	capsuleHash := method42.ComputeCapsuleHash(capsule)
 
 	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 	capsuleHashHex := hex.EncodeToString(capsuleHash)
-	// Use a fake 20-byte seller address.
-	sellerAddr := hex.EncodeToString(make([]byte, 20))
+	// Use the node's pubkey hash as seller address.
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+	sellerPubKeyHex := nodePubHex
 
 	srv := newFullMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
 			serveJSON(w, client.MetaResponse{
-				PNode:      testPubKey,
+				PNode:      nodePubHex,
 				Type:       "file",
 				Path:       "/premium.pdf",
 				FileSize:   uint64(len(plaintext)),
@@ -384,9 +386,10 @@ func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == "GET" {
 				serveJSON(w, client.BuyInfo{
-					CapsuleHash: capsuleHashHex,
-					Price:       1000,
-					PaymentAddr: sellerAddr,
+					CapsuleHash:  capsuleHashHex,
+					Price:        1000,
+					PaymentAddr:  sellerAddr,
+					SellerPubKey: sellerPubKeyHex,
 				})
 				return
 			}
@@ -414,22 +417,23 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 	require.NoError(t, err)
 	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
 
-	// Encrypt test content using buyer's pubkey so capsule-based decryption works.
-	// For paid content, the daemon re-encrypts with ECDH(D_node, P_buyer).
+	// Encrypt test content using node's own pubkey (correct Method 42 encryption).
 	plaintext := []byte("Hello, this is paid premium content!")
-	encResult, err := method42.Encrypt(plaintext, nodePriv, buyerPriv.PubKey(), method42.AccessPaid)
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
 	require.NoError(t, err)
 
-	// Compute capsule = ECDH(D_node, P_buyer).x
-	capsule, err := method42.ComputeCapsule(nodePriv, buyerPriv.PubKey())
+	// Compute XOR-masked capsule for buyer.
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
 	require.NoError(t, err)
 	capsuleHash := method42.ComputeCapsuleHash(capsule)
 
 	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 	capsuleHashHex := hex.EncodeToString(capsuleHash)
 	capsuleHex := hex.EncodeToString(capsule)
-	// Use a fake 20-byte seller address.
-	sellerAddr := hex.EncodeToString(make([]byte, 20))
+	// Use the node's pubkey as PNode and seller address.
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+	sellerPubKeyHex := nodePubHex
 
 	tmpDir := t.TempDir()
 	outFile := filepath.Join(tmpDir, "premium.txt")
@@ -437,7 +441,7 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 	srv := newFullMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
 			serveJSON(w, client.MetaResponse{
-				PNode:      testPubKey,
+				PNode:      nodePubHex,
 				Type:       "file",
 				Path:       "/premium.txt",
 				MimeType:   "text/plain",
@@ -457,9 +461,10 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 			if r.Method == "GET" {
 				// Return buy info.
 				serveJSON(w, client.BuyInfo{
-					CapsuleHash: capsuleHashHex,
-					Price:       1000,
-					PaymentAddr: sellerAddr,
+					CapsuleHash:  capsuleHashHex,
+					Price:        1000,
+					PaymentAddr:  sellerAddr,
+					SellerPubKey: sellerPubKeyHex,
 				})
 				return
 			}

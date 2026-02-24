@@ -18,9 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/wallet"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 // --- Invoice Expiry & Fields Tests ---
@@ -110,12 +110,14 @@ func TestHTLCParamsNilCapsuleHash(t *testing.T) {
 	buyerPub := bytes.Repeat([]byte{0x02}, 33)
 	sellerAddr := bytes.Repeat([]byte{0x11}, 20)
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	_, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: nil,
-		Amount:      1000,
-		Timeout:     144,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  nil,
+		Amount:       1000,
+		Timeout:      144,
 	})
 	assert.ErrorIs(t, err, x402.ErrHTLCBuildFailed,
 		"nil capsule hash should fail with ErrHTLCBuildFailed")
@@ -127,12 +129,14 @@ func TestHTLCParamsCapsuleHashWrongLength(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x11}, 20)
 	shortHash := bytes.Repeat([]byte{0xab}, 16) // 16 bytes instead of 32
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	_, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: shortHash,
-		Amount:      1000,
-		Timeout:     144,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  shortHash,
+		Amount:       1000,
+		Timeout:      144,
 	})
 	assert.ErrorIs(t, err, x402.ErrHTLCBuildFailed,
 		"16-byte capsule hash should fail with ErrHTLCBuildFailed")
@@ -145,12 +149,14 @@ func TestHTLCParamsZeroTimeout(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x11}, 20)
 	capsuleHash := bytes.Repeat([]byte{0xab}, 32)
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	_, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      1000,
-		Timeout:     0,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       1000,
+		Timeout:      0,
 	})
 	assert.ErrorIs(t, err, x402.ErrHTLCBuildFailed,
 		"zero timeout should fail with ErrHTLCBuildFailed")
@@ -166,12 +172,14 @@ func TestHTLCScriptContainsBuyerPubKey(t *testing.T) {
 	capsuleHash := bytes.Repeat([]byte{0x33}, 32)
 	buyerPub := buyerKey.PublicKey.Compressed()
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      5000,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       5000,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err)
 	assert.True(t, bytes.Contains(htlcScript, buyerPub),
@@ -184,12 +192,14 @@ func TestHTLCScriptContainsSellerAddr(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x44}, 20)
 	capsuleHash := bytes.Repeat([]byte{0x55}, 32)
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      2000,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       2000,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err)
 	assert.True(t, bytes.Contains(htlcScript, sellerAddr),
@@ -202,12 +212,14 @@ func TestHTLCScriptContainsCapsuleHash(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x66}, 20)
 	capsuleHash := bytes.Repeat([]byte{0x77}, 32)
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      3000,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       3000,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err)
 	assert.True(t, bytes.Contains(htlcScript, capsuleHash),
@@ -539,32 +551,35 @@ func TestEndToEndEncryptPayDecrypt(t *testing.T) {
 	encResult, err := method42.Encrypt(plaintext, sellerKey.PrivateKey, sellerKey.PublicKey, method42.AccessPrivate)
 	require.NoError(t, err)
 
-	// Step 2: Compute capsule and capsule_hash.
-	capsule, err := method42.ECDH(sellerKey.PrivateKey, sellerKey.PublicKey)
+	// Step 2: Buyer keypair.
+	buyerKey, err := w.DeriveNodeKey(0, []uint32{2}, nil)
+	require.NoError(t, err)
+
+	// Step 3: Compute capsule and capsule_hash (seller side).
+	capsule, err := method42.ComputeCapsule(sellerKey.PrivateKey, sellerKey.PublicKey, buyerKey.PublicKey, encResult.KeyHash)
 	require.NoError(t, err)
 	capsuleHash := method42.ComputeCapsuleHash(capsule)
 
-	// Step 3: Create invoice.
+	// Step 4: Create invoice.
 	invoice := x402.NewInvoice(50, uint64(len(plaintext)), "1SellerPaidAddr", capsuleHash, 3600)
 	assert.Greater(t, invoice.Price, uint64(0), "paid content should have non-zero price")
 	assert.False(t, invoice.IsExpired())
 
-	// Step 4: Buyer builds HTLC.
-	buyerKey, err := w.DeriveNodeKey(0, []uint32{2}, nil)
-	require.NoError(t, err)
-
+	// Step 5: Buyer builds HTLC.
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerKey.PublicKey.Compressed(),
-		SellerAddr:  bytes.Repeat([]byte{0x11}, 20),
-		CapsuleHash: capsuleHash,
-		Amount:      invoice.Price,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerKey.PublicKey.Compressed(),
+		SellerPubKey: sellerPub,
+		SellerAddr:   bytes.Repeat([]byte{0x11}, 20),
+		CapsuleHash:  capsuleHash,
+		Amount:       invoice.Price,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, htlcScript)
 
-	// Step 5: Seller reveals capsule (simulated). Buyer decrypts with capsule.
-	decResult, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash)
+	// Step 6: Seller reveals capsule (simulated). Buyer decrypts with capsule.
+	decResult, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash, buyerKey.PrivateKey, sellerKey.PublicKey)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, decResult.Plaintext,
 		"decrypted content should match original plaintext")
@@ -578,17 +593,19 @@ func TestHTLCDifferentAmounts(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x11}, 20)
 	capsuleHash := bytes.Repeat([]byte{0xab}, 32)
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	amounts := []uint64{546, 1000, 100000}
 	for _, amount := range amounts {
 		t.Run(
 			fmt.Sprintf("amount_%d", amount),
 			func(t *testing.T) {
 				htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-					BuyerPubKey: buyerPub,
-					SellerAddr:  sellerAddr,
-					CapsuleHash: capsuleHash,
-					Amount:      amount,
-					Timeout:     x402.DefaultHTLCTimeout,
+					BuyerPubKey:  buyerPub,
+					SellerPubKey: sellerPub,
+					SellerAddr:   sellerAddr,
+					CapsuleHash:  capsuleHash,
+					Amount:       amount,
+					Timeout:      x402.DefaultHTLCTimeout,
 				})
 				require.NoError(t, err, "BuildHTLC should succeed for amount %d", amount)
 				assert.NotEmpty(t, htlcScript)
@@ -604,13 +621,15 @@ func TestHTLCAmountBelowDust(t *testing.T) {
 	sellerAddr := bytes.Repeat([]byte{0x11}, 20)
 	capsuleHash := bytes.Repeat([]byte{0xab}, 32)
 
+	sellerPub := bytes.Repeat([]byte{0x03}, 33)
 	// Amount=1 is below the dust limit (546) but HTLC construction should succeed.
 	htlcScript, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey: buyerPub,
-		SellerAddr:  sellerAddr,
-		CapsuleHash: capsuleHash,
-		Amount:      1,
-		Timeout:     x402.DefaultHTLCTimeout,
+		BuyerPubKey:  buyerPub,
+		SellerPubKey: sellerPub,
+		SellerAddr:   sellerAddr,
+		CapsuleHash:  capsuleHash,
+		Amount:       1,
+		Timeout:      x402.DefaultHTLCTimeout,
 	})
 	require.NoError(t, err, "HTLC with below-dust amount should still build successfully")
 	assert.NotEmpty(t, htlcScript)

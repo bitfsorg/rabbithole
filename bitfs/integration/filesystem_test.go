@@ -13,10 +13,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // --- Mock NodeStore ---
@@ -824,10 +826,12 @@ func TestStorageWithAllAccessModes(t *testing.T) {
 			case method42.AccessFree:
 				decResult, decErr = method42.Decrypt(retrieved, nil, nodeKey.PublicKey, encResult.KeyHash, method42.AccessFree)
 			case method42.AccessPaid:
-				// For Paid mode, decrypt using capsule (simulating HTLC completion)
-				capsule, err := method42.ECDH(nodeKey.PrivateKey, nodeKey.PublicKey)
+				// For Paid mode, generate a buyer keypair and use XOR capsule flow
+				buyerPriv, err := ec.NewPrivateKey()
 				require.NoError(t, err)
-				decResult, decErr = method42.DecryptWithCapsule(retrieved, capsule, encResult.KeyHash)
+				capsule, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerPriv.PubKey(), encResult.KeyHash)
+				require.NoError(t, err)
+				decResult, decErr = method42.DecryptWithCapsule(retrieved, capsule, encResult.KeyHash, buyerPriv, nodeKey.PublicKey)
 			default:
 				decResult, decErr = method42.Decrypt(retrieved, nodeKey.PrivateKey, nodeKey.PublicKey, encResult.KeyHash, method42.AccessPrivate)
 			}

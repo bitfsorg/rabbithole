@@ -15,10 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // --- Test 1: TestHardLinkBehavior ---
@@ -1144,10 +1146,12 @@ func TestEncryptStoreRetrieveDecrypt(t *testing.T) {
 			case method42.AccessFree:
 				decResult, err = method42.Decrypt(retrieved, nil, nodeKey.PublicKey, encResult.KeyHash, method42.AccessFree)
 			case method42.AccessPaid:
-				// Simulate capsule-based decryption
-				capsule, capsuleErr := method42.ECDH(nodeKey.PrivateKey, nodeKey.PublicKey)
+				// Simulate capsule-based decryption with buyer keypair
+				buyerPriv, buyerErr := ec.NewPrivateKey()
+				require.NoError(t, buyerErr)
+				capsule, capsuleErr := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerPriv.PubKey(), encResult.KeyHash)
 				require.NoError(t, capsuleErr)
-				decResult, err = method42.DecryptWithCapsule(retrieved, capsule, encResult.KeyHash)
+				decResult, err = method42.DecryptWithCapsule(retrieved, capsule, encResult.KeyHash, buyerPriv, nodeKey.PublicKey)
 			default:
 				decResult, err = method42.Decrypt(retrieved, nodeKey.PrivateKey, nodeKey.PublicKey, encResult.KeyHash, method42.AccessPrivate)
 			}

@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // networkConfigs returns all 3 network configurations for parametric testing.
@@ -195,9 +195,13 @@ func testPaidAccessCapsuleFlow(t *testing.T, network *wallet.NetworkConfig) {
 		encResult, err := method42.Encrypt(plaintext, ownerNode.PrivateKey, ownerNode.PublicKey, method42.AccessPrivate)
 		require.NoError(t, err)
 
-		// 2. Compute capsule for buyer: capsule = ECDH(D_node, P_node).x
-		// In the actual protocol, capsule is the shared secret that allows decryption
-		capsule, err := method42.ECDH(ownerNode.PrivateKey, ownerNode.PublicKey)
+		// 2. Generate buyer keypair
+		buyerW, _, _ := createTestWallet(t, network)
+		buyerNode, err := buyerW.DeriveNodeKey(0, []uint32{2}, nil)
+		require.NoError(t, err)
+
+		// 3. Compute capsule for buyer (seller side): XOR capsule flow
+		capsule, err := method42.ComputeCapsule(ownerNode.PrivateKey, ownerNode.PublicKey, buyerNode.PublicKey, encResult.KeyHash)
 		require.NoError(t, err)
 		assert.Len(t, capsule, 32)
 
@@ -205,8 +209,8 @@ func testPaidAccessCapsuleFlow(t *testing.T, network *wallet.NetworkConfig) {
 		capsuleHash := method42.ComputeCapsuleHash(capsule)
 		assert.Len(t, capsuleHash, 32)
 
-		// 3. Buyer decrypts using capsule (obtained via HTLC)
-		decResult, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash)
+		// 4. Buyer decrypts using capsule (obtained via HTLC)
+		decResult, err := method42.DecryptWithCapsule(encResult.Ciphertext, capsule, encResult.KeyHash, buyerNode.PrivateKey, ownerNode.PublicKey)
 		require.NoError(t, err)
 
 		// 4. Verify content matches

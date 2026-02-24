@@ -57,9 +57,10 @@ type ChildEntry struct {
 
 // BuyInfo holds purchase information for a paid file.
 type BuyInfo struct {
-	CapsuleHash string `json:"capsule_hash"`
-	Price       uint64 `json:"price"`
-	PaymentAddr string `json:"payment_addr"`
+	CapsuleHash  string `json:"capsule_hash"`
+	Price        uint64 `json:"price"`
+	PaymentAddr  string `json:"payment_addr"`
+	SellerPubKey string `json:"seller_pubkey"` // Hex-encoded compressed seller pubkey
 }
 
 // CapsuleResponse holds the re-encryption capsule returned after HTLC payment.
@@ -154,11 +155,16 @@ func (c *Client) GetData(hash string) (io.ReadCloser, error) {
 }
 
 // GetBuyInfo retrieves purchase information for a paid file.
-// Endpoint: GET /_bitfs/buy/{txid}
-func (c *Client) GetBuyInfo(txid string) (*BuyInfo, error) {
-	url := fmt.Sprintf("%s/_bitfs/buy/%s", c.BaseURL, txid)
+// If buyerPubKeyHex is non-empty, it is sent as the "buyer_pubkey" query
+// parameter so the server can compute the buyer-specific capsule.
+// Endpoint: GET /_bitfs/buy/{txid}[?buyer_pubkey=...]
+func (c *Client) GetBuyInfo(txid string, buyerPubKeyHex ...string) (*BuyInfo, error) {
+	reqURL := fmt.Sprintf("%s/_bitfs/buy/%s", c.BaseURL, txid)
+	if len(buyerPubKeyHex) > 0 && buyerPubKeyHex[0] != "" {
+		reqURL += "?buyer_pubkey=" + buyerPubKeyHex[0]
+	}
 
-	resp, err := c.HTTPClient.Get(url)
+	resp, err := c.HTTPClient.Get(reqURL)
 	if err != nil {
 		return nil, wrapNetworkError(err)
 	}

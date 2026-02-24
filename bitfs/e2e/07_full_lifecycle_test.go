@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // TestFullLifecycle is a comprehensive smoke test that validates the full BitFS
@@ -399,17 +399,18 @@ func TestFullLifecycle(t *testing.T) {
 		require.NoError(t, err, "generate buyer private key")
 		buyerPubKey := buyerPrivKey.PubKey()
 
-		// Seller re-encrypts content for the buyer using ECDH(D_file, P_buyer).
+		// Seller encrypts content with their own key pair (AccessPaid uses ECDH(D_file, P_file)).
 		buyerEncResult, err := method42.Encrypt(
 			updatedContent,
 			fileKey.PrivateKey,
-			buyerPubKey,
+			fileKey.PublicKey,
 			method42.AccessPaid,
 		)
 		require.NoError(t, err, "encrypt for buyer")
 
-		// Seller computes capsule = ECDH(D_file, P_buyer).x
-		sellerCapsule, err := method42.ComputeCapsule(fileKey.PrivateKey, buyerPubKey)
+		// Seller computes buyer-specific XOR capsule:
+		//   capsule = AES_key XOR BuyerMask
+		sellerCapsule, err := method42.ComputeCapsule(fileKey.PrivateKey, fileKey.PublicKey, buyerPubKey, buyerEncResult.KeyHash)
 		require.NoError(t, err, "seller compute capsule")
 		require.Len(t, sellerCapsule, 32)
 
@@ -417,24 +418,20 @@ func TestFullLifecycle(t *testing.T) {
 		expectedHash := sha256.Sum256(sellerCapsule)
 		assert.Equal(t, expectedHash[:], capsuleHash, "capsule hash = SHA256(capsule)")
 
-		// Buyer independently computes: capsule = ECDH(D_buyer, P_file).x
-		buyerCapsule, err := method42.ECDH(buyerPrivKey, fileKey.PublicKey)
-		require.NoError(t, err, "buyer compute capsule")
-
-		// ECDH commutativity: both sides get the same capsule.
-		assert.Equal(t, sellerCapsule, buyerCapsule,
-			"ECDH commutativity: seller capsule == buyer capsule")
-
-		// Buyer decrypts using the capsule.
+		// Buyer receives the capsule (via HTLC reveal) and decrypts.
+		// DecryptWithCapsule uses ECDH(D_buyer, P_file) to derive the buyer mask,
+		// then recovers AES_key = capsule XOR buyerMask.
 		decResult, err := method42.DecryptWithCapsule(
 			buyerEncResult.Ciphertext,
-			buyerCapsule,
+			sellerCapsule,
 			buyerEncResult.KeyHash,
+			buyerPrivKey,
+			fileKey.PublicKey,
 		)
 		require.NoError(t, err, "buyer decrypt with capsule")
 		assert.Equal(t, updatedContent, decResult.Plaintext,
 			"buyer decrypted content should match")
-		t.Logf("purchase flow verified: ECDH commutativity OK, buyer decrypted %d bytes",
+		t.Logf("purchase flow verified: XOR capsule decrypt OK, buyer decrypted %d bytes",
 			len(decResult.Plaintext))
 	})
 

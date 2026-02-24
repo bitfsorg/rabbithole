@@ -57,6 +57,14 @@ func (m *mockWallet) GetSellerKeyPair() (*ec.PrivateKey, *ec.PublicKey, error) {
 	return m.privKey, m.pubKey, nil
 }
 
+func (m *mockWallet) DeriveNodeKeyPair(pnode []byte) (*ec.PrivateKey, *ec.PublicKey, error) {
+	if m.err != nil {
+		return nil, nil, m.err
+	}
+	// In tests, use the mock wallet's key pair as the node key pair.
+	return m.privKey, m.pubKey, nil
+}
+
 func (m *mockWallet) GetVaultPubKey(alias string) (string, error) {
 	if m.err != nil {
 		return "", m.err
