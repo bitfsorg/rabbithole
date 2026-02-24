@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
 )
 
 // resolveParentDir finds the parent directory node for a given directory path.
@@ -83,21 +83,31 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 		}
 	}
 
-	parentUTXO, err := e.getNodeUTXO(parent.PubKeyHex)
+	parentUTXO, parentUS, err := e.getNodeUTXOWithState(parent.PubKeyHex)
 	if err != nil {
 		return "", "", fmt.Errorf("parent UTXO: %w", err)
 	}
 
 	changeAddr, changePriv, err := e.DeriveChangeAddr()
 	if err != nil {
+		parentUS.Spent = false
 		return "", "", err
 	}
 	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
 
-	feeUTXO, err := e.AllocateFeeUTXO(2000)
+	feeUTXO, feeUS, err := e.AllocateFeeUTXOWithState(2000)
 	if err != nil {
+		parentUS.Spent = false
 		return "", "", err
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			parentUS.Spent = false
+			feeUS.Spent = false
+		}
+	}()
 
 	mtx, err := buildUnsignedSelfUpdateTx(parentKP, parentTxIDBytes, payload, parentUTXO, feeUTXO, changeAddr)
 	if err != nil {
@@ -109,6 +119,7 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 		return "", "", fmt.Errorf("sign self-update tx: %w", err)
 	}
 
+	success = true
 	txIDHex = hex.EncodeToString(mtx.TxID)
 
 	// Track new UTXOs from this transaction.

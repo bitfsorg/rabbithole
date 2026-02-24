@@ -4,6 +4,7 @@ OUTDIR  := bin
 
 .PHONY: all build test lint clean e2e install help
 .PHONY: regtest regtest-down testnet testnet-down stn stn-down
+.PHONY: dashboard dashboard-dev
 
 all: build ## Build all binaries (default)
 
@@ -60,6 +61,12 @@ install: build ## Install binaries to $GOPATH/bin
 
 clean: ## Remove build artifacts
 	rm -rf $(OUTDIR)
+
+dashboard: ## Build dashboard for embedding
+	cd dashboard && npm install && npm run build
+
+dashboard-dev: ## Start dashboard dev server
+	cd dashboard && npm install && npm run dev
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'

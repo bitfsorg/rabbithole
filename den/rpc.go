@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/tongxiaofeng/libbitfs/network"
+	"github.com/tongxiaofeng/libbitfs-go/network"
 )
 
 // ChainInfo holds blockchain summary from getblockchaininfo.

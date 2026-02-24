@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs/paymail"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/paymail"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // --- TestParseAllURITypes ---

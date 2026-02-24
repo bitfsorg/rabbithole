@@ -16,7 +16,7 @@ import (
 	"github.com/ergochat/readline"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/config"
+	"github.com/tongxiaofeng/libbitfs-go/config"
 )
 
 // shellCommands is the list of all shell command names for tab completion.

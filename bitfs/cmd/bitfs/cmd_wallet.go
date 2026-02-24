@@ -16,8 +16,8 @@ import (
 	"github.com/bsv-blockchain/go-sdk/script"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/config"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // runWallet dispatches wallet subcommands.
@@ -146,10 +146,10 @@ func runWalletInit(args []string) int {
 		}
 	}
 
-	// Encrypt and store seed, then zero password.
+	// Encrypt and store seed.
 	encrypted, err := wallet.EncryptSeed(seed, pass)
-	zeroString(&pass)
 	if err != nil {
+		zeroString(&pass)
 		fmt.Fprintf(os.Stderr, "Error: failed to encrypt seed: %v\n", err)
 		return exitWalletError
 	}
@@ -208,9 +208,11 @@ func runWalletInit(args []string) int {
 
 	// Ask if the user wants to fund the wallet now.
 	if promptYesNo("Fund wallet now?") {
-		return runWalletFund([]string{"--datadir", *dataDir, "--password", pass})
+		code := runWalletFund([]string{"--datadir", *dataDir, "--password", pass})
+		zeroString(&pass)
+		return code
 	}
-
+	zeroString(&pass)
 	return exitSuccess
 }
 

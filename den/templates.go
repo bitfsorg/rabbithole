@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
 )
 
 //go:embed templates

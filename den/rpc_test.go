@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/tongxiaofeng/libbitfs/network"
+	"github.com/tongxiaofeng/libbitfs-go/network"
 )
 
 func newTestExplorer(t *testing.T) *Explorer {

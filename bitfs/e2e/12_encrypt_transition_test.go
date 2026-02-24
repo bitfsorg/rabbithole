@@ -9,8 +9,8 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/tx"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // TestFreeToPrivateTransition verifies the full Free -> Private encryption

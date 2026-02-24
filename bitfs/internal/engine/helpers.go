@@ -13,8 +13,8 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	bsvhash "github.com/bsv-blockchain/go-sdk/primitives/hash"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // readFile reads a file from disk.
@@ -161,10 +161,17 @@ func (e *Engine) buildAndSignRootTx(kp *wallet.KeyPair, node *metanet.Node, node
 	}
 	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
 
-	feeUTXO, err := e.AllocateFeeUTXO(2000)
+	feeUTXO, feeUS, err := e.AllocateFeeUTXOWithState(2000)
 	if err != nil {
 		return nil, err
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			feeUS.Spent = false
+		}
+	}()
 
 	mtx, err := buildUnsignedCreateRootTx(kp, payload, feeUTXO, changeAddr)
 	if err != nil {
@@ -176,6 +183,7 @@ func (e *Engine) buildAndSignRootTx(kp *wallet.KeyPair, node *metanet.Node, node
 		return nil, fmt.Errorf("engine: sign root tx: %w", err)
 	}
 
+	success = true
 	e.TrackNewUTXOs(mtx, nodePubHex, changePubHex)
 
 	return &Result{

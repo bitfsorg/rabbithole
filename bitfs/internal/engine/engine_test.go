@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 const testPassword = "testpass"

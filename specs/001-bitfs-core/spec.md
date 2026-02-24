@@ -26,7 +26,7 @@ round-trip encryption/decryption with all three access modes.
    **Then** file is encrypted with Method 42, Metanet CreateChild tx
    is built, and encrypted content is stored locally.
 2. **Given** an encrypted file at `/docs/file.txt`, **When**
-   `bitfs get /docs/file.txt`, **Then** file is decrypted and written
+   `bget bitfs://owner/docs/file.txt`, **Then** file is decrypted and written
    to local filesystem with original content.
 3. **Given** a file in Private mode, **When** `bitfs encrypt --mode free /docs/file.txt`,
    **Then** file is re-encrypted with D_node=1 so anyone can derive

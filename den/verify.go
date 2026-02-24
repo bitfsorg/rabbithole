@@ -4,9 +4,9 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	"github.com/tongxiaofeng/libbitfs/network"
-	"github.com/tongxiaofeng/libbitfs/spv"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/network"
+	"github.com/tongxiaofeng/libbitfs-go/spv"
 )
 
 // SPVVerification holds the result of SPV proof verification.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
 )
 
 // LinkOpts holds options for the Link operation.
@@ -78,21 +78,31 @@ func (e *Engine) createSoftLink(opts *LinkOpts, targetNode *NodeState) (*Result,
 		return nil, err
 	}
 
-	parentUTXO, err := e.getNodeUTXO(parent.PubKeyHex)
+	parentUTXO, parentUS, err := e.getNodeUTXOWithState(parent.PubKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("engine: parent UTXO: %w", err)
 	}
 
 	changeAddr, changePriv, err := e.DeriveChangeAddr()
 	if err != nil {
+		parentUS.Spent = false
 		return nil, err
 	}
 	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
 
-	feeUTXO, err := e.AllocateFeeUTXO(3000)
+	feeUTXO, feeUS, err := e.AllocateFeeUTXOWithState(3000)
 	if err != nil {
+		parentUS.Spent = false
 		return nil, err
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			parentUS.Spent = false
+			feeUS.Spent = false
+		}
+	}()
 
 	parentPubBytes := mustDecodeHex(parent.PubKeyHex)
 	mtx, err := buildUnsignedCreateChildTx(childKP, parentTxID, payload, parentUTXO, feeUTXO, parentPubBytes, changeAddr)
@@ -105,6 +115,7 @@ func (e *Engine) createSoftLink(opts *LinkOpts, targetNode *NodeState) (*Result,
 		return nil, fmt.Errorf("engine: sign child tx: %w", err)
 	}
 
+	success = true
 	txIDHex := hex.EncodeToString(mtx.TxID)
 
 	childState := &NodeState{

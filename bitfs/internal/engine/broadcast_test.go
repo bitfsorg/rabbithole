@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/libbitfs/network"
+	"github.com/tongxiaofeng/libbitfs-go/network"
 )
 
 func TestEngineBroadcastTx(t *testing.T) {

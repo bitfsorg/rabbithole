@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // setupContentNegDaemon creates a daemon with mock MetanetService for content

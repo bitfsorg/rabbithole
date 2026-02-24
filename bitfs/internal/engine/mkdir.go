@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	"github.com/tongxiaofeng/libbitfs/tx"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // MkdirOpts holds options for the Mkdir operation.
@@ -80,21 +80,31 @@ func (e *Engine) Mkdir(opts *MkdirOpts) (*Result, error) {
 		return nil, err
 	}
 
-	parentUTXO, err := e.getNodeUTXO(parent.PubKeyHex)
+	parentUTXO, parentUS, err := e.getNodeUTXOWithState(parent.PubKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("engine: parent UTXO: %w", err)
 	}
 
 	changeAddr, changePriv, err := e.DeriveChangeAddr()
 	if err != nil {
+		parentUS.Spent = false
 		return nil, err
 	}
 	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
 
-	feeUTXO, err := e.AllocateFeeUTXO(3000)
+	feeUTXO, feeUS, err := e.AllocateFeeUTXOWithState(3000)
 	if err != nil {
+		parentUS.Spent = false
 		return nil, err
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			parentUS.Spent = false
+			feeUS.Spent = false
+		}
+	}()
 
 	parentPubBytes := mustDecodeHex(parent.PubKeyHex)
 	mtx, err := buildUnsignedCreateChildTx(childKP, parentTxID, payload, parentUTXO, feeUTXO, parentPubBytes, changeAddr)
@@ -107,6 +117,7 @@ func (e *Engine) Mkdir(opts *MkdirOpts) (*Result, error) {
 		return nil, fmt.Errorf("engine: sign child tx: %w", err)
 	}
 
+	success = true
 	txIDHex := hex.EncodeToString(mtx.TxID)
 
 	// Update local state.
@@ -155,6 +166,24 @@ func (e *Engine) getNodeUTXO(pubKeyHex string) (*txUTXO, error) {
 	}
 	utxoState.Spent = true
 	return e.utxoStateToTx(utxoState)
+}
+
+// getNodeUTXOWithState retrieves a node's UTXO from local state and returns both
+// the tx UTXO (with private key) and the underlying UTXOState for rollback.
+// If the transaction build/sign fails, the caller should set utxoState.Spent = false
+// to release the UTXO back to the pool.
+func (e *Engine) getNodeUTXOWithState(pubKeyHex string) (*txUTXO, *UTXOState, error) {
+	utxoState := e.State.GetNodeUTXO(pubKeyHex)
+	if utxoState == nil {
+		return nil, nil, fmt.Errorf("no UTXO for node %s", pubKeyHex[:16])
+	}
+	utxoState.Spent = true // mark for exclusion during this operation
+	txU, err := e.utxoStateToTx(utxoState)
+	if err != nil {
+		utxoState.Spent = false // rollback on conversion error
+		return nil, nil, err
+	}
+	return txU, utxoState, nil
 }
 
 // mustDecodeHex decodes a hex string, returning nil on error.

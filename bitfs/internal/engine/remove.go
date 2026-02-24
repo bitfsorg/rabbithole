@@ -6,7 +6,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
 )
 
 // RemoveOpts holds options for the Remove operation.
@@ -57,21 +57,31 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 	}
 
 	// Get node UTXO.
-	nodeUTXO, err := e.getNodeUTXO(nodeState.PubKeyHex)
+	nodeUTXO, nodeUS, err := e.getNodeUTXOWithState(nodeState.PubKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("engine: node UTXO: %w", err)
 	}
 
 	changeAddr, changePriv, err := e.DeriveChangeAddr()
 	if err != nil {
+		nodeUS.Spent = false
 		return nil, err
 	}
 	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
 
-	feeUTXO, err := e.AllocateFeeUTXO(2000)
+	feeUTXO, feeUS, err := e.AllocateFeeUTXOWithState(2000)
 	if err != nil {
+		nodeUS.Spent = false
 		return nil, err
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			nodeUS.Spent = false
+			feeUS.Spent = false
+		}
+	}()
 
 	mtx, err := buildUnsignedSelfUpdateTx(kp, parentTxID, payload, nodeUTXO, feeUTXO, changeAddr)
 	if err != nil {
@@ -83,6 +93,7 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 		return nil, fmt.Errorf("engine: sign self-update tx: %w", err)
 	}
 
+	success = true
 	txIDHex := hex.EncodeToString(mtx.TxID)
 
 	// Update local state.

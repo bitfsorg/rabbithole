@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
-	"github.com/tongxiaofeng/libbitfs/x402"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 // setupBuyServer creates a daemon httptest.Server configured for buy-API testing.

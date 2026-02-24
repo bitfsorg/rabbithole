@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // TestCopyFile validates copying a file in the Metanet DAG. A "copy" creates

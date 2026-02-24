@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/method42"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
 // --- Test 1: TestEnginePutAndRetrieve ---

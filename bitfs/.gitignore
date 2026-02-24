@@ -7,3 +7,7 @@ bin/
 /bget
 /bstat
 /btree
+
+# Dashboard build artifacts
+dashboard/node_modules/
+dashboard/dist/

@@ -6,11 +6,11 @@ require (
 	github.com/bsv-blockchain/go-sdk v1.2.18
 	github.com/ergochat/readline v0.1.3
 	github.com/stretchr/testify v1.11.1
-	github.com/tongxiaofeng/libbitfs v0.0.0
+	github.com/tongxiaofeng/libbitfs-go v0.0.0
 	golang.org/x/term v0.40.0
 )
 
-replace github.com/tongxiaofeng/libbitfs => ../libbitfs
+replace github.com/tongxiaofeng/libbitfs-go => ../libbitfs-go
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

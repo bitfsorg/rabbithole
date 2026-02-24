@@ -11,9 +11,9 @@ import (
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // SetupTestEngine creates a fully initialized Engine in a temporary directory

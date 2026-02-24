@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/libbitfs/network"
-	"github.com/tongxiaofeng/libbitfs/spv"
+	"github.com/tongxiaofeng/libbitfs-go/network"
+	"github.com/tongxiaofeng/libbitfs-go/spv"
 )
 
 func TestEngineVerifyTx_Offline(t *testing.T) {

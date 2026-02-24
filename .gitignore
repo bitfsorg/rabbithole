@@ -20,3 +20,11 @@ metanet/metanet
 
 # Docker volume data
 bitfs/e2e/bsv-data/
+
+# BitFS App (Flutter) build artifacts
+bitfs-app/build/
+bitfs-app/.dart_tool/
+
+# BitFS Extension build artifacts
+bitfs-extension/node_modules/
+bitfs-extension/dist/

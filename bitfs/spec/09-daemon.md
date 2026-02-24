@@ -108,12 +108,9 @@ GET  /_bitfs/meta/{pnode}/{path}    Metanet 元数据查询
 GET  /_bitfs/health                 健康检查
 
 POST /_bitfs/handshake              Method 42 ECDH 握手
-POST /_bitfs/pay/{invoice_id}       提交 BSV 支付（x402）
 GET  /_bitfs/buy/{txid}             获取购买信息（capsule_hash，价格）
 POST /_bitfs/buy/{txid}             提交 HTLC，接收胶囊（Capsule）
-
-POST /_bitfs/git/push               Git 远程助手推送端点
-GET  /_bitfs/git/refs/{path}        Git 引用检索
+GET  /_bitfs/spv/proof/{txid}       SPV Merkle 证明检索
 
 GET  /.well-known/bsvalias          Paymail 能力发现
 GET  /api/v1/pki/{alias}@{domain}   Paymail PKI 端点

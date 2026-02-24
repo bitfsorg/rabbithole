@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	"github.com/tongxiaofeng/libbitfs/method42"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
 // EncryptOpts holds options for the Encrypt operation.
@@ -91,21 +91,31 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 		}
 	}
 
-	nodeUTXO, err := e.getNodeUTXO(nodeState.PubKeyHex)
+	nodeUTXO, nodeUS, err := e.getNodeUTXOWithState(nodeState.PubKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("engine: node UTXO: %w", err)
 	}
 
 	changeAddr, changePriv, err := e.DeriveChangeAddr()
 	if err != nil {
+		nodeUS.Spent = false
 		return nil, err
 	}
 	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
 
-	feeUTXO, err := e.AllocateFeeUTXO(2000)
+	feeUTXO, feeUS, err := e.AllocateFeeUTXOWithState(2000)
 	if err != nil {
+		nodeUS.Spent = false
 		return nil, err
 	}
+
+	success := false
+	defer func() {
+		if !success {
+			nodeUS.Spent = false
+			feeUS.Spent = false
+		}
+	}()
 
 	mtx, err := buildUnsignedSelfUpdateTx(kp, parentTxID, payload, nodeUTXO, feeUTXO, changeAddr)
 	if err != nil {
@@ -117,6 +127,7 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 		return nil, fmt.Errorf("engine: sign self-update tx: %w", err)
 	}
 
+	success = true
 	txIDHex := hex.EncodeToString(mtx.TxID)
 
 	// Update local state.

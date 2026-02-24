@@ -16,7 +16,7 @@ import (
 
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/config"
+	"github.com/tongxiaofeng/libbitfs-go/config"
 )
 
 // runDaemon dispatches daemon subcommands.

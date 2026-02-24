@@ -51,7 +51,7 @@ func (d *Daemon) withMiddleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Rate limiting
 		if d.rateLimiter != nil {
-			ip := extractClientIP(r)
+			ip := extractClientIP(r, d.config.Security.TrustProxy)
 			if !d.rateLimiter.Allow(ip) {
 				writeJSONError(w, http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests")
 				return

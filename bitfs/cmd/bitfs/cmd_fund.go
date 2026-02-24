@@ -16,8 +16,8 @@ import (
 	qrterminal "github.com/mdp/qrterminal/v3"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/config"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // runWalletFund handles the "bitfs wallet fund" command.

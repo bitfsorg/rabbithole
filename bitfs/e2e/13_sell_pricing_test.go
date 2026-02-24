@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // TestSetPriceOnFile exercises the full engine.Sell workflow on a regtest node:

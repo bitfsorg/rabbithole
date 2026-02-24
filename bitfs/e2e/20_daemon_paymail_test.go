@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // setupPaymailServer creates a daemon httptest.Server configured for

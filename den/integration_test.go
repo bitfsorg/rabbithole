@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tongxiaofeng/libbitfs/network"
+	"github.com/tongxiaofeng/libbitfs-go/network"
 )
 
 func setupTestServer(t *testing.T) *httptest.Server {

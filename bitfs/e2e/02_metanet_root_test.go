@@ -13,8 +13,8 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // setupFundedWallet creates a fresh HD wallet from a random 12-word mnemonic,

@@ -10,8 +10,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,6 +118,7 @@ type SecurityConfig struct {
 	RateLimit      RateLimitConfig `toml:"rate_limit"`
 	CORS           CORSConfig      `toml:"cors"`
 	MaxRequestSize string          `toml:"max_request_size"`
+	TrustProxy     bool            `toml:"trust_proxy"`
 }
 
 // RateLimitConfig holds rate limiting configuration.
@@ -193,13 +196,19 @@ func DefaultConfig() *Config {
 	}
 }
 
+// ChainService provides blockchain interaction for payment verification.
+type ChainService interface {
+	BroadcastTx(ctx context.Context, rawTxHex string) (string, error)
+}
+
 // Daemon is the main daemon server.
 type Daemon struct {
 	config  *Config
 	wallet  WalletService
 	store   ContentStore
 	metanet MetanetService
-	spv     SPVService // optional; nil = SPV endpoints disabled
+	spv     SPVService    // optional; nil = SPV endpoints disabled
+	chain   ChainService  // optional; nil = skip broadcast
 	server  *http.Server
 	mux     *http.ServeMux
 	running bool
@@ -212,6 +221,10 @@ type Daemon struct {
 	// Invoice management
 	invoices   map[string]*InvoiceRecord
 	invoicesMu sync.RWMutex
+
+	// Replay protection: maps txid → invoice_id
+	usedTxIDs   map[string]string
+	usedTxIDsMu sync.Mutex
 
 	// Rate limiting
 	rateLimiter *rateLimiter
@@ -230,12 +243,13 @@ func New(config *Config, wallet WalletService, store ContentStore, metanet Metan
 	}
 
 	d := &Daemon{
-		config:   config,
-		wallet:   wallet,
-		store:    store,
-		metanet:  metanet,
-		sessions: make(map[string]*Session),
-		invoices: make(map[string]*InvoiceRecord),
+		config:    config,
+		wallet:    wallet,
+		store:     store,
+		metanet:   metanet,
+		sessions:  make(map[string]*Session),
+		invoices:  make(map[string]*InvoiceRecord),
+		usedTxIDs: make(map[string]string),
 	}
 
 	// Initialize rate limiter
@@ -258,6 +272,11 @@ func New(config *Config, wallet WalletService, store ContentStore, metanet Metan
 // SetSPV attaches an SPV verification service. Must be called before Start.
 func (d *Daemon) SetSPV(spv SPVService) {
 	d.spv = spv
+}
+
+// SetChain attaches a blockchain service for payment broadcast. Must be called before Start.
+func (d *Daemon) SetChain(c ChainService) {
+	d.chain = c
 }
 
 // Start starts the daemon HTTP server.
@@ -435,16 +454,25 @@ func (rl *rateLimiter) Allow(ip string) bool {
 }
 
 // extractClientIP gets the client IP from the request.
-func extractClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
+// When trustProxy is true, it reads X-Forwarded-For / X-Real-IP headers.
+// Otherwise it uses RemoteAddr only (safe against header spoofing).
+func extractClientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if idx := strings.Index(xff, ","); idx > 0 {
+				return strings.TrimSpace(xff[:idx])
+			}
+			return strings.TrimSpace(xff)
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return strings.TrimSpace(xri)
+		}
 	}
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
-	return r.RemoteAddr
+	return host
 }
 
 // writeJSONError writes a JSON error response.

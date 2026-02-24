@@ -10,7 +10,7 @@ import (
 	"os"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/config"
+	"github.com/tongxiaofeng/libbitfs-go/config"
 )
 
 // runSell handles the "bitfs sell" command.

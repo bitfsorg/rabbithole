@@ -90,7 +90,7 @@ Design docs are in Chinese. Code, specs, and comments are in English.
 - go-sdk `compat/bip32` package name is `compat`, needs alias import: `compat "github.com/bsv-blockchain/go-sdk/compat/bip32"`
 - Error wrapping: `fmt.Errorf("context: %w", err)`
 - Long-running ops accept `context.Context`
-- P2PKH outputs enforce dust limit (546 satoshis)
+- BSV has no dust limit; P2PKH outputs can hold any amount (546 sat is a legacy constant, not a requirement)
 - MetaFlag constant: `0x6d657461` ("meta" in ASCII)
 - Three access modes: Private (0), Free (1), Paid (2)
 - License: OpenBSV License Version 5

@@ -163,6 +163,19 @@ func (s *LocalState) GetNodeUTXO(pubKeyHex string) *UTXOState {
 	return nil
 }
 
+// ReleaseUTXO marks a previously allocated UTXO as unspent, enabling rollback
+// when a transaction build or sign fails after UTXO allocation.
+func (s *LocalState) ReleaseUTXO(txid string, vout uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, u := range s.UTXOs {
+		if u.TxID == txid && u.Vout == vout {
+			u.Spent = false
+			return
+		}
+	}
+}
+
 // AddUTXO adds a new UTXO to tracking.
 func (s *LocalState) AddUTXO(u *UTXOState) {
 	s.mu.Lock()

@@ -11,7 +11,7 @@ import (
 	"os"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/config"
+	"github.com/tongxiaofeng/libbitfs-go/config"
 )
 
 // runVerify handles the "bitfs verify" command.

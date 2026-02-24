@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
-	"github.com/tongxiaofeng/libbitfs/network"
+	"github.com/tongxiaofeng/libbitfs-go/network"
 )
 
 // configureChain resolves RPC configuration and attaches a BlockchainService

@@ -31,7 +31,8 @@ RabbitHole/
 ├── vi/              ← 视觉识别系统
 ├── bitfs/           ← BitFS Go 实现
 ├── metanet/         ← Metanet Go 实现
-└── libbitfs/        ← 共享核心库 (预留)
+├── libbitfs-go/     ← 共享核心库 Go 实现 (独立 git repo，module: github.com/tongxiaofeng/libbitfs-go)
+└── libbitfs-ts/     ← 共享核心库 TypeScript 实现 (待开发，功能与 libbitfs-go 一致，目标: 浏览器 + Node.js)
 ```
 
 ## 文档生成工作流

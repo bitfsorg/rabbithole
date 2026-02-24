@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // addFeeUTXO derives a fee key and registers a fake fee UTXO for test operations.

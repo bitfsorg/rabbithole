@@ -948,19 +948,50 @@ func TestWriteJSONError_Retry(t *testing.T) {
 func TestExtractClientIP_RemoteAddr(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "192.168.1.1:1234"
-	assert.Equal(t, "192.168.1.1:1234", extractClientIP(r))
+	// Without trust proxy, should strip port from RemoteAddr.
+	assert.Equal(t, "192.168.1.1", extractClientIP(r, false))
 }
 
-func TestExtractClientIP_XForwardedFor(t *testing.T) {
+func TestExtractClientIP_RemoteAddr_NoPort(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "192.168.1.1"
+	// RemoteAddr without port, SplitHostPort fails, returns raw RemoteAddr.
+	assert.Equal(t, "192.168.1.1", extractClientIP(r, false))
+}
+
+func TestExtractClientIP_XForwardedFor_Trusted(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("X-Forwarded-For", "10.0.0.1")
-	assert.Equal(t, "10.0.0.1", extractClientIP(r))
+	assert.Equal(t, "10.0.0.1", extractClientIP(r, true))
 }
 
-func TestExtractClientIP_XRealIP(t *testing.T) {
+func TestExtractClientIP_XForwardedFor_Untrusted(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "192.168.1.1:1234"
+	r.Header.Set("X-Forwarded-For", "10.0.0.1")
+	// Without trust proxy, header is ignored and RemoteAddr is used.
+	assert.Equal(t, "192.168.1.1", extractClientIP(r, false))
+}
+
+func TestExtractClientIP_XForwardedFor_MultipleIPs(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("X-Forwarded-For", "10.0.0.1, 10.0.0.2, 10.0.0.3")
+	// With trust proxy, should return the first IP.
+	assert.Equal(t, "10.0.0.1", extractClientIP(r, true))
+}
+
+func TestExtractClientIP_XRealIP_Trusted(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("X-Real-IP", "10.0.0.2")
-	assert.Equal(t, "10.0.0.2", extractClientIP(r))
+	assert.Equal(t, "10.0.0.2", extractClientIP(r, true))
+}
+
+func TestExtractClientIP_XRealIP_Untrusted(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "192.168.1.1:5678"
+	r.Header.Set("X-Real-IP", "10.0.0.2")
+	// Without trust proxy, header is ignored.
+	assert.Equal(t, "192.168.1.1", extractClientIP(r, false))
 }
 
 // --- Negotiate Content Type Tests ---

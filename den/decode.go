@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/bsv-blockchain/go-sdk/transaction"
-	"github.com/tongxiaofeng/libbitfs/metanet"
-	libtx "github.com/tongxiaofeng/libbitfs/tx"
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	libtx "github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // DecodedMetanet holds parsed Metanet data from a transaction.

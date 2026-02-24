@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs/method42"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // --- Mock SPV service for client roundtrip testing ---

@@ -613,11 +613,13 @@ func TestFullPurchaseFlow(t *testing.T) {
 	d.invoicesMu.RUnlock()
 	require.NotNil(t, storedInvoice)
 
-	// The placeholder payment address starts with "1BitFS" which is not a valid
-	// Base58Check address. For the full flow test, we override it with a real
-	// address so that x402.VerifyPayment can parse it.
+	// For the full flow test, override payment address with the well-known test address
+	// and clear the HTLC script so the P2PKH fallback verification path is used.
+	// (Testing HTLC script verification requires building a proper HTLC funding tx,
+	// which is covered in e2e tests.)
 	d.invoicesMu.Lock()
 	storedInvoice.PaymentAddr = testPaymentAddr
+	storedInvoice.HTLCScript = nil
 	d.invoicesMu.Unlock()
 
 	// Step 3: Submit HTLC payment with a valid BSV transaction.

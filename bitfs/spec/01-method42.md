@@ -85,7 +85,7 @@ func ReEncrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.Publi
 // ComputeCapsule computes the ECDH capsule for a buyer.
 // capsule = ECDH(D_node, P_buyer).x
 // Used by seller during HTLC flow.
-func ComputeCapsule(nodePrivateKey *ec.PrivateKey, buyerPublicKey *ec.PublicKey) ([]byte, error)
+func ComputeCapsule(nodePrivateKey *ec.PrivateKey, nodePublicKey *ec.PublicKey, buyerPublicKey *ec.PublicKey, keyHash []byte) ([]byte, error)
 
 // ComputeCapsuleHash computes SHA256(capsule) for HTLC hash lock.
 func ComputeCapsuleHash(capsule []byte) []byte

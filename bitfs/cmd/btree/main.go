@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/libbitfs/paymail"
+	"github.com/tongxiaofeng/libbitfs-go/paymail"
 )
 
 func main() {

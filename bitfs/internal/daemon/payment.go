@@ -9,6 +9,8 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/bsv-blockchain/go-sdk/script"
+	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
@@ -50,9 +52,13 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 		return
 	}
 
-	// Derive payment address from seller's public key hash.
-	sellerPKH := sellerPriv.PubKey().Hash()
-	paymentAddr := fmt.Sprintf("1BitFS%s", hex.EncodeToString(sellerPKH[:8]))
+	// Derive payment address from seller's public key (proper P2PKH address).
+	sellerAddr, err := script.NewAddressFromPublicKey(sellerPriv.PubKey(), true)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "ADDR_ERROR", "Failed to derive payment address")
+		return
+	}
+	paymentAddr := sellerAddr.AddressString
 
 	// Determine invoice TTL in seconds.
 	ttlSeconds := int64(DefaultInvoiceExpiry / time.Second)
@@ -146,9 +152,26 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 						capsule, err := method42.ComputeCapsule(nodePriv, nodePub, buyerPub, invoice.KeyHash)
 						if err == nil {
 							capsuleHash := method42.ComputeCapsuleHash(capsule)
+							// Build HTLC script for payment verification.
+							sellerPriv2, _, kpErr := d.wallet.GetSellerKeyPair()
+							var htlcScript []byte
+							if kpErr == nil {
+								sellerPKH := sellerPriv2.PubKey().Hash()
+								htlcScript, _ = x402.BuildHTLC(&x402.HTLCParams{
+									BuyerPubKey:  buyerPubBytes,
+									SellerPubKey: sellerPriv2.PubKey().Compressed(),
+									SellerAddr:   sellerPKH,
+									CapsuleHash:  capsuleHash,
+									Amount:       invoice.TotalPrice,
+									Timeout:      x402.DefaultHTLCTimeout,
+								})
+							}
 							d.invoicesMu.Lock()
 							invoice.Capsule = capsule
 							invoice.CapsuleHash = hex.EncodeToString(capsuleHash)
+							if len(htlcScript) > 0 {
+								invoice.HTLCScript = htlcScript
+							}
 							d.invoicesMu.Unlock()
 						}
 					}
@@ -239,6 +262,39 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := x402.VerifyPayment(proof, inv); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", "Payment verification failed")
+			return
+		}
+	}
+
+	// Replay protection: ensure the same transaction is not used for multiple invoices.
+	submittedTx, parseErr := transaction.NewTransactionFromBytes(htlcBody)
+	if parseErr != nil {
+		writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", "Cannot parse transaction")
+		return
+	}
+	submittedTxID := submittedTx.TxID().String()
+
+	d.usedTxIDsMu.Lock()
+	if existingInvoice, used := d.usedTxIDs[submittedTxID]; used {
+		d.usedTxIDsMu.Unlock()
+		writeJSONError(w, http.StatusConflict, "TX_REUSED",
+			fmt.Sprintf("Transaction already used for invoice %s", existingInvoice))
+		return
+	}
+	d.usedTxIDs[submittedTxID] = invoice.ID
+	d.usedTxIDsMu.Unlock()
+
+	// Broadcast the payment transaction to the blockchain before revealing capsule.
+	if d.chain != nil {
+		txHex := hex.EncodeToString(htlcBody)
+		_, broadcastErr := d.chain.BroadcastTx(r.Context(), txHex)
+		if broadcastErr != nil {
+			// Rollback replay tracking on broadcast failure.
+			d.usedTxIDsMu.Lock()
+			delete(d.usedTxIDs, submittedTxID)
+			d.usedTxIDsMu.Unlock()
+			writeJSONError(w, http.StatusBadRequest, "BROADCAST_FAILED",
+				fmt.Sprintf("Payment tx not accepted: %v", broadcastErr))
 			return
 		}
 	}

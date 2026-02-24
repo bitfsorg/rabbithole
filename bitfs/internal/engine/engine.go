@@ -8,12 +8,12 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
-	"github.com/tongxiaofeng/libbitfs/config"
-	"github.com/tongxiaofeng/libbitfs/network"
-	"github.com/tongxiaofeng/libbitfs/spv"
-	"github.com/tongxiaofeng/libbitfs/storage"
-	"github.com/tongxiaofeng/libbitfs/tx"
-	"github.com/tongxiaofeng/libbitfs/wallet"
+	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/network"
+	"github.com/tongxiaofeng/libbitfs-go/spv"
+	"github.com/tongxiaofeng/libbitfs-go/storage"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
 // Engine is the shared business logic layer. CLI commands, shell REPL,
@@ -227,6 +227,23 @@ func (e *Engine) AllocateFeeUTXO(minAmount uint64) (*tx.UTXO, error) {
 		return nil, fmt.Errorf("engine: no fee UTXO with >= %d sats; run 'bitfs fund' first", minAmount)
 	}
 	return e.utxoStateToTx(utxoState)
+}
+
+// AllocateFeeUTXOWithState finds a fee UTXO with enough funds and returns both
+// the tx UTXO (with private key) and the underlying UTXOState for rollback.
+// If the transaction build/sign fails, the caller should set utxoState.Spent = false
+// to release the UTXO back to the pool.
+func (e *Engine) AllocateFeeUTXOWithState(minAmount uint64) (*tx.UTXO, *UTXOState, error) {
+	utxoState := e.State.AllocateFeeUTXO(minAmount)
+	if utxoState == nil {
+		return nil, nil, fmt.Errorf("engine: no fee UTXO with >= %d sats; run 'bitfs fund' first", minAmount)
+	}
+	txU, err := e.utxoStateToTx(utxoState)
+	if err != nil {
+		utxoState.Spent = false // rollback on conversion error
+		return nil, nil, err
+	}
+	return txU, utxoState, nil
 }
 
 // utxoStateToTx converts a UTXOState to a tx.UTXO with private key attached.
