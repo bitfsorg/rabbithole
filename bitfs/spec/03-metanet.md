@@ -119,7 +119,7 @@ type NodeStore interface {
 
 ```go
 // ParseNode parses a raw BSV transaction into a Metanet Node.
-// Extracts OP_RETURN fields and deserializes the Protobuf payload.
+// Extracts OP_RETURN fields and deserializes the TLV payload.
 func ParseNode(txBytes []byte) (*Node, error)
 
 // ResolvePath resolves a filesystem path starting from a root node.
@@ -164,14 +164,14 @@ func InheritPricePerKB(store NodeStore, node *Node) (uint64, error)
 ## 依赖
 
 - `libbitfs/tx` -- OP_RETURN 解析，交易格式
-- `google.golang.org/protobuf` -- Protobuf 反序列化
+- `libbitfs/metanet/tlv` -- TLV 序列化/反序列化
 - `github.com/bsv-blockchain/go-sdk/primitives/ec` -- 公钥处理
 
 ## 数据结构
 
-### Protobuf 模式（外部定义，此处消费）
+### TLV 模式（自定义二进制格式）
 
-本模块反序列化 `BitFSPayload` protobuf 消息。`.proto` 文件为权威来源；本模块提供 Go 层面的 `Node` 结构体作为解析后的视图。
+本模块反序列化 `BitFSPayload` TLV 消息。TLV 编码定义为权威来源；本模块提供 Go 层面的 `Node` 结构体作为解析后的视图。
 
 ### 路径解析算法
 
@@ -206,7 +206,7 @@ ResolvePath(root, ["docs", "report.pdf"]):
 | `ErrRemoteLinkNotSupported` | SOFT_REMOTE 链接需要外部解析 |
 | `ErrInvalidPath` | 路径包含无效字符或为空 |
 | `ErrNodeNotFound` | 未找到给定 P_node 或 TxID 对应的节点 |
-| `ErrInvalidProtobuf` | 载荷无法反序列化 |
+| `ErrInvalidTLV` | 载荷无法反序列化 |
 | `ErrHardLinkToDirectory` | 尝试对目录创建硬链接 |
 
 ## 安全考量

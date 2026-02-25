@@ -139,7 +139,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
   [1] 花费费用密钥链 UTXO → 支付矿工费
 
 输出:
-  [0] OP_RETURN: <MetaFlag> <P_node> <TxID_parent> <Protobuf 载荷>
+  [0] OP_RETURN: <MetaFlag> <P_node> <TxID_parent> <TLV 载荷>
   [1] P2PKH → P_node     (546 sat，节点可花费输出)
   [2] P2PKH → P_parent   (546 sat，刷新父节点 UTXO)
   [3] P2PKH → 找零地址
@@ -147,7 +147,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 
 **关键设计**：
 - 输出[2] 刷新父节点 UTXO → 自持续 UTXO 链，无需预先充值
-- Protobuf 载荷编码：节点类型、操作(CREATE/UPDATE/DELETE)、内容元数据、访问控制、目录子节点、可选字段(关键词/描述/域名绑定)
+- TLV 载荷编码：节点类型、操作(CREATE/UPDATE/DELETE)、内容元数据、访问控制、目录子节点、可选字段(关键词/描述/域名绑定)
 - 定价：price_per_kb (satoshis/KB)，支持目录继承
 
 ---

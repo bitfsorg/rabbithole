@@ -187,7 +187,7 @@ func TestMkdirUpload(t *testing.T) {
 		len(plaintext), len(encResult.Ciphertext), encResult.KeyHash[:8])
 
 	// Build the file payload: concatenate keyHash (32B) + ciphertext for the OP_RETURN.
-	// In a real system, this would be a protobuf BitFSPayload; for the e2e test
+	// In a real system, this would be a TLV BitFSPayload; for the e2e test
 	// we use a simple format that can be verified.
 	filePayload := make([]byte, 0, 32+len(encResult.Ciphertext))
 	filePayload = append(filePayload, encResult.KeyHash...)

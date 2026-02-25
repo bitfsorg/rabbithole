@@ -20,26 +20,167 @@
 ```
 RabbitHole/
 ├── design/            ← 设计文档 (md 源文件 + HTML→PDF)
-│   ├── 0-OverallDesign.zh.md
-│   ├── bitfs/         ← BitFS 四层设计文档
-│   ├── metanet/       ← Metanet 四层设计文档
-│   ├── diagrams/      ← Mermaid 图表源文件 + SVG
-│   └── pdf/           ← 生成的 PDF + HTML 模板
 ├── whitepaper/        ← 白皮书 (md 大纲 → LaTeX → PDF)
 ├── website/           ← 官网 (bitfs.org + metanet.org)
-├── slides/            ← 演示文稿
+├── slides/            ← 演示文稿 (HTML5)
 ├── references/        ← 研究论文 (6 篇 PDF)
 ├── vi/                ← 视觉识别系统
 ├── bitfs/             ← BitFS Go 实现 (CLI + daemon)
 ├── metanet/           ← Metanet Go 实现 (CDN 节点)
-├── libbitfs-go/       ← 共享核心库 Go (独立 repo, module: github.com/tongxiaofeng/libbitfs-go)
-├── libbitfs-ts/       ← 共享核心库 TypeScript (待开发，目标: 浏览器 + Node.js)
-├── den/               ← BitFS 区块链浏览器 (Go + htmx, regtest/testnet 调试工具)
-├── git-remote-bitfs/  ← Git remote helper (独立 repo, bitfs:// 协议)
+├── libbitfs-go/       ← 共享核心库 Go (独立 repo)
+├── libbitfs-ts/       ← 共享核心库 TypeScript (待开发)
+├── den/               ← BitFS 区块链浏览器 (Go + htmx)
+├── git-remote-bitfs/  ← Git remote helper (独立 repo)
 ├── bitfs-app/         ← BitFS 桌面/移动客户端 (Flutter, 独立 repo)
 ├── bitfs-extension/   ← BitFS 浏览器扩展 (TypeScript, 独立 repo)
-└── tools/             ← 构建工具 (Mermaid 图表渲染等)
+└── tools/             ← 构建工具
 ```
+
+## 各目录详细介绍
+
+### bitfs/ — BitFS CLI + Daemon
+
+Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/tongxiaofeng/bitfs`
+
+**架构三层**:
+- `cmd/bitfs/` — 主 CLI（wallet/vault/put/mkdir/rm/mv/cp/link/sell/encrypt/publish/shell/daemon）
+- `cmd/b*/` — 只读工具集（bls/bcat/bget/bstat/btree），通过 HTTP 连接 daemon
+- `internal/engine/` — 统一业务逻辑层（所有 CLI 命令、shell REPL、daemon 适配器共用）
+- `internal/daemon/` — LFCP HTTP 服务器（内容服务、Metanet 元数据、Method 42 握手、x402 支付）
+- `internal/client/` — b-tools 的 HTTP 客户端
+
+**其他目录**:
+- `spec/` — 11 个模块规格说明（01-method42 到 11-cmd-btools），TASKS.md 含 ~938 测试用例
+- `integration/` — 276 个集成测试（19 文件，`-tags=integration`）
+- `e2e/` — Docker regtest 端到端测试（`-tags e2e`，需要 Docker Desktop）
+- `dashboard/` — React SPA，通过 embed.go 嵌入 daemon 的 `/_dashboard/*`
+- `docs/` — 用户指南、API 参考、计划文档
+
+**规模**: ~4,157 行代码，1,046 个测试函数，67 个测试文件
+
+### libbitfs-go/ — 共享核心库 (Go)
+
+独立 Git 仓库。Module: `github.com/tongxiaofeng/libbitfs-go`。bitfs/go.mod 通过 `replace => ../libbitfs-go` 引用。
+
+**10 个包**:
+
+| 包 | 用途 |
+|---|------|
+| method42 | ECDH 加密引擎（AES-256-GCM，三种访问模式: Private/Free/Paid） |
+| wallet | HD 钱包（BIP44 m/44'/236'/account'/chain/index，Argon2id 种子加密） |
+| tx | Metanet 交易构建器（CreateRoot/CreateChild/SelfUpdate/DataTx 四模板） |
+| metanet | Metanet DAG + Unix 文件系统操作（目录增删改、链接、Merkle root、TLV 序列化） |
+| spv | SPV 轻客户端（80 字节区块头、Merkle path 验证、头链验证） |
+| storage | 内容寻址存储接口（SHA256 key_hash，hash-sharded 目录 ~/.bitfs/storage/） |
+| network | 区块链服务抽象（BlockchainService 接口、RPCClient、SPVClient、网络预设） |
+| config | 配置文件解析（key=value 格式） |
+| paymail | Paymail 协议（.well-known/bsvalias 发现、PKI 端点解析） |
+| x402 | HTTP 402 支付协议（X-Price/X-Invoice-Id 头、HTLC 构建、支付验证） |
+
+**规模**: ~8,025 行代码（不含测试）
+
+### metanet/ — Metanet CDN 节点
+
+去中心化 CDN 网络，激励检索而非存储。Go 实现，开发中。
+
+**7 个内部包**:
+- `chain/` — Metanet Chain 核心（区块、Token、创世配置）
+- `mining/` — 合并挖矿（AuxPoW、难度调整、BSV 锚定）
+- `contract/` — 存储合约（交易、挑战、脚本）
+- `proof/` — 存储证明（ECDH 加密、Merkle tree）
+- `payment/` — 支付通道（BSV + MNT）
+- `overlay/` — BRC Overlay 网络
+- `config/` — 配置管理
+
+**状态**: Phase 1（chain/mining）完成，Phase 2（contract）进行中。`spec/` 下 7 个模块规格说明。
+
+### den/ — 区块链浏览器
+
+BSV 区块链浏览器，支持 BitFS/Metanet 协议解码。用于 regtest/testnet 调试。
+
+**技术**: Go + htmx + libbitfs-go，单二进制无需构建工具
+**功能**: 区块/交易浏览、UTXO 查询、Metanet OP_RETURN 解码、DAG 可视化、Method 42 分析、SPV 验证
+
+### git-remote-bitfs/ — Git Remote Helper
+
+独立 Git 仓库。将 Git 对象模型翻译为 Metanet DAG，支持 `bitfs://<address>[@network]` URL 协议。
+
+**6 个内部包**: helper（Git 协议）、stream（fast-import/export）、mapper（Git SHA↔Metanet 映射）、chain（DAG 读写+加密+广播）、config（URL 解析+钱包加载）、utxo（UTXO 状态管理）
+
+### bitfs-app/ — 跨平台客户端 (Flutter)
+
+独立 Git 仓库。iOS/Android/macOS/Windows/Linux 全平台客户端。
+
+**技术**: Flutter 3.27+ / Go 1.25+ (FFI 桥接) / Riverpod 2 (状态管理) / GoRouter (路由)
+**结构**: `lib/`（Dart: providers/models/screens/widgets）、`native/`（Go cgo FFI）、平台壳（android/ios/macos/windows/linux）
+**版本**: v0.1.0
+
+### bitfs-extension/ — 浏览器扩展
+
+独立 Git 仓库。MetaMask 模型的 Chrome 扩展，本地执行加密操作。
+
+**技术**: React 19 / TypeScript / Vite / @noble/secp256k1 / @noble/hashes / @scure/bip32+bip39
+**结构**: `src/popup/`（React 钱包 UI）、`src/background/`（Service Worker 密钥管理）、`src/content-script/`（bitfs:// 链接检测）、`src/bitfs-core/`（TypeScript 加密核心）
+**特点**: 纯 JS 加密（无 WASM），~200KB bundle。版本 v0.1.0
+
+### libbitfs-ts/ — 共享核心库 (TypeScript) [待开发]
+
+libbitfs-go 的 TypeScript 镜像，目标: 浏览器 + Node.js 环境。ESM 优先，依赖 @bsv/sdk。
+**状态**: 仅有 README.md 占位，10 个包与 libbitfs-go 对应，尚未实现。
+
+### design/ — 设计文档
+
+四层设计文档体系，每个产品各 4 章：
+
+| 层级 | BitFS | Metanet |
+|------|-------|---------|
+| 1-概念设计 | 愿景、架构、b* 工具、HD 钱包、Method 42 (17KB) | 产品定位、经济模型、Agent Friendly (6KB) |
+| 2-系统设计 | 模块划分、接口定义、交易格式、CLI 命令 (103KB) | 三层架构 (L1:BSV/L2:Daemon/L3:Chain)、智能合约 (11KB) |
+| 3-详细设计 | 算法细节、Bitcoin Script、x402 协议、BIP32 访问控制 (103KB) | 共识机制、挖矿协议、结算流程 (14KB) |
+| 4-测试设计 | ~980 测试用例 (55KB) | ~20 测试用例 (8KB) |
+
+**其他**: `0-OverallDesign.zh.md`（总体设计）、`diagrams/`（8 个 Mermaid .mmd + 7 个 SVG）、`pdf/`（9 个生成的 PDF + HTML 模板）
+
+### whitepaper/ — 白皮书
+
+两篇学术论文，中英文双语：
+- **BitFS**: "A Peer-to-Peer Encrypted File System on Blockchain" — Unix 映射、HD 密钥派生、Method 42、HTLC 原子交换
+- **Metanet**: "The Metanet Network: A Decentralized CDN That Incentivizes Retrieval" — 激励层、存档合约、存储证明、支付通道
+
+**管线**: `*-Outline.md`（大纲）→ `.tex`（LaTeX）→ tectonic (XeTeX) → `.pdf`
+**字体**: Songti SC（中文衬线）、Times New Roman（英文正文）、Menlo（代码）
+
+### website/ — 官网
+
+两个单页官网，纯 HTML+CSS+JS（无框架），中英文双语：
+- **bitfs.org/** — 暗色植物系风格（深炭灰底 + 铜金强调色 `#c9956b`），9 个 section
+- **metanet.org/** — 工业科技风格（中性暗灰底 + 琥珀强调色 `#e8983e`），10 个 section
+
+**管线**: `Website-Content-Outline.md`（大纲）→ `index.html` + `index.zh.html`
+
+### slides/ — 演示文稿
+
+BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 vi/ 一致）。
+6 个部分: 范式革命 → 所有权与密码学 → 交易 → 核心功能 → Token 经济 → 网络骨干
+
+**管线**: `Slides-Outline.md`（大纲）→ `BitFS-presentation.html`
+
+### references/ — 参考论文
+
+6 篇研究论文和专利，详见 `references/CLAUDE.md`。核心参考: Paper #0（Metanet 专利）和 Paper #5（分布式存储验证）。
+
+### vi/ — 视觉识别系统
+
+`vi-system.html` — 两产品完整 VI 规范：
+- **BitFS Dark Botanical**: 金铜色调（`--b-gold: #c9956b`），Cormorant Garamond + Inter + JetBrains Mono
+- **Metanet Bold Signal**: 琥珀色调（`--m-amber: #e8983e`），Inter 全字重 + JetBrains Mono
+
+包含色板、Logo 系统、字体规范、组件样式。所有输出物（网站/幻灯片/PDF）遵循此 VI。
+
+### tools/ — 构建工具
+
+`tools/mermaid/` — Mermaid 图表渲染器（TypeScript/Bun CLI），将 `.mmd` 转换为 SVG。
+**用法**: `bun tools/mermaid/cli.ts <dir> [--theme bitfs] [--no-ascii]`
 
 ## 文档生成工作流
 

@@ -27,7 +27,7 @@
 
 | # | 类别 | 设计参照 | 代码文件 | 现有 | 目标 |
 |---|------|---------|---------|------|------|
-| T1 | Protobuf Schema | 四 | `proto/bitfs_test.go` | 61 | 72 |
+| T1 | TLV Schema | 四 | `proto/bitfs_test.go` | 61 | 72 |
 | T2 | HD Wallet | 二-B | `method42/hdwallet_test.go` | 33 | 44 |
 | T3 | Method 42 加密 | 五, 二-B.D | `method42/encrypt_test.go` | 23 | 40 |
 | T4 | Vault 管理 | 二 | `method42/vault_test.go` | 24 | 32 |
@@ -60,7 +60,7 @@
 
 ---
 
-## T1. Protobuf Schema
+## T1. TLV Schema
 
 **设计参照**: 第四节 | **代码文件**: `src/proto/bitfs_test.go` | **现有/目标**: 61 / 72
 
@@ -217,7 +217,7 @@
 | T8.1 BuildCreateRoot | 根目录创建交易的完整结构 | 6 | +2 |
 | T8.2 BuildCreateChild | FILE/DIR/LINK 子节点创建, OP_RETURN 格式 | 8 | +3 |
 | T8.3 BuildSelfUpdate | 父目录更新 (children 列表, next_child_index) | 6 | +2 |
-| T8.4 OP_RETURN 解析 | Metanet 前缀 + Protobuf payload 解析 | 5 | +3 |
+| T8.4 OP_RETURN 解析 | Metanet 前缀 + TLV payload 解析 | 5 | +3 |
 | T8.5 UTXO 管理 | Output 2 刷新 P_parent, 自持续链 | 4 | +2 |
 | T8.6 交易签名 | P2PKH 签名验证, Input/Output 数量正确 | 5 | +3 |
 
@@ -609,7 +609,7 @@
 
 | ID | 用例名称 | 属性 | 设计参照 | 标签 |
 |----|---------|------|---------|------|
-| T21.2.1 | Protobuf round-trip | marshal(unmarshal(bytes)) = bytes | 四 | [property] |
+| T21.2.1 | TLV round-trip | marshal(unmarshal(bytes)) = bytes | 四 | [property] |
 | T21.2.2 | 内容寻址唯一性 | SHA256(SHA256(plaintext)) 唯一标识内容 (双哈希, 碰撞检测) | 七 | [property] |
 | T21.2.3 | 去重一致性 | Store(data) × N → 存储中仅 1 副本 | 七 | [property] |
 | T21.2.4 | URI round-trip | parse(format(uri)) = uri | 六 | [property] |
@@ -669,7 +669,7 @@
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
 | T22.3.1 | 路径遍历 | 文件名 "../../../etc/passwd" | put/resolve | 拒绝, 返回 invalid path 错误 | [security] |
-| T22.3.2 | 超大 payload | 构造 >100MB protobuf | 提交交易 | 拒绝, 返回 payload too large 错误 | [security] |
+| T22.3.2 | 超大 payload | 构造 >100MB TLV | 提交交易 | 拒绝, 返回 payload too large 错误 | [security] |
 | T22.3.3 | 恶意元数据 | metadata 含注入字符 | 存储 → 检索 → 显示 | 元数据被安全处理, 无 injection | [security] |
 | T22.3.4 | CLI 参数注入 | 参数含 shell 特殊字符 | 执行命令 | 参数被正确引用, 无命令注入 | [security] |
 
@@ -758,7 +758,7 @@ ACL 权限管理测试验证群签名/群加密与 POSIX ACL 风格权限控制�
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
-| T24.1.1 | acl_ref 字段写入 Protobuf | 已有 Metanet 节点 | 设置 acl_ref → 序列化 BitFSPayload | BitFSPayload 正确包含 acl_ref 字节, 反序列化后一致 | [unit] |
+| T24.1.1 | acl_ref 字段写入 TLV | 已有 Metanet 节点 | 设置 acl_ref → 序列化 BitFSPayload | BitFSPayload 正确包含 acl_ref 字节, 反序列化后一致 | [unit] |
 | T24.1.2 | 空 acl_ref 表示无 ACL 限制 | 无 ACL 的文件 | 检查 acl_ref 字段 | 默认行为: 按 access 模式 (FREE/PAID/PRIVATE) 控制, 向后兼容 | [unit] |
 | T24.1.3 | ACL 更新交易广播 | 已有 ACL 节点 | Owner 更新 ACL 规则 → 广播 | 新 ACL 规则正确上链 (新 txid), 所有引用者通过 pubkey 自动解析到最新版本 | [integration] |
 
@@ -789,18 +789,18 @@ ACL 权限管理测试验证群签名/群加密与 POSIX ACL 风格权限控制�
 
 收益权表与 ISO (Initial Share Offering) 测试验证收益分配、股份管理和 Covenant 脚本正确性。
 
-### T25.1: Protobuf 字段
+### T25.1: TLV 字段
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
-| T25.1.1 | revenue_share 字段写入 Protobuf | 已有 Metanet 节点 | 设置 revenue_share=5000 → 序列化 | 值 5000 表示 50.00% 分成比例, 反序列化后一致 | [unit] |
+| T25.1.1 | revenue_share 字段写入 TLV | 已有 Metanet 节点 | 设置 revenue_share=5000 → 序列化 | 值 5000 表示 50.00% 分成比例, 反序列化后一致 | [unit] |
 | T25.1.2 | 无 revenue_share 的文件不触发分成 | revenue_share=0 | 购买该文件 | 全额归 Owner, 无股东分配逻辑 | [unit] |
 
 ### T25.2: Share/Registry UTXO
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
-| T25.2.1 | Share UTXO 正确编码持有人和份额 | ISO 已创建 | 检查 Share UTXO Script | Script 包含 holder_pkh 和 share_amount, 输出 >= 546 sat | [unit] |
+| T25.2.1 | Share UTXO 正确编码持有人和份额 | ISO 已创建 | 检查 Share UTXO Script | Script 包含 holder_pkh 和 share_amount, 输出 >= 1 sat | [unit] |
 | T25.2.2 | Registry UTXO 记录所有股东 | ISO 已创建, 有多个股东 | 查询 Registry UTXO | 股东列表完整, 份额总和 = total_shares (10000) | [unit] |
 
 ### T25.3: 收益分配
@@ -808,7 +808,7 @@ ACL 权限管理测试验证群签名/群加密与 POSIX ACL 风格权限控制�
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
 | T25.3.1 | 收益分配: 金额 = 总收入 * 份额比例 | 股东持 50% 份额 | 10000 sat 收入触发分配 | 该股东收到 5000 sat, Covenant 验证通过 | [unit] |
-| T25.3.2 | 收益分配: 每个股东输出 >= 546 sat | 多个小股东 | 小额收入触发分配 | 低于 546 sat dust limit 时累积到下次分配, 不生成无效输出 | [edge] |
+| T25.3.2 | 收益分配: 每个股东输出 >= 1 sat | 多个小股东 | 小额收入触发分配 | 低于 1 sat 时累积到下次分配, 不生成无效输出 | [edge] |
 | T25.3.3 | 股份转让: Covenant 验证份额守恒 | 股东 A 持有 3000 份 | A 转让 1000 份给 D | 转让前后总份额不变 (10000), Registry 正确更新 | [property] |
 | T25.3.4 | 购买 PAID 文件触发自动分成 | 文件设有 revenue_share | Buyer 购买文件 | Seller 收到扣除分成后的金额, 各股东按份额收到对应金额 | [integration] |
 
@@ -881,7 +881,7 @@ Paymail (bsvalias) 协议集成测试, 验证身份发现、公钥查询与 BitF
 
 | 测试类别 | 设计章节 | 代码路径 |
 |----------|---------|---------|
-| T1 Protobuf Schema | 四 (Metanet 交易格式) | `src/proto/bitfs_test.go` |
+| T1 TLV Schema | 四 (Metanet 交易格式) | `src/proto/bitfs_test.go` |
 | T2 HD Wallet | 二-B (HD 钱包派生规则详细设计) | `src/internal/method42/hdwallet_test.go` |
 | T3 Method 42 加密 | 五 (数据类型与加密模型), 二-B.D (Method 42 加密密钥派生) | `src/internal/method42/encrypt_test.go` |
 | T4 Vault 管理 | 二 (HD 钱包与 Vault) | `src/internal/method42/vault_test.go` |

@@ -70,7 +70,7 @@
 - **文件**：`node.go`、`parser.go`、`resolve.go`、`directory.go`、`link.go`、`metanet_test.go`
 - **描述**：将 Metanet 交易解析为 Node 结构体，实现 Unix 文件系统操作（路径解析、目录列表、链接跟踪），版本解析（最高区块高度 + TTOR），价格继承。
 - **验收标准**：
-  - [x] ParseNode 提取 P_node、ParentTxID、Protobuf 载荷
+  - [x] ParseNode 提取 P_node、ParentTxID、TLV 载荷
   - [x] ResolvePath 正确遍历目录
   - [x] "." 和 ".." 导航正常工作（.. 不能跳出根目录）
   - [x] 软链接跟踪最大深度 10
@@ -82,7 +82,7 @@
   - [x] InheritPricePerKB 沿目录树向上查找
   - [x] 三种节点类型（FILE/DIR/LINK）正确解析
 - **估计测试数**：65
-- **依赖**：libbitfs/tx、protobuf、go-sdk（ec）
+- **依赖**：libbitfs/tx、go-sdk（ec）
 
 ### 任务 5：libbitfs/spv -- SPV 轻客户端
 - **包**：`libbitfs/spv/`
@@ -230,6 +230,6 @@
 
 1. **go-sdk 是唯一的 BSV 依赖**：`github.com/bsv-blockchain/go-sdk`。不使用其他 BSV 库。
 2. **测试**：使用 `github.com/stretchr/testify` 的表驱动测试。每个包都有全面的单元测试。
-3. **Protobuf**：`BitFSPayload` proto 文件根据 SystemDesign 第 4 节的模式生成。
+3. **TLV**：`BitFSPayload` TLV 编码格式根据 SystemDesign 第 4 节的模式定义。
 4. **错误包装**：使用 `fmt.Errorf("context: %w", err)` 构建错误链。
 5. **上下文传播**：长时间运行的操作接受 `context.Context` 以支持取消。

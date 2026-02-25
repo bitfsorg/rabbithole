@@ -73,7 +73,7 @@
 | 1 | 状态模型 | 默认无状态, 支持缓存 | Agent 友好 |
 | 2 | 命令粒度 | b* 独立只读工具 + bitfs 读写命令 | Unix 哲学 |
 | 3 | 数据验证 | SPV (本地 tx + Merkle proof, 不查链) | 点对点, 不依赖索引服务 |
-| 4 | 编码格式 | Protobuf | 紧凑、版本兼容、Go 原生支持 |
+| 4 | 编码格式 | TLV | 紧凑、自定义 Tag-Length-Value 编码 |
 | 5 | P_node 来源 | BIP32 HD 树状派生 (镜像文件系统层次) | 稳定身份 + 确定性恢复 |
 | 6 | 文件系统模型 | Unix (inode=P_node, dirent=ChildEntry, 软/硬链接) | 成熟模型, 语义清晰 |
 | 7 | 多目录树 | Vault (BIP32 account 层级分离), 费用链 account 0 | 同一种子多棵独立树 |
