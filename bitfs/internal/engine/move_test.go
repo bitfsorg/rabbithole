@@ -113,118 +113,98 @@ func TestMove_SameDirectory(t *testing.T) {
 func TestMove_CrossDirectory(t *testing.T) {
 	eng := setupMoveTestEngine(t)
 
-	// Get the node's pubkey before the move.
+	// Snapshot source node identity before the move.
 	srcNode := eng.State.FindNodeByPath("/src/file.txt")
-	if srcNode == nil {
-		t.Fatal("source node /src/file.txt not found")
-	}
+	require.NotNil(t, srcNode, "source node /src/file.txt not found")
 	originalPubKey := srcNode.PubKeyHex
+	originalKeyHash := srcNode.KeyHash
 
-	// Move /src/file.txt to /dst/file.txt (cross-directory).
+	// Cross-directory move: DELETE old + CreateChild at destination with new identity.
 	result, err := eng.Move(&MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/src/file.txt",
 		DstPath:    "/dst/file.txt",
+		Force:      true,
 	})
-	if err != nil {
-		t.Fatalf("Move cross-dir: %v", err)
-	}
+	require.NoError(t, err, "Move cross-dir")
 
-	if result.TxHex == "" {
-		t.Error("expected non-empty TxHex")
-	}
-	if result.TxID == "" {
-		t.Error("expected non-empty TxID")
-	}
-	if !strings.Contains(result.Message, "2 txs") {
-		t.Errorf("message should mention '2 txs', got: %s", result.Message)
-	}
+	assert.NotEmpty(t, result.TxHex, "expected non-empty TxHex")
+	assert.NotEmpty(t, result.TxID, "expected non-empty TxID")
+	assert.Contains(t, result.Message, "4 txs", "message should mention '4 txs', got: %s", result.Message)
 
-	// Verify the node's path has been updated.
+	// Verify the new node exists at destination with a NEW pubkey (not original).
 	movedNode := eng.State.FindNodeByPath("/dst/file.txt")
-	if movedNode == nil {
-		t.Fatal("moved node /dst/file.txt should exist")
-	}
+	require.NotNil(t, movedNode, "moved node /dst/file.txt should exist")
+	assert.NotEqual(t, originalPubKey, movedNode.PubKeyHex, "cross-dir move must assign new identity")
 
-	// The node's pubkey must be the same (move doesn't change identity).
-	if movedNode.PubKeyHex != originalPubKey {
-		t.Errorf("node pubkey changed: got %s, want %s", movedNode.PubKeyHex, originalPubKey)
-	}
+	// Content must be re-encrypted (different key hash).
+	assert.NotEqual(t, originalKeyHash, movedNode.KeyHash, "content must be re-encrypted with new key")
 
 	// The old path should no longer resolve.
 	oldNode := eng.State.FindNodeByPath("/src/file.txt")
-	if oldNode != nil {
-		t.Error("old path /src/file.txt should no longer resolve")
-	}
+	assert.Nil(t, oldNode, "old path /src/file.txt should no longer resolve")
 
 	// Verify /src no longer lists file.txt.
 	srcDir := eng.State.FindNodeByPath("/src")
-	if srcDir == nil {
-		t.Fatal("/src directory not found")
-	}
+	require.NotNil(t, srcDir, "/src directory not found")
 	for _, c := range srcDir.Children {
-		if c.Name == "file.txt" {
-			t.Error("'file.txt' should have been removed from /src children")
-		}
+		assert.NotEqual(t, "file.txt", c.Name, "'file.txt' should have been removed from /src children")
 	}
 
-	// Verify /dst now lists file.txt.
+	// Verify /dst now lists file.txt with the NEW pubkey (not original).
 	dstDir := eng.State.FindNodeByPath("/dst")
-	if dstDir == nil {
-		t.Fatal("/dst directory not found")
-	}
+	require.NotNil(t, dstDir, "/dst directory not found")
 	found := false
 	for _, c := range dstDir.Children {
 		if c.Name == "file.txt" {
 			found = true
-			// Check that the pubkey is preserved.
-			if c.PubKey != originalPubKey {
-				t.Errorf("child pubkey changed: got %s, want %s", c.PubKey, originalPubKey)
-			}
+			assert.NotEqual(t, originalPubKey, c.PubKey, "child pubkey must be NEW (not original)")
+			assert.Equal(t, movedNode.PubKeyHex, c.PubKey, "child pubkey must match moved node")
 		}
 	}
-	if !found {
-		t.Error("'file.txt' should be in /dst children")
-	}
+	assert.True(t, found, "'file.txt' should be in /dst children")
 }
 
 func TestMove_CrossDirectory_WithRename(t *testing.T) {
 	eng := setupMoveTestEngine(t)
+
+	// Snapshot original identity.
+	srcNode := eng.State.FindNodeByPath("/src/file.txt")
+	require.NotNil(t, srcNode)
+	originalPubKey := srcNode.PubKeyHex
 
 	// Move /src/file.txt to /dst/newname.txt (cross-directory + rename).
 	result, err := eng.Move(&MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/src/file.txt",
 		DstPath:    "/dst/newname.txt",
+		Force:      true,
 	})
-	if err != nil {
-		t.Fatalf("Move cross-dir with rename: %v", err)
-	}
+	require.NoError(t, err, "Move cross-dir with rename")
 
-	if result.TxID == "" {
-		t.Error("expected non-empty TxID")
-	}
+	assert.NotEmpty(t, result.TxID, "expected non-empty TxID")
+	assert.Contains(t, result.Message, "4 txs", "message should mention '4 txs'")
 
-	// Verify the node exists at the new path with the new name.
+	// Verify the node exists at the new path with a NEW pubkey.
 	movedNode := eng.State.FindNodeByPath("/dst/newname.txt")
-	if movedNode == nil {
-		t.Fatal("moved node /dst/newname.txt should exist")
-	}
+	require.NotNil(t, movedNode, "moved node /dst/newname.txt should exist")
+	assert.NotEqual(t, originalPubKey, movedNode.PubKeyHex, "cross-dir move must assign new identity")
 
-	// Verify the child entry in /dst has the new name.
+	// Old path gone.
+	assert.Nil(t, eng.State.FindNodeByPath("/src/file.txt"), "old path should no longer resolve")
+
+	// Verify the child entry in /dst has the new name with new pubkey.
 	dstDir := eng.State.FindNodeByPath("/dst")
-	if dstDir == nil {
-		t.Fatal("/dst directory not found")
-	}
+	require.NotNil(t, dstDir, "/dst directory not found")
 	found := false
 	for _, c := range dstDir.Children {
 		if c.Name == "newname.txt" {
 			found = true
+			assert.NotEqual(t, originalPubKey, c.PubKey, "child pubkey must be NEW")
+			assert.Equal(t, movedNode.PubKeyHex, c.PubKey, "child pubkey must match moved node")
 		}
 	}
-	if !found {
-		t.Error("'newname.txt' should be in /dst children")
-	}
+	assert.True(t, found, "'newname.txt' should be in /dst children")
 }
 
 func TestMove_CrossDirectory_SourceNodeNotFound(t *testing.T) {
@@ -315,10 +295,11 @@ func TestMove_CrossDirectory_DuplicateDestName(t *testing.T) {
 	}
 }
 
-// TestMove_CrossDirectory_SecondTxFailure_PreservesState verifies that when
-// the second TX build fails (destination parent update), both source and
-// destination parent directories' children lists remain unchanged (P2 fix).
-func TestMove_CrossDirectory_SecondTxFailure_PreservesState(t *testing.T) {
+// TestMove_CrossDirectory_TxBuildFailure_PreservesState verifies that when
+// any of the 4 TX builds fails, all state (parents, node path, UTXOs) remains
+// unchanged. We sabotage the destination parent's UTXO so the dstParent
+// SelfUpdate (Tx2) fails after Tx1 was built successfully.
+func TestMove_CrossDirectory_TxBuildFailure_PreservesState(t *testing.T) {
 	eng := setupMoveTestEngine(t)
 
 	// Snapshot state before the move.
@@ -339,9 +320,10 @@ func TestMove_CrossDirectory_SecondTxFailure_PreservesState(t *testing.T) {
 	srcNode := eng.State.FindNodeByPath("/src/file.txt")
 	require.NotNil(t, srcNode)
 	originalPath := srcNode.Path
+	originalPubKey := srcNode.PubKeyHex
 
-	// Mark destination parent's node UTXO as spent so the second
-	// buildParentSelfUpdate (for dst) fails.
+	// Mark destination parent's node UTXO as spent so
+	// buildParentSelfUpdate (dstParent, Tx2) fails.
 	for _, u := range eng.State.UTXOs {
 		if u.PubKeyHex == dstDir.PubKeyHex && u.Type == "node" && !u.Spent {
 			u.Spent = true
@@ -353,6 +335,7 @@ func TestMove_CrossDirectory_SecondTxFailure_PreservesState(t *testing.T) {
 		VaultIndex: 0,
 		SrcPath:    "/src/file.txt",
 		DstPath:    "/dst/file.txt",
+		Force:      true,
 	})
 	require.Error(t, err, "move should fail when dst parent update fails")
 
@@ -372,86 +355,82 @@ func TestMove_CrossDirectory_SecondTxFailure_PreservesState(t *testing.T) {
 	}
 	assert.Equal(t, dstChildrenBefore, dstChildrenAfter, "destination parent children should be unchanged")
 
-	// Node path must be unchanged.
+	// Node path and pubkey must be unchanged.
 	assert.Equal(t, originalPath, srcNode.Path, "node path should be unchanged")
+	assert.Equal(t, originalPubKey, srcNode.PubKeyHex, "node pubkey should be unchanged")
 }
 
 func TestMove_CrossDirectory_FromRoot(t *testing.T) {
 	eng := initTestEngine(t)
 
-	// Add many fee UTXOs.
-	for i := 0; i < 10; i++ {
+	// Add many fee UTXOs — 4-tx cross-dir move needs several.
+	for i := 0; i < 15; i++ {
 		addFeeUTXO(t, eng, 100000)
 	}
 
 	// Create root.
 	_, err := eng.Mkdir(&MkdirOpts{VaultIndex: 0, Path: "/"})
-	if err != nil {
-		t.Fatalf("Mkdir /: %v", err)
-	}
+	require.NoError(t, err, "Mkdir /")
 
 	// Create /subdir.
 	_, err = eng.Mkdir(&MkdirOpts{VaultIndex: 0, Path: "/subdir"})
-	if err != nil {
-		t.Fatalf("Mkdir /subdir: %v", err)
-	}
+	require.NoError(t, err, "Mkdir /subdir")
 
 	// Create a file at root level.
 	testFile := filepath.Join(eng.DataDir, "root_file.txt")
-	if err := os.WriteFile(testFile, []byte("root content"), 0644); err != nil {
-		t.Fatalf("write test file: %v", err)
-	}
+	require.NoError(t, os.WriteFile(testFile, []byte("root content"), 0644))
 	_, err = eng.PutFile(&PutOpts{
 		VaultIndex: 0,
 		LocalFile:  testFile,
 		RemotePath: "/root_file.txt",
 		Access:     "free",
 	})
-	if err != nil {
-		t.Fatalf("PutFile /root_file.txt: %v", err)
-	}
+	require.NoError(t, err, "PutFile /root_file.txt")
+
+	// Snapshot original identity.
+	srcNode := eng.State.FindNodeByPath("/root_file.txt")
+	require.NotNil(t, srcNode)
+	originalPubKey := srcNode.PubKeyHex
+	originalKeyHash := srcNode.KeyHash
 
 	// Move from root to subdir.
 	result, err := eng.Move(&MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/root_file.txt",
 		DstPath:    "/subdir/moved_file.txt",
+		Force:      true,
 	})
-	if err != nil {
-		t.Fatalf("Move from root to subdir: %v", err)
-	}
-	if result.TxID == "" {
-		t.Error("expected non-empty TxID")
-	}
+	require.NoError(t, err, "Move from root to subdir")
+	assert.NotEmpty(t, result.TxID, "expected non-empty TxID")
+	assert.Contains(t, result.Message, "4 txs", "message should mention '4 txs'")
 
-	// Verify the node moved.
+	// Verify the new node at destination has a NEW identity.
 	movedNode := eng.State.FindNodeByPath("/subdir/moved_file.txt")
-	if movedNode == nil {
-		t.Fatal("node should be at /subdir/moved_file.txt")
-	}
+	require.NotNil(t, movedNode, "node should be at /subdir/moved_file.txt")
+	assert.NotEqual(t, originalPubKey, movedNode.PubKeyHex, "cross-dir move must assign new pubkey")
+	assert.NotEqual(t, originalKeyHash, movedNode.KeyHash, "content must be re-encrypted")
+
+	// Old path no longer resolves.
 	oldNode := eng.State.FindNodeByPath("/root_file.txt")
-	if oldNode != nil {
-		t.Error("old path should no longer resolve")
-	}
+	assert.Nil(t, oldNode, "old path should no longer resolve")
 
 	// Verify root no longer has the file.
 	rootPubHex, _ := eng.getRootPubHex(0)
 	rootNode := eng.State.GetNode(rootPubHex)
 	for _, c := range rootNode.Children {
-		if c.Name == "root_file.txt" {
-			t.Error("'root_file.txt' should have been removed from root children")
-		}
+		assert.NotEqual(t, "root_file.txt", c.Name, "'root_file.txt' should have been removed from root children")
 	}
 
-	// Verify /subdir has the file.
+	// Verify /subdir has the file with NEW pubkey.
 	subdir := eng.State.FindNodeByPath("/subdir")
+	require.NotNil(t, subdir)
 	found := false
 	for _, c := range subdir.Children {
 		if c.Name == "moved_file.txt" {
 			found = true
+			assert.NotEqual(t, originalPubKey, c.PubKey, "child entry pubkey must be NEW")
+			assert.Equal(t, movedNode.PubKeyHex, c.PubKey, "child entry must match moved node")
 		}
 	}
-	if !found {
-		t.Error("'moved_file.txt' should be in /subdir children")
-	}
+	assert.True(t, found, "'moved_file.txt' should be in /subdir children")
 }
