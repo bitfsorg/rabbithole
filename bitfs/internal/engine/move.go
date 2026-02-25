@@ -10,6 +10,7 @@ type MoveOpts struct {
 	VaultIndex uint32
 	SrcPath    string
 	DstPath    string
+	Force      bool // skip interactive warnings (for non-interactive/agent use)
 }
 
 // Move renames or moves a node. Same-directory renames update a single parent;
