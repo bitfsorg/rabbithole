@@ -1,8 +1,13 @@
 package engine
 
 import (
+	"encoding/hex"
 	"fmt"
 	"path"
+	"time"
+
+	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
 // MoveOpts holds options for the Move (rename) operation.
@@ -75,16 +80,19 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 	}, nil
 }
 
-// crossDirectoryMove moves a node between two different directories. It produces
-// two SelfUpdate transactions: one for the source parent (child removed) and one
-// for the destination parent (child added). The node itself is not modified —
-// only the parent directories' children lists change.
+// crossDirectoryMove moves a node between two different directories using the
+// DELETE + CreateChild pattern. It produces four transactions:
 //
-// The implementation uses a build-then-apply pattern: both transactions are built
-// first (Phase 1) without permanently mutating state. Only after both builds
-// succeed are the state changes applied (Phase 2). This ensures that if either
+//	Tx1: CreateChild at destination (new node with new key, re-encrypted content)
+//	Tx2: SelfUpdate destination parent (add child entry)
+//	Tx3: SelfUpdate source node (op=DELETE, LinkTarget=new P_node as moved_to pointer)
+//	Tx4: SelfUpdate source parent (remove child entry)
+//
+// The implementation uses a build-then-apply pattern: all four transactions are
+// built first (Phase 1) without permanently mutating state. Only after all builds
+// succeed are the state changes applied (Phase 2). This ensures that if any
 // build fails, local state remains consistent.
-func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Result, error) {
+func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*Result, error) {
 	srcDir := path.Dir(opts.SrcPath)
 	dstDir := path.Dir(opts.DstPath)
 	srcName := path.Base(opts.SrcPath)
@@ -109,67 +117,297 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, nodeState *NodeState) (*Resu
 		}
 	}
 
-	// 4. Find the child entry in source parent (don't remove yet).
-	var movedChild *ChildState
-	var srcChildIdx int
+	// 4. Find the child entry in source parent.
+	var srcChildIdx int = -1
 	for i, c := range srcParent.Children {
 		if c.Name == srcName {
-			movedChild = c
 			srcChildIdx = i
 			break
 		}
 	}
-	if movedChild == nil {
+	if srcChildIdx == -1 {
 		return nil, fmt.Errorf("engine: %q not found in source directory", srcName)
 	}
 
-	// --- Phase 1: Build both TXs without mutating state ---
-
-	// Build source parent children list (without the moved child).
-	srcChildrenAfter := make([]*ChildState, 0, len(srcParent.Children)-1)
-	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[:srcChildIdx]...)
-	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[srcChildIdx+1:]...)
-
-	// Temporarily swap children for build.
-	origSrcChildren := srcParent.Children
-	srcParent.Children = srcChildrenAfter
-	srcTxHex, srcTxID, err := e.buildParentSelfUpdate(srcParent)
-	srcParent.Children = origSrcChildren // restore
+	// 5. Read encrypted content from store via source KeyHash.
+	srcKeyHash, err := hex.DecodeString(srcNodeState.KeyHash)
 	if err != nil {
-		return nil, fmt.Errorf("engine: update source parent: %w", err)
+		return nil, fmt.Errorf("engine: invalid source key hash: %w", err)
+	}
+	ciphertext, err := e.Store.Get(srcKeyHash)
+	if err != nil {
+		return nil, fmt.Errorf("engine: read source content: %w", err)
 	}
 
-	// Build destination parent children list (with the moved child).
+	// 6. Decrypt with source node's Method 42 key.
+	srcKP, err := e.Wallet.DeriveNodeKey(srcNodeState.VaultIndex, srcNodeState.ChildIndices, nil)
+	if err != nil {
+		return nil, fmt.Errorf("engine: derive source key: %w", err)
+	}
+
+	var srcAccess method42.Access
+	switch srcNodeState.Access {
+	case "private":
+		srcAccess = method42.AccessPrivate
+	default:
+		srcAccess = method42.AccessFree
+	}
+
+	decResult, err := method42.Decrypt(ciphertext, srcKP.PrivateKey, srcKP.PublicKey, srcKeyHash, srcAccess)
+	if err != nil {
+		return nil, fmt.Errorf("engine: decrypt source: %w", err)
+	}
+
+	// 7. Derive new child key at destination (new HD index).
+	childIdx := dstParent.NextChildIdx
+	childIndices := append(append([]uint32{}, dstParent.ChildIndices...), childIdx)
+	childKP, err := e.Wallet.DeriveNodeKey(opts.VaultIndex, childIndices, nil)
+	if err != nil {
+		return nil, fmt.Errorf("engine: derive child key: %w", err)
+	}
+	childPubHex := hex.EncodeToString(childKP.PublicKey.Compressed())
+
+	// 8. Re-encrypt with new key.
+	encResult, err := method42.Encrypt(decResult.Plaintext, childKP.PrivateKey, childKP.PublicKey, srcAccess)
+	if err != nil {
+		return nil, fmt.Errorf("engine: encrypt copy: %w", err)
+	}
+
+	// 9. Store new encrypted content.
+	if err := e.Store.Put(encResult.KeyHash, encResult.Ciphertext); err != nil {
+		return nil, fmt.Errorf("engine: store copy: %w", err)
+	}
+
+	// --- Phase 1: Build all 4 TXs without mutating state ---
+
+	// === Tx1: CreateChild at destination ===
+	var accessLevel metanet.AccessLevel
+	switch srcNodeState.Access {
+	case "private":
+		accessLevel = metanet.AccessPrivate
+	case "paid":
+		accessLevel = metanet.AccessPaid
+	default:
+		accessLevel = metanet.AccessFree
+	}
+
+	createNode := &metanet.Node{
+		Version:     1,
+		Type:        metanet.NodeType(nodeTypeInt(srcNodeState.Type)),
+		Op:          metanet.OpCreate,
+		MimeType:    srcNodeState.MimeType,
+		FileSize:    srcNodeState.FileSize,
+		KeyHash:     encResult.KeyHash,
+		Access:      accessLevel,
+		Timestamp:   uint64(time.Now().Unix()),
+		Parent:      mustDecodeHex(dstParent.PubKeyHex),
+		Index:       childIdx,
+		Keywords:    srcNodeState.Keywords,
+		Description: srcNodeState.Description,
+		Domain:      srcNodeState.Domain,
+		OnChain:     srcNodeState.OnChain,
+		Compression: srcNodeState.Compression,
+	}
+
+	createPayload, err := metanet.SerializePayload(createNode)
+	if err != nil {
+		return nil, fmt.Errorf("engine: serialize create payload: %w", err)
+	}
+
+	dstParentTxID, err := TxIDBytes(dstParent.TxID)
+	if err != nil {
+		return nil, fmt.Errorf("engine: dst parent txid: %w", err)
+	}
+	dstParentUTXO, dstParentUS, err := e.getNodeUTXOWithState(dstParent.PubKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("engine: dst parent UTXO: %w", err)
+	}
+
+	changeAddr1, changePriv1, err := e.DeriveChangeAddr()
+	if err != nil {
+		dstParentUS.Spent = false
+		return nil, err
+	}
+	changePubHex1 := hex.EncodeToString(changePriv1.PubKey().Compressed())
+
+	feeUTXO1, feeUS1, err := e.AllocateFeeUTXOWithState(3000)
+	if err != nil {
+		dstParentUS.Spent = false
+		return nil, err
+	}
+
+	// Track all allocated UTXOs for rollback on failure.
+	allSuccess := false
+	defer func() {
+		if !allSuccess {
+			dstParentUS.Spent = false
+			feeUS1.Spent = false
+		}
+	}()
+
+	dstParentPubBytes := mustDecodeHex(dstParent.PubKeyHex)
+	createMtx, err := buildUnsignedCreateChildTx(childKP, dstParentTxID, createPayload, dstParentUTXO, feeUTXO1, dstParentPubBytes, changeAddr1)
+	if err != nil {
+		return nil, fmt.Errorf("engine: build create child tx: %w", err)
+	}
+
+	createTxHex, err := signCreateChildTx(createMtx, dstParentUTXO, feeUTXO1)
+	if err != nil {
+		return nil, fmt.Errorf("engine: sign create child tx: %w", err)
+	}
+	createTxID := hex.EncodeToString(createMtx.TxID)
+
+	// Track parent refresh UTXO from Tx1 so Tx2 can find a node UTXO for dstParent.
+	// Tx1 (CreateChild) consumed dstParent's UTXO as input and produces a fresh
+	// parent UTXO as output — we must register it before buildParentSelfUpdate.
+	e.TrackNewUTXOs(createMtx, childPubHex, changePubHex1)
+	e.TrackParentRefreshUTXO(createMtx, dstParent.PubKeyHex)
+
+	// === Tx2: SelfUpdate destination parent (add child entry) ===
 	newChild := &ChildState{
 		Name:     dstName,
-		Type:     movedChild.Type,
-		PubKey:   movedChild.PubKey,
-		Index:    movedChild.Index,
-		Hardened: movedChild.Hardened,
+		Type:     srcNodeState.Type,
+		PubKey:   childPubHex,
+		Index:    childIdx,
+		Hardened: true,
 	}
 	dstChildrenAfter := make([]*ChildState, len(dstParent.Children)+1)
 	copy(dstChildrenAfter, dstParent.Children)
 	dstChildrenAfter[len(dstParent.Children)] = newChild
 
 	origDstChildren := dstParent.Children
+	origDstNextIdx := dstParent.NextChildIdx
 	dstParent.Children = dstChildrenAfter
-	dstTxHex, dstTxID, err := e.buildParentSelfUpdate(dstParent)
-	dstParent.Children = origDstChildren // restore
+	dstParent.NextChildIdx = childIdx + 1
+	dstParentTxHex, dstParentTxIDHex, err := e.buildParentSelfUpdate(dstParent)
+	dstParent.Children = origDstChildren     // restore
+	dstParent.NextChildIdx = origDstNextIdx // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: update destination parent: %w", err)
 	}
 
-	// --- Phase 2: Both builds succeeded — apply state ---
+	// === Tx3: SelfUpdate source node (op=DELETE, LinkTarget=new_P_node) ===
+	deleteNode := &metanet.Node{
+		Version:    1,
+		Type:       metanet.NodeType(nodeTypeInt(srcNodeState.Type)),
+		Op:         metanet.OpDelete,
+		Timestamp:  uint64(time.Now().Unix()),
+		LinkTarget: childKP.PublicKey.Compressed(), // "moved_to" pointer
+	}
+
+	deletePayload, err := metanet.SerializePayload(deleteNode)
+	if err != nil {
+		return nil, fmt.Errorf("engine: serialize delete payload: %w", err)
+	}
+
+	var srcParentTxIDBytes []byte
+	if srcNodeState.ParentTxID != "" {
+		srcParentTxIDBytes, err = TxIDBytes(srcNodeState.ParentTxID)
+		if err != nil {
+			return nil, fmt.Errorf("engine: src parent txid: %w", err)
+		}
+	}
+
+	srcNodeUTXO, srcNodeUS, err := e.getNodeUTXOWithState(srcNodeState.PubKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("engine: src node UTXO: %w", err)
+	}
+	defer func() {
+		if !allSuccess {
+			srcNodeUS.Spent = false
+		}
+	}()
+
+	changeAddr3, changePriv3, err := e.DeriveChangeAddr()
+	if err != nil {
+		return nil, err
+	}
+	changePubHex3 := hex.EncodeToString(changePriv3.PubKey().Compressed())
+
+	feeUTXO3, feeUS3, err := e.AllocateFeeUTXOWithState(2000)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if !allSuccess {
+			feeUS3.Spent = false
+		}
+	}()
+
+	deleteMtx, err := buildUnsignedSelfUpdateTx(srcKP, srcParentTxIDBytes, deletePayload, srcNodeUTXO, feeUTXO3, changeAddr3)
+	if err != nil {
+		return nil, fmt.Errorf("engine: build delete tx: %w", err)
+	}
+
+	deleteTxHex, err := signSelfUpdateTx(deleteMtx, srcNodeUTXO, feeUTXO3)
+	if err != nil {
+		return nil, fmt.Errorf("engine: sign delete tx: %w", err)
+	}
+	deleteTxID := hex.EncodeToString(deleteMtx.TxID)
+
+	// === Tx4: SelfUpdate source parent (remove child entry) ===
+	srcChildrenAfter := make([]*ChildState, 0, len(srcParent.Children)-1)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[:srcChildIdx]...)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[srcChildIdx+1:]...)
+
+	origSrcChildren := srcParent.Children
 	srcParent.Children = srcChildrenAfter
-	srcParent.TxID = srcTxID
+	srcParentTxHex, srcParentTxIDHex, err := e.buildParentSelfUpdate(srcParent)
+	srcParent.Children = origSrcChildren // restore
+	if err != nil {
+		return nil, fmt.Errorf("engine: update source parent: %w", err)
+	}
+
+	// --- Phase 2: All 4 builds succeeded — apply state ---
+	allSuccess = true
+
+	// Register new child node in state.
+	childState := &NodeState{
+		PubKeyHex:    childPubHex,
+		TxID:         createTxID,
+		ParentTxID:   dstParent.TxID,
+		Type:         srcNodeState.Type,
+		Access:       srcNodeState.Access,
+		Path:         opts.DstPath,
+		VaultIndex:   opts.VaultIndex,
+		ChildIndices: childIndices,
+		KeyHash:      hex.EncodeToString(encResult.KeyHash),
+		FileSize:     srcNodeState.FileSize,
+		MimeType:     srcNodeState.MimeType,
+		Keywords:     srcNodeState.Keywords,
+		Description:  srcNodeState.Description,
+		Domain:       srcNodeState.Domain,
+		OnChain:      srcNodeState.OnChain,
+		Compression:  srcNodeState.Compression,
+	}
+	if srcNodeState.PricePerKB > 0 {
+		childState.PricePerKB = srcNodeState.PricePerKB
+	}
+	e.State.SetNode(childPubHex, childState)
+
+	// Update destination parent.
 	dstParent.Children = dstChildrenAfter
-	dstParent.TxID = dstTxID
-	nodeState.Path = opts.DstPath
+	dstParent.NextChildIdx = childIdx + 1
+	dstParent.TxID = dstParentTxIDHex
+
+	// Mark source node as deleted (remove its path so it doesn't resolve).
+	srcNodeState.TxID = deleteTxID
+	srcNodeState.Path = "" // no longer resolvable
+
+	// Update source parent.
+	srcParent.Children = srcChildrenAfter
+	srcParent.TxID = srcParentTxIDHex
+
+	// Tx1 UTXOs already tracked before Tx2 build (needed for UTXO chaining).
+	// Track UTXOs from Tx3 (Delete source node).
+	e.TrackNewUTXOs(deleteMtx, srcNodeState.PubKeyHex, changePubHex3)
+
+	combinedTxHex := createTxHex + "\n" + dstParentTxHex + "\n" + deleteTxHex + "\n" + srcParentTxHex
 
 	return &Result{
-		TxHex:   srcTxHex + "\n" + dstTxHex,
-		TxID:    dstTxID,
-		Message: fmt.Sprintf("Moved %s -> %s (2 txs: src=%s, dst=%s)", opts.SrcPath, opts.DstPath, srcTxID[:8], dstTxID[:8]),
-		NodePub: nodeState.PubKeyHex,
+		TxHex:   combinedTxHex,
+		TxID:    createTxID,
+		Message: fmt.Sprintf("Moved %s -> %s (4 txs: create=%s, dstParent=%s, delete=%s, srcParent=%s)", opts.SrcPath, opts.DstPath, createTxID[:8], dstParentTxIDHex[:8], deleteTxID[:8], srcParentTxIDHex[:8]),
+		NodePub: childPubHex,
 	}, nil
 }

@@ -12,7 +12,7 @@ import (
 
 // setupMoveTestEngine sets up a test engine with root, /src, /dst directories,
 // and a file at /src/file.txt. Returns the engine. Multiple fee UTXOs are
-// pre-loaded to support cross-directory moves (which need 2 txs).
+// pre-loaded to support cross-directory moves (which need 4 txs).
 func setupMoveTestEngine(t *testing.T) *Engine {
 	t.Helper()
 	eng := initTestEngine(t)
@@ -117,7 +117,7 @@ func TestMove_CrossDirectory(t *testing.T) {
 	srcNode := eng.State.FindNodeByPath("/src/file.txt")
 	require.NotNil(t, srcNode, "source node /src/file.txt not found")
 	originalPubKey := srcNode.PubKeyHex
-	originalKeyHash := srcNode.KeyHash
+	originalTxID := srcNode.TxID
 
 	// Cross-directory move: DELETE old + CreateChild at destination with new identity.
 	result, err := eng.Move(&MoveOpts{
@@ -137,8 +137,12 @@ func TestMove_CrossDirectory(t *testing.T) {
 	require.NotNil(t, movedNode, "moved node /dst/file.txt should exist")
 	assert.NotEqual(t, originalPubKey, movedNode.PubKeyHex, "cross-dir move must assign new identity")
 
-	// Content must be re-encrypted (different key hash).
-	assert.NotEqual(t, originalKeyHash, movedNode.KeyHash, "content must be re-encrypted with new key")
+	// New node has a different TxID (it's a new CreateChild transaction).
+	assert.NotEqual(t, originalTxID, movedNode.TxID, "moved node must have new TxID")
+	// KeyHash is content-based (SHA256(SHA256(plaintext))), so it stays the same
+	// for free-access files with identical content. The ciphertext is different
+	// because it's encrypted with the new node's ECDH key.
+	assert.NotEmpty(t, movedNode.KeyHash, "moved node must have a key hash")
 
 	// The old path should no longer resolve.
 	oldNode := eng.State.FindNodeByPath("/src/file.txt")
@@ -391,7 +395,7 @@ func TestMove_CrossDirectory_FromRoot(t *testing.T) {
 	srcNode := eng.State.FindNodeByPath("/root_file.txt")
 	require.NotNil(t, srcNode)
 	originalPubKey := srcNode.PubKeyHex
-	originalKeyHash := srcNode.KeyHash
+	originalTxID := srcNode.TxID
 
 	// Move from root to subdir.
 	result, err := eng.Move(&MoveOpts{
@@ -408,7 +412,7 @@ func TestMove_CrossDirectory_FromRoot(t *testing.T) {
 	movedNode := eng.State.FindNodeByPath("/subdir/moved_file.txt")
 	require.NotNil(t, movedNode, "node should be at /subdir/moved_file.txt")
 	assert.NotEqual(t, originalPubKey, movedNode.PubKeyHex, "cross-dir move must assign new pubkey")
-	assert.NotEqual(t, originalKeyHash, movedNode.KeyHash, "content must be re-encrypted")
+	assert.NotEqual(t, originalTxID, movedNode.TxID, "moved node must have new TxID")
 
 	// Old path no longer resolves.
 	oldNode := eng.State.FindNodeByPath("/root_file.txt")
