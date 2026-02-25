@@ -19,6 +19,9 @@ bitfs rm <path>                        删除文件（从父目录移除 ChildEn
 bitfs rm -r <path>                     递归删除
 bitfs rmdir <path>                     删除空目录
 bitfs mv <src> <dst>                   移动/重命名
+  同目录: 仅修改父目录 ChildEntry.Name (1 笔交易)
+  跨目录: DELETE 旧节点 + CreateChild 新节点, 新密钥, 重新加密 (4 笔交易)
+  注意: 跨目录 mv 付费文件会使已购买 capsule 失效
 bitfs cp <src> <dst>                   复制（创建独立新节点）
 bitfs link <target> <name>             硬链接
 bitfs link -s <target> <name>          软链接（本地）
