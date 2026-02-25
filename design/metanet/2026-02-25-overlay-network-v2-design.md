@@ -402,10 +402,17 @@ D_dep = α × T_contract × f_epoch
 ON 节点通过 BSV P2P 网络的 `nServices` 字段标识自己：
 
 ```
-nServices |= NODE_METANET  // 申请专用 ServiceFlags bit
+NODE_METANET = 1 << 21  // 0x200000 — Bit 21, 致敬 Bitcoin 2100 万上限
+nServices |= NODE_METANET
 ```
 
-BSV P2P 协议的 `version` 消息中包含 nServices，允许：
+**选择 Bit 21 的理由**：
+- 21 = Bitcoin 2100 万供应上限，比特币最核心的数字
+- Bit 12-22 在所有 Bitcoin 分支（BTC/BCH/BSV）中均未使用，无冲突
+- 位于低 32 位区间，所有节点软件均能正确处理
+- 隐喻 Metanet 是比特币原始愿景的延续
+
+BSV P2P 协议的 `version` 消息中包含 nServices（64-bit 位掩码），允许：
 - ON 节点通过标准 `addr`/`getaddr` 消息发现其他 Metanet 节点
 - 无需独立的节点发现协议
 - 非 Metanet BSV 节点正常中继包含 ML Block 的交易
