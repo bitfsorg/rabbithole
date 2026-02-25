@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -202,10 +203,30 @@ func runShell(args []string) int {
 				fmt.Println("Usage: mv <src> <dst>")
 				continue
 			}
+			srcPath := resolvePath(cwd, cmdArgs[0])
+			dstPath := resolvePath(cwd, cmdArgs[1])
+
+			// Warn about capsule invalidation on cross-directory mv of paid files.
+			if path.Dir(srcPath) != path.Dir(dstPath) {
+				srcNode := eng.State.FindNodeByPath(srcPath)
+				if srcNode != nil && srcNode.Access == "paid" {
+					fmt.Println("WARNING: Moving this paid file will invalidate existing capsules.")
+					fmt.Println("Buyers will need to re-purchase access at the new location.")
+					fmt.Print("Continue? [y/N] ")
+					var confirm string
+					fmt.Scanln(&confirm)
+					if confirm != "y" && confirm != "Y" {
+						fmt.Println("Move cancelled.")
+						continue
+					}
+				}
+			}
+
 			result, mvErr := eng.Move(&engine.MoveOpts{
 				VaultIndex: vaultIdx,
-				SrcPath:    resolvePath(cwd, cmdArgs[0]),
-				DstPath:    resolvePath(cwd, cmdArgs[1]),
+				SrcPath:    srcPath,
+				DstPath:    dstPath,
+				Force:      true,
 			})
 			if mvErr != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", mvErr)
