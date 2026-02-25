@@ -260,8 +260,16 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	// Track parent refresh UTXO from Tx1 so Tx2 can find a node UTXO for dstParent.
 	// Tx1 (CreateChild) consumed dstParent's UTXO as input and produces a fresh
 	// parent UTXO as output — we must register it before buildParentSelfUpdate.
+	// We snapshot the UTXO list length so we can roll back if Tx2-Tx4 fail,
+	// preventing phantom UTXOs from a never-broadcast Tx1.
+	utxoSnapshot := len(e.State.UTXOs)
 	e.TrackNewUTXOs(createMtx, childPubHex, changePubHex1)
 	e.TrackParentRefreshUTXO(createMtx, dstParent.PubKeyHex)
+	defer func() {
+		if !allSuccess {
+			e.State.UTXOs = e.State.UTXOs[:utxoSnapshot]
+		}
+	}()
 
 	// === Tx2: SelfUpdate destination parent (add child entry) ===
 	newChild := &ChildState{
@@ -397,6 +405,11 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	// Update source parent.
 	srcParent.Children = srcChildrenAfter
 	srcParent.TxID = srcParentTxIDHex
+
+	// Clean up old encrypted content from storage (best-effort).
+	// The source content has been re-encrypted under the new key, so the old
+	// ciphertext at srcKeyHash is no longer needed.
+	_ = e.Store.Delete(srcKeyHash)
 
 	// Tx1 UTXOs already tracked before Tx2 build (needed for UTXO chaining).
 	// Track UTXOs from Tx3 (Delete source node).
