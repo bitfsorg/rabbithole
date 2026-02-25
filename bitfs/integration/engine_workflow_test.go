@@ -228,10 +228,10 @@ func TestEngineCrossDirectoryMove(t *testing.T) {
 	require.Len(t, dstDir.Children, 1, "/dst should have 1 child after move")
 	assert.Equal(t, "data.txt", dstDir.Children[0].Name)
 
-	// Node pubkey should be preserved (same node identity).
+	// Cross-directory mv uses DELETE+CreateChild: new node gets new identity.
 	movedNode := eng.State.FindNodeByPath("/dst/data.txt")
 	require.NotNil(t, movedNode)
-	assert.Equal(t, origPubKey, movedNode.PubKeyHex, "node identity should be preserved")
+	assert.NotEqual(t, origPubKey, movedNode.PubKeyHex, "cross-dir mv should create new node identity (DELETE+CreateChild)")
 }
 
 // --- Test 5: TestEngineCopyFile ---
