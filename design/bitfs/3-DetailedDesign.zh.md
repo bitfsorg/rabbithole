@@ -412,7 +412,7 @@ bitfs wallet restore:
 给定 PRIVATE envelope (encrypted=true, private_key_hash, private_file_index):
   → D_node 从路径派生, P_node 从 D_node 计算
   → aes_key = HKDF-SHA256(ikm=ECDH(D_node, P_node).x, salt=private_key_hash, info="bitfs-file-encryption")
-  → 可解密 enc_payload → 恢复完整 Protobuf 元数据
+  → 可解密 enc_payload → 恢复完整 TLV 元数据
 ```
 
 ### G. 网络配置
@@ -550,9 +550,9 @@ Outputs:
             <MetaFlag: 0x6d657461 (4B)>
             <P_node: 压缩公钥 (33B)>
             <TxID_parent: 空 (0B)>         ← 根节点无父
-            <Protobuf: BitFSPayload>
+            <TLV: BitFSPayload>
 
-  Output 1: P2PKH → P_node (546 sat)
+  Output 1: P2PKH → P_node (1 sat)
             → 本节点 UTXO (Vout=1), 将来创建子节点时花费
 
   Output 2: P2PKH → 找零地址 (Change)
@@ -565,7 +565,7 @@ UTXO 产生: NodeUTXO (Vout=1), ParentUTXO=nil
 
 ```
 Inputs:
-  Input 0:  P_parent UTXO (Vout=1 或 Vout=2 刷新后)
+  Input 0:  锁定到 P_parent 的任意 UTXO (默认模式下为 Vout=2 刷新 UTXO)
             签名: Sig(D_parent) → 创建 Metanet Edge
   Input 1:  费用密钥链 UTXO
             签名: Sig(D_fee)
@@ -576,12 +576,12 @@ Outputs:
             <MetaFlag: 0x6d657461 (4B)>
             <P_node: 子节点压缩公钥 (33B)>
             <TxID_parent: 父节点 TxID (32B)>
-            <Protobuf: BitFSPayload>
+            <TLV: BitFSPayload>
 
-  Output 1: P2PKH → P_node (546 sat)
+  Output 1: P2PKH → P_node (1 sat)
             → 子节点 UTXO (Vout=1)
 
-  Output 2: P2PKH → P_parent (546 sat)
+  Output 2: P2PKH → P_parent (1 sat)
             → 刷新父节点 UTXO (自持续链)
 
   Output 3: P2PKH → 找零地址 (Change)
@@ -605,9 +605,9 @@ Outputs:
             <MetaFlag: 0x6d657461 (4B)>
             <P_node: 压缩公钥 (33B)>
             <TxID_parent: 原始父节点 TxID (32B)>  ← 不变
-            <Protobuf: 更新后的 BitFSPayload>
+            <TLV: 更新后的 BitFSPayload>
 
-  Output 1: P2PKH → P_node (546 sat)
+  Output 1: P2PKH → P_node (1 sat)
             → 刷新自身 UTXO (Vout=1)
 
   Output 2: P2PKH → 找零地址 (Change)
@@ -635,7 +635,7 @@ Outputs:
 UTXO 消耗: 1 UTXO (任意)
 UTXO 产生: 1 content UTXO (locked to P_node)
 
-注: 此交易独立于 Metanet 节点交易。节点交易的 Protobuf 中
+注: 此交易独立于 Metanet 节点交易。节点交易的 TLV 中
     onchain=true, content_txids=[此交易的 TxID]。
     大文件可分多笔数据交易, 每笔对应一个 chunk。
 ```
@@ -663,8 +663,8 @@ UTXO 产生: 1 content UTXO (locked to P_node)
     Output 0: OP_RETURN { type=FILE, op=CREATE, mime_type,
               key_hash, file_size, access, index=next_child_index,
               parent=P_parent, keywords, description, metadata }
-    Output 1: P2PKH → P_file (546 sat)
-    Output 2: P2PKH → P_parent (546 sat, refresh)
+    Output 1: P2PKH → P_file (1 sat)
+    Output 2: P2PKH → P_parent (1 sat, refresh)
     Output 3: Change
 
   Tx 2: BuildSelfUpdate (父目录更新)
@@ -672,7 +672,7 @@ UTXO 产生: 1 content UTXO (locked to P_node)
     Input 1:  fee UTXO[1]
     Output 0: OP_RETURN { type=DIR, op=UPDATE, children=[...,新 ChildEntry],
               next_child_index=old+1 }
-    Output 1: P2PKH → P_parent (546 sat, refresh)
+    Output 1: P2PKH → P_parent (1 sat, refresh)
     Output 2: Change
 
 HD 密钥派生:
@@ -705,7 +705,7 @@ HD 密钥派生:
     Output 0: OP_RETURN { type=FILE, op=UPDATE, mime_type,
               key_hash(新), file_size(新), access, index(不变),
               parent(不变), keywords, description, metadata }
-    Output 1: P2PKH → P_file (546 sat, refresh)
+    Output 1: P2PKH → P_file (1 sat, refresh)
     Output 2: Change
 
 注: 复用同一 P_node + file_index, 新 TxID = 新版本 (Metanet 内置版本控制)
@@ -725,8 +725,8 @@ HD 密钥派生:
   Tx 1: BuildCreateChild (DIR 节点)
     Output 0: OP_RETURN { type=DIR, op=CREATE, index=next_child_index,
               parent=P_parent, children=[], next_child_index=1 }
-    Output 1: P2PKH → P_dir (546 sat)
-    Output 2: P2PKH → P_parent (546 sat, refresh)
+    Output 1: P2PKH → P_dir (1 sat)
+    Output 2: P2PKH → P_parent (1 sat, refresh)
     Output 3: Change
 
   Tx 2: BuildSelfUpdate (父目录更新)
@@ -811,32 +811,34 @@ HD 密钥: 与 put 相同的路径派生方式
     Input 0:  P_dstParent UTXO (Sig D_dstParent)
     Input 1:  fee UTXO[0]
     Output 0: OP_RETURN { 克隆源 payload, op=CREATE,
-              index=dst_next_child_index, parent=P_dstParent }
-    Output 1: P2PKH → P_dst (546 sat)
-    Output 2: P2PKH → P_dstParent (546 sat, refresh)
+              index=dst_next_child_index, parent=P_dstParent,
+              key_hash=新密钥哈希 }
+    Output 1: P2PKH → P_dst_new (1 sat)
+    Output 2: P2PKH → P_dstParent (1 sat, refresh)
     Output 3: Change
 
-  Tx 2: BuildSelfUpdate (源节点 → SOFT 链接重定向)
-    Input 0:  P_src UTXO (Sig D_src)
-    Input 1:  fee UTXO[1]
-    Output 0: OP_RETURN { type=LINK, op=UPDATE, link_type=SOFT,
-              link_target=P_dst(33B), index=src_index, parent=P_srcParent }
-
-  Tx 3: BuildSelfUpdate (目标父目录更新)
+  Tx 2: BuildSelfUpdate (目标父目录更新)
     Input 0:  P_dstParent UTXO (来自 Tx1 Output 2)
-    Input 1:  fee UTXO[2]
+    Input 1:  fee UTXO[1]
     Output 0: OP_RETURN { type=DIR, op=UPDATE,
-              children=[...,新 ChildEntry(type=原类型, pubkey=P_dst)],
+              children=[...,新 ChildEntry(pubkey=P_dst_new)],
               next_child_index=old+1 }
+
+  Tx 3: BuildSelfUpdate (源节点 DELETE + moved_to)
+    Input 0:  P_src UTXO (Sig D_src)
+    Input 1:  fee UTXO[2]
+    Output 0: OP_RETURN { type=FILE, op=DELETE,
+              link_target=P_dst_new(33B) }
 
   Tx 4: BuildSelfUpdate (源父目录更新)
     Input 0:  P_srcParent UTXO (Sig D_srcParent)
     Input 1:  fee UTXO[3]
     Output 0: OP_RETURN { type=DIR, op=UPDATE,
-              children=[...修改 ChildEntry.Type=LINK...] }
+              children=[...移除 srcName...] }
 
 HD 密钥: 目标节点获得新 HD 路径 (dstParent path + dst_index)
-注: 源节点变为 SOFT 链接, 所有旧引用自动跟随到新位置
+加密: 内容用新密钥重新加密, 旧 capsule 失效
+注: 源节点标记 DELETE, 其 link_target 字段记录新位置 (moved_to 指针)
 ```
 
 #### 8. cp (复制)
@@ -895,8 +897,8 @@ HD 密钥: 目标节点获得新 HD 路径 (dstParent path + dst_index)
     Output 0: OP_RETURN { type=LINK, op=CREATE, link_type=SOFT,
               link_target=目标P_node(33B), index=next_child_index,
               parent=P_parent }
-    Output 1: P2PKH → P_link (546 sat)
-    Output 2: P2PKH → P_parent (546 sat, refresh)
+    Output 1: P2PKH → P_link (1 sat)
+    Output 2: P2PKH → P_parent (1 sat, refresh)
 
   Tx 2: BuildSelfUpdate (父目录更新)
     Output 0: OP_RETURN { type=DIR, op=UPDATE,
@@ -992,14 +994,14 @@ OP_FALSE OP_RETURN <pushdata[0]> <pushdata[1]> <pushdata[2]> <pushdata[3]>
 pushdata[0]: MetaFlag    = 0x6d657461 (4 bytes, ASCII "meta")
 pushdata[1]: P_node      = 33 bytes 压缩公钥
 pushdata[2]: TxID_parent = 0 bytes (根节点) 或 32 bytes (子节点/更新)
-pushdata[3]: Protobuf    = proto.Marshal(BitFSPayload) (变长)
+pushdata[3]: TLV         = tlv.Marshal(BitFSPayload) (变长)
 ```
 
 ### 常量
 
 ```go
 MetaFlag  = []byte{0x6d, 0x65, 0x74, 0x61}  // "meta"
-DustLimit = 546                                // satoshis, BSV P2PKH 最小输出
+DustLimit = 1                                  // satoshis, BSV 已移除 dust limit, 最低 1 sat
 DefaultFeeRate = 1                             // sat/KB
 ```
 
@@ -1191,7 +1193,7 @@ OP_CHECKLOCKTIMEVERIFY (CLTV):
   - 用途: 时间锁 (基于区块高度, 而非真实时间)
 
 在 BitFS 中的应用:
-  - cltv_height 字段 (Protobuf field 35)
+  - cltv_height 字段 (TLV field 35)
   - 值为 0: 无时间限制 (默认)
   - 值 > 0: 内容在该区块高度之前不可访问
 ```
@@ -2663,7 +2665,7 @@ ISO Pool 安全:
 
 精度安全:
   - 分配算法最后一个股东取剩余, 避免整除精度损失
-  - 单笔分红支付最低金额 = 股东数量 × 546 satoshis (BSV P2PKH dust limit = 546 sat)
+  - 单笔分红支付最低金额 = 股东数量 × 1 satoshi (BSV 已移除 dust limit, 最低 1 sat)
 ```
 
 ---

@@ -106,7 +106,7 @@ HD Seed (BIP39 助记词 + 可选 passphrase 加密)
 
 HD 树状派生镜像文件系统层次: 根目录是 /0/0, 根的第一个子节点是 /0/0/1, 该子节点下的第一个子节点是 /0/0/1/1, 以此类推。
 
-**file_index 定义**: Protobuf payload 的 `index` 字段 (field 14) -- 节点创建时由父目录 `next_child_index` 分配的单调递增编号, 同时也是该节点 BIP32 HD 派生路径的最后一段。file_index 决定 BIP32 派生的 D_node, D_node 直接用于 ECDH 加密。ChildEntry 的 `hardened` 字段决定该 index 使用硬化还是非硬化派生, 从而控制目录树购买时是否包含该子节点。
+**file_index 定义**: TLV payload 的 `index` 字段 (field 14) -- 节点创建时由父目录 `next_child_index` 分配的单调递增编号, 同时也是该节点 BIP32 HD 派生路径的最后一段。file_index 决定 BIP32 派生的 D_node, D_node 直接用于 ECDH 加密。ChildEntry 的 `hardened` 字段决定该 index 使用硬化还是非硬化派生, 从而控制目录树购买时是否包含该子节点。
 
 ### Vault 命令
 
@@ -212,13 +212,16 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 | `put` (更新) | 复用 P_node, op=UPDATE | 同 P_node 新 TxID (Metanet 自动版本控制) |
 | `rm` | 2 笔交易: (1) SelfUpdate 父目录移除 ChildEntry, (2) 花费目标节点 UTXO 到 fee 地址 | 删除目录需先确保目录为空, 或使用 `rm -r` 递归删除 |
 | `mkdir` | 分配新 HD index, type=DIR | 新目录节点 |
-| `mv` | 创建新节点 + 旧 P_node 变 SOFT 链接 → 新 P_node | 新 HD 路径, 重新加密, 软链接自动跟随, 保持 HD 树镜像 |
+| `mv` (同目录) | SelfUpdate 父目录修改 ChildEntry.Name (1 笔交易) | 仅改名, 不改变节点身份/密钥 |
+| `mv` (跨目录) | DELETE 旧节点 + CreateChild 新节点 (4 笔交易) | 新 HD 路径, 新 P_node, 重新加密, 旧节点记录 moved_to 指针 |
 | `cp` | 分配新 P_node, 重新加密 (新 file_index → 新 key) | 真正复制 (独立新节点, 新 key_hash) |
 | `link` | 往目标目录添加 ChildEntry (复用 P_node) | 硬链接 (不创建新节点, 仅目录操作) |
 | `link -s` | 分配新 P_node, type=LINK, SOFT | 软链接 (创建 LINK 节点) |
 
-> **已知限制**: 同一目录的写操作竞争同一 P_parent UTXO, 多客户端并发写入
-> 会导致 UTXO 冲突 (双花)。**缓解**: daemon 实现目录级写锁 (乐观锁 + 自动重试)。
+> **并发写入**: Metanet Edge 只要求 Input 被 D_parent 签名, 不限定具体哪个 UTXO。
+> 因此父节点拥有多个 UTXO 时, 可并行创建多个子节点 (每个 CreateChild 花费不同 UTXO)。
+> **默认模式** (自持续链) 下父节点仅维护 1 个刷新 UTXO, 串行写入即可。
+> **高并发模式**: 预先向 P_parent 地址发送 N 笔小额交易, 即可支持 N 路并行创建子节点。
 
 ---
 
@@ -235,7 +238,7 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 
 ### 交易结构
 
-**核心设计**: 元数据与内容完全分离。Metanet 节点交易仅存储元数据 (Protobuf payload), 内容存储独立——默认链下 (daemon/LFCP 存储和服务), 链上可选 (单独的数据交易, OP_DROP 模式)。
+**核心设计**: 元数据与内容完全分离。Metanet 节点交易仅存储元数据 (TLV payload), 内容存储独立——默认链下 (daemon/LFCP 存储和服务), 链上可选 (单独的数据交易, OP_DROP 模式)。
 
 ```
 BitFS Metanet 节点交易 (元数据, 所有节点类型通用):
@@ -251,9 +254,9 @@ Outputs:
     ├── <Metanet Flag>     (4 bytes, "meta" = 0x6d657461)
     ├── <P_node>           (33 bytes, 本节点压缩公钥)
     ├── <TxID_parent>      (32 bytes, 父节点交易ID; 根节点为空)
-    └── <BitFS Payload>    (Protobuf 编码, 仅元数据/属性)
-  Output 1: P2PKH → P_node   (dust, 546 sat)
-  Output 2: P2PKH → P_parent (dust, 546 sat) [必须]
+    └── <BitFS Payload>    (TLV 编码, 仅元数据/属性)
+  Output 1: P2PKH → P_node   (dust, 1 sat)
+  Output 2: P2PKH → P_parent (dust, 1 sat) [必须]
   Output 3: P2PKH → 找零地址
 
 BitFS 数据交易 (可选, 链上内容存储):
@@ -268,14 +271,14 @@ Outputs:
   Output 1: P2PKH → 找零
 ```
 
-**元数据/内容分离**: Metanet 节点交易的结构始终相同, 无论内容存在链上还是链下。链下模式 (默认): daemon (LFCP) 存储和服务加密内容。链上模式 (可选): 额外发布一笔或多笔数据交易, 加密内容通过 OP_DROP 嵌入 spendable output。Protobuf 中的 `onchain` 标志和 `content_txids` 字段记录链上数据交易的引用。
+**元数据/内容分离**: Metanet 节点交易的结构始终相同, 无论内容存在链上还是链下。链下模式 (默认): daemon (LFCP) 存储和服务加密内容。链上模式 (可选): 额外发布一笔或多笔数据交易, 加密内容通过 OP_DROP 嵌入 spendable output。TLV 中的 `onchain` 标志和 `content_txids` 字段记录链上数据交易的引用。
 
-**UTXO 自持续链**: 无需预先存入 BSV。每笔交易的 Output 2 刷新父节点 UTXO, 形成自持续链条。初始资金来自费用密钥链。
+**UTXO 自持续链** (默认模式): 无需预先存入 BSV。每笔交易的 Output 2 刷新父节点 UTXO, 形成自持续链条。初始资金来自费用密钥链。此模式为零额外成本的串行写入优化; 需要并行写入时, 可向 P_parent 地址预分裂多个 UTXO。
 
-### Protobuf Payload
+### TLV Payload
 
-```protobuf
-syntax = "proto3";
+```
+// TLV Schema (field numbers = TLV tags)
 
 enum Type { FILE = 0; DIR = 1; LINK = 2; }
 enum Op { CREATE = 0; UPDATE = 1; DELETE = 2; }
@@ -351,7 +354,7 @@ message BitFSPayload {
   // PRIVATE 模式支持 (明文 envelope, 供钱包恢复)
   bool encrypted = 23;               // true = 加密模式 (其余字段为默认值)
   bytes private_key_hash = 24;       // key_hash 明文副本 (供恢复 aes_key = KDF(ECDH(D_node, P_node), key_hash))
-  bytes enc_payload = 25;            // nonce(12B) || 加密后的完整 Protobuf || GCM_tag(16B)
+  bytes enc_payload = 25;            // nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
   uint32 private_file_index = 26;    // file_index 明文副本 (供恢复 D_node 的 HD 路径, 与 private_key_hash 配合)
 
   // === 新增字段 (专利 US 2021/0399898 A1 对齐) ===
@@ -397,7 +400,7 @@ message BitFSPayload {
 
 注: 加密密钥直接通过 ECDH(D_node, P_recipient) 派生, key_hash 在 KDF 阶段提供内容唯一性: `aes_key = KDF(ECDH(D_node, P_recipient), key_hash)`。这保留了 BIP32 的代数关系, 使目录树购买成为可能。
 
-**field 5 说明**: 原 `encrypted_hash` 字段已移除。内容寻址和密钥派生统一由 `key_hash = SHA256(SHA256(plaintext))` 承担双重职责: (1) KDF 密钥派生的 salt 参数, (2) 内容完整性承诺 (下载后验证)。链下内容寻址 (daemon 内部存储索引) 是实现细节, 不需要在 Protobuf 协议层暴露。
+**field 5 说明**: 原 `encrypted_hash` 字段已移除。内容寻址和密钥派生统一由 `key_hash = SHA256(SHA256(plaintext))` 承担双重职责: (1) KDF 密钥派生的 salt 参数, (2) 内容完整性承诺 (下载后验证)。链下内容寻址 (daemon 内部存储索引) 是实现细节, 不需要在 TLV 协议层暴露。
 
 ### 三种数据类型的交易差异
 
@@ -405,9 +408,9 @@ message BitFSPayload {
 
 - **FREE**: ECDH(D_node=1, P_node) trick → S_k = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) 可公开计算, AES-GCM(content, S_k), P_node 通过 DNSLink 公开
 - **PAID**: aes_key = KDF(ECDH(D_node, P_node).x, key_hash) — 与 PRIVATE 同密钥基础, 买家通过 HTLC/Token 获取 capsule → 还原 aes_key, AES-GCM(content, aes_key); CDN 带宽费另行通过 x402 收取
-- **PRIVATE**: ECDH(D_node, P_node) → 仅 Owner 可解密, Protobuf 内部加密 (encrypted=true, private_key_hash + private_file_index 明文, enc_payload 加密)
+- **PRIVATE**: ECDH(D_node, P_node) → 仅 Owner 可解密, TLV 内部加密 (encrypted=true, private_key_hash + private_file_index 明文, enc_payload 加密)
   - private_key_hash + private_file_index 在明文中供钱包恢复: aes_key = KDF(ECDH(D_node, P_node), key_hash)
-  - 解密后的 enc_payload 包含完整 Protobuf (mime_type, file_size, timestamp 等)
+  - 解密后的 enc_payload 包含完整 TLV (mime_type, file_size, timestamp 等)
 
 ### 价格继承
 
@@ -432,7 +435,7 @@ message BitFSPayload {
 
 | 类型 | DNSLink | P_node | 元数据 | 内容 | 解密密钥 |
 |------|---------|--------|--------|------|---------|
-| **私有** | 无 | 不公开 | Protobuf 内部加密 (encrypted=true) | 加密 | 仅 Owner (D_node → S_k) |
+| **私有** | 无 | 不公开 | TLV 内部加密 (encrypted=true) | 加密 | 仅 Owner (D_node → S_k) |
 | **公开免费** | 有 | 公开 | 明文 | 加密(D_node=1) | 任何人: aes_key = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) |
 | **公开付费** | 有 | 公开 | 明文(含价格) | 加密 | 购买后通过 Token/HTLC 获取 S_k |
 
@@ -456,7 +459,7 @@ message BitFSPayload {
 
 完整加密流程:
   1. 双哈希: key_hash = SHA256(SHA256(plaintext))
-     注: plaintext 为文件原始内容 (加密前), 非序列化后的 Protobuf payload。
+     注: plaintext 为文件原始内容 (加密前), 非序列化后的 TLV payload。
      三种模式 (FREE/PAID/PRIVATE) 均以相同方式计算 key_hash。
   2. ECDH 直接使用 D_node: point = ECDH(D_node, P_recipient)
   3. 对称密钥: aes_key = KDF(point, key_hash)
@@ -464,7 +467,7 @@ message BitFSPayload {
   4. Koblitz 加密 aes_key: koblitz_envelope = Koblitz_Encrypt(aes_key, P_recipient)
   5. AES 加密内容: encrypted_content = nonce || AES-256-GCM(content, aes_key) || tag
   6. 存储:
-     - Metanet 交易: key_hash (双哈希) 在 Protobuf 中
+     - Metanet 交易: key_hash (双哈希) 在 TLV 中
      - 链下: daemon 存储 encrypted_content
      - 链上 (可选): 发布数据交易, Output = koblitz_envelope || encrypted_content
 
@@ -503,7 +506,7 @@ ECDH 直接使用 D_node (BIP32 节点密钥), key_hash 移到 KDF 阶段:
 ### 私有数据的隐私保护
 
 - 不设置 DNSLink，不公开 P_node
-- Protobuf 内部加密: encrypted=true, private_key_hash + private_file_index 明文 (供钱包恢复), enc_payload 加密
+- TLV 内部加密: encrypted=true, private_key_hash + private_file_index 明文 (供钱包恢复), enc_payload 加密
 - 链上可见: version + encrypted 标记 + private_key_hash (双哈希) + private_file_index + 加密 blob
 - **隐私边界** (公链固有权衡):
   - 数据内容: 不可见 (加密)
@@ -680,7 +683,7 @@ _bsvalias._tcp.example.com  SRV  10 60 443 cdn1.example.com
 链上协议仍用原始公钥, Paymail 仅为链下身份发现:
 - Metanet P_node (链上)
 - HTLC 脚本中的地址 (链上)
-- Protobuf payload 字段 (链上)
+- TLV payload 字段 (链上)
 - ECDH 密钥派生 (密码学操作)
 
 #### Go 库
@@ -709,11 +712,11 @@ _bsvalias._tcp.example.com  SRV  10 60 443 cdn1.example.com
 
 Visitor 从任何来源获取数据后, 必须完成以下校验链才能信任数据:
 
-1. **交易完整性**: 获取完整交易 (tx bytes), 验证 OP_RETURN 中 Protobuf 可正确反序列化
+1. **交易完整性**: 获取完整交易 (tx bytes), 验证 OP_RETURN 中 TLV 可正确反序列化
 2. **Merkle 证明**: 获取 Merkle proof (tx hash → Merkle root), 逐层验证哈希路径
 3. **区块头验证**: 对应 block header 的 Merkle root 与步骤 2 一致
 4. **最长链检查**: block header 属于已知的最长链 (通过 header chain 或检查点验证)
-5. **内容完整性**: 下载解密后, SHA256(SHA256(plaintext)) == key_hash (Protobuf 中的承诺)
+5. **内容完整性**: 下载解密后, SHA256(SHA256(plaintext)) == key_hash (TLV 中的承诺)
 
 **失败策略**: 任一步骤失败 → 拒绝数据, 标记来源不可信, 尝试降级到其他数据源。
 
@@ -1007,7 +1010,7 @@ Buyer 和 Seller 建立连接时，使用 Method 42 ECDH 进行双向身份验�
 > **原子性间隙**: Buyer 广播 HTLC 后、Seller 返回 capsule 前存在竞态窗口。
 > 若 Seller 崩溃, Buyer 需等待 HTLC 超时 (默认 144 块, 约 24 小时) 后退款。
 > **缓解**: Seller daemon 应监听 mempool, 确认 HTLC 交易存在后自动揭示 capsule,
-> 无需依赖 Buyer 的显式通知。htlc_tx 是 HTLC 握手协议中交换的参数 (非 Protobuf 持久化字段), Seller 必须验证链上交易后再返回 capsule。
+> 无需依赖 Buyer 的显式通知。htlc_tx 是 HTLC 握手协议中交换的参数 (非 TLV 持久化字段), Seller 必须验证链上交易后再返回 capsule。
 
 ### Token 批量购买系统 (Hash Chain)
 
@@ -1197,7 +1200,7 @@ S² mod n == H(m||U) ?
 2. **分片完整性**: 链上分片内容每个 chunk 携带 Rabin 签名
 3. **第三方认证**: 审计方、认证机构可签名数据, 不需要是节点 Owner
 
-### Protobuf 字段
+### TLV 字段
 
 - `rabin_signature` (field 33): Rabin 签名 (S, U) 序列化
 - `rabin_pubkey` (field 34): Rabin 公钥 n
@@ -1227,7 +1230,7 @@ OP_DUP OP_HASH160 <H160(P)> OP_EQUALVERIFY OP_CHECKSIG
 3. **订阅模式**: 按周期的 Token, CLTV 控制有效期
 4. **版本控制**: 旧版本数据在某高度后自动"过期" (不可再花费其 UTXO)
 
-### Protobuf 字段
+### TLV 字段
 
 `cltv_height` 字段 (field 35, uint32): 信息性标记, 实际约束在链上脚本中执行。
 
@@ -1266,7 +1269,7 @@ OP_DUP OP_HASH160 <H160(P)> OP_EQUALVERIFY OP_CHECKSIG
 验证: SHA256(SHA256(plaintext)) == key_hash       ← 双哈希, 验证明文内容承诺
 ```
 
-### Protobuf 字段
+### TLV 字段
 
 - `chunk_index` (field 30): 本 chunk 序号 (0-based)
 - `total_chunks` (field 31): 总 chunk 数 (0 = 非分片)
@@ -1503,7 +1506,7 @@ ISO Close Tx:
 |------|------|
 | HTLC | Purchase Tx 中的支付部分复用 HTLC |
 | Token | Token 购买也触发 Registry 分账 |
-| Metanet | registry_txid 存储在 Metanet 节点 Protobuf 中 |
+| Metanet | registry_txid 存储在 Metanet 节点 TLV 中 |
 | Method 42 | 解密密钥分发不变, 收益分配是独立层 |
 | Rabin | 可用于签名 Registry 状态变更 |
 
@@ -2008,12 +2011,23 @@ BSV 费率是动态的。客户端需要:
 
 ## 十八、多设备
 
-### UTXO 冲突: 乐观并发 + 自动重试
+### 多设备并发写入
+
+Metanet 协议层面, CreateChild 的 Input 0 可花费锁定到 P_parent 的**任意 UTXO**, 不限定特定的某个。因此:
+
+- **自持续链模式** (默认): 父节点仅维护 1 个刷新 UTXO, 多设备写入同一目录时串行化。如果两台设备同时花费同一 UTXO, 后提交者需等待先提交者的交易确认后, 使用新产生的刷新 UTXO 重试。
+- **预分裂模式** (高并发): 向 P_parent 地址预先发送 N 笔小额交易, 每台设备/客户端分配独立 UTXO, 互不冲突。
 
 ```
-设备 A 花费 UTXO_1 → 成功
-设备 B 花费 UTXO_1 → 被拒 (double-spend)
-  → 用新 UTXO 重新构造交易, 重试 (最多 3 次)
+自持续链模式 (串行):
+  设备 A 花费 UTXO_1 → 成功, 产生 UTXO_2 (刷新)
+  设备 B 等待确认 → 花费 UTXO_2 → 成功
+
+预分裂模式 (并行):
+  预分裂: 向 P_parent 发送 3 笔 UTXO → UTXO_a, UTXO_b, UTXO_c
+  设备 A 花费 UTXO_a → 成功 ┐
+  设备 B 花费 UTXO_b → 成功 ├ 并行, 互不冲突
+  设备 C 花费 UTXO_c → 成功 ┘
 ```
 
 ### 版本冲突: Last-Write-Wins
