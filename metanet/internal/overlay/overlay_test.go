@@ -87,7 +87,9 @@ func TestInMemoryPeerStoreAddGet(t *testing.T) {
 func TestInMemoryPeerStoreRemove(t *testing.T) {
 	store := NewInMemoryPeerStore()
 	peer := newTestNode(testPeer1PubKey, "https://peer1.example.com")
-	store.AddPeer(peer)
+	if err := store.AddPeer(peer); err != nil {
+		t.Fatalf("AddPeer: %v", err)
+	}
 
 	if err := store.RemovePeer(testPeer1PubKey); err != nil {
 		t.Fatalf("RemovePeer: %v", err)
@@ -109,8 +111,12 @@ func TestInMemoryPeerStoreRemoveNotFound(t *testing.T) {
 
 func TestInMemoryPeerStoreListPeers(t *testing.T) {
 	store := NewInMemoryPeerStore()
-	store.AddPeer(newTestNode(testPeer1PubKey, "https://peer1.example.com"))
-	store.AddPeer(newTestNode(testPeer2PubKey, "https://peer2.example.com"))
+	if err := store.AddPeer(newTestNode(testPeer1PubKey, "https://peer1.example.com")); err != nil {
+		t.Fatalf("AddPeer peer1: %v", err)
+	}
+	if err := store.AddPeer(newTestNode(testPeer2PubKey, "https://peer2.example.com")); err != nil {
+		t.Fatalf("AddPeer peer2: %v", err)
+	}
 
 	peers, err := store.ListPeers()
 	if err != nil {
@@ -125,7 +131,9 @@ func TestInMemoryPeerStoreUpdateLastSeen(t *testing.T) {
 	store := NewInMemoryPeerStore()
 	peer := newTestNode(testPeer1PubKey, "https://peer1.example.com")
 	peer.LastSeen = 1000
-	store.AddPeer(peer)
+	if err := store.AddPeer(peer); err != nil {
+		t.Fatalf("AddPeer: %v", err)
+	}
 
 	newTime := int64(2000)
 	if err := store.UpdateLastSeen(testPeer1PubKey, newTime); err != nil {
@@ -162,7 +170,9 @@ func TestInMemoryTopicStoreSubscribe(t *testing.T) {
 func TestInMemoryTopicStoreUnsubscribe(t *testing.T) {
 	store := NewInMemoryTopicStore()
 	node := newTestNode(testPeer1PubKey, "https://peer1.example.com")
-	store.Subscribe(TopicStorage, node)
+	if err := store.Subscribe(TopicStorage, node); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
 
 	if err := store.Unsubscribe(TopicStorage, testPeer1PubKey); err != nil {
 		t.Fatalf("Unsubscribe: %v", err)
@@ -176,8 +186,12 @@ func TestInMemoryTopicStoreUnsubscribe(t *testing.T) {
 
 func TestInMemoryTopicStoreListTopics(t *testing.T) {
 	store := NewInMemoryTopicStore()
-	store.Subscribe(TopicStorage, newTestNode(testPeer1PubKey, "a"))
-	store.Subscribe(TopicContent, newTestNode(testPeer2PubKey, "b"))
+	if err := store.Subscribe(TopicStorage, newTestNode(testPeer1PubKey, "a")); err != nil {
+		t.Fatalf("Subscribe storage: %v", err)
+	}
+	if err := store.Subscribe(TopicContent, newTestNode(testPeer2PubKey, "b")); err != nil {
+		t.Fatalf("Subscribe content: %v", err)
+	}
 
 	topics, err := store.ListTopics()
 	if err != nil {
@@ -264,7 +278,9 @@ func TestRegisterUnregisterTopic(t *testing.T) {
 func TestDiscoverByTopic(t *testing.T) {
 	svc := newTestService()
 	peer := newTestNode(testPeer1PubKey, "https://peer1.example.com")
-	svc.TopicStore.Subscribe(TopicStorage, peer)
+	if err := svc.TopicStore.Subscribe(TopicStorage, peer); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
 
 	resp, err := svc.Discover(&LookupRequest{Topic: TopicStorage, MaxResults: 10})
 	if err != nil {
@@ -277,8 +293,12 @@ func TestDiscoverByTopic(t *testing.T) {
 
 func TestDiscoverAllPeers(t *testing.T) {
 	svc := newTestService()
-	svc.PeerStore.AddPeer(newTestNode(testPeer1PubKey, "https://peer1.example.com"))
-	svc.PeerStore.AddPeer(newTestNode(testPeer2PubKey, "https://peer2.example.com"))
+	if err := svc.PeerStore.AddPeer(newTestNode(testPeer1PubKey, "https://peer1.example.com")); err != nil {
+		t.Fatalf("AddPeer peer1: %v", err)
+	}
+	if err := svc.PeerStore.AddPeer(newTestNode(testPeer2PubKey, "https://peer2.example.com")); err != nil {
+		t.Fatalf("AddPeer peer2: %v", err)
+	}
 
 	resp, err := svc.Discover(&LookupRequest{MaxResults: 10})
 	if err != nil {
@@ -371,12 +391,16 @@ func TestPruneStalePeers(t *testing.T) {
 	// Add a stale peer (last seen 1 hour ago).
 	stalePeer := newTestNode(testPeer1PubKey, "https://peer1.example.com")
 	stalePeer.LastSeen = time.Now().Unix() - 3600
-	svc.PeerStore.AddPeer(stalePeer)
+	if err := svc.PeerStore.AddPeer(stalePeer); err != nil {
+		t.Fatalf("AddPeer stale: %v", err)
+	}
 
 	// Add a fresh peer.
 	freshPeer := newTestNode(testPeer2PubKey, "https://peer2.example.com")
 	freshPeer.LastSeen = time.Now().Unix()
-	svc.PeerStore.AddPeer(freshPeer)
+	if err := svc.PeerStore.AddPeer(freshPeer); err != nil {
+		t.Fatalf("AddPeer fresh: %v", err)
+	}
 
 	// Prune with 30-minute max age.
 	pruned, err := svc.PruneStalePeers(1800)

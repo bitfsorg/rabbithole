@@ -13,22 +13,6 @@ import (
 	"strings"
 )
 
-// x402ChannelHeaders contains the HTTP header fields for x402 channel payments.
-type x402ChannelHeaders struct {
-	// Request headers.
-	AcceptChannel  bool   // X-Accept-Channel.
-	ChannelID      string // X-Channel-ID: <funding_txid>:<vout>.
-	PaymentVoucher []byte // X-Payment-Voucher: base64(signed_commitment).
-
-	// Response headers.
-	ChannelPrice  uint64 // X-Channel-Price: sats_per_kb.
-	MinDeposit    uint64 // X-Channel-Min-Deposit: sats.
-	Balance       uint64 // X-Channel-Balance: remaining_sats.
-	Expiry        uint32 // X-Channel-Expiry: block_height.
-	TopUpRequired bool   // X-Channel-TopUp-Required.
-	Expired       bool   // X-Channel-Expired.
-}
-
 // VerifyVoucher verifies an x402 payment voucher (signed commitment update).
 func VerifyVoucher(
 	ch *Channel,

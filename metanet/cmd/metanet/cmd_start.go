@@ -7,6 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -74,8 +75,10 @@ func cmdStart(args []string) int {
 	fmt.Printf("  PID:            %d\n", pid)
 	fmt.Printf("\nNode started (stub — full server not yet implemented).\n")
 
-	// Clean up PID file on exit.
-	os.Remove(pidPath)
+	// Clean up PID file on exit (best-effort).
+	if err := os.Remove(pidPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("warning: failed to remove PID file %s: %v", pidPath, err)
+	}
 
 	return exitSuccess
 }
@@ -102,8 +105,10 @@ func readPIDFile(path string) (int, error) {
 	// On Unix, FindProcess always succeeds. We need to check if the
 	// process actually exists by sending signal 0.
 	if err := proc.Signal(os.Signal(nil)); err != nil {
-		// Process not running; clean up stale PID file.
-		os.Remove(path)
+		// Process not running; clean up stale PID file (best-effort).
+		if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("warning: failed to remove stale PID file %s: %v", path, removeErr)
+		}
 		return 0, fmt.Errorf("process %d not running", pid)
 	}
 

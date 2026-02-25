@@ -44,7 +44,7 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 	}
 
 	// Temporarily rename in parent's children list for the build.
-	var renamedIdx int = -1
+	renamedIdx := -1
 	for i, c := range parent.Children {
 		if c.Name == srcName {
 			renamedIdx = i

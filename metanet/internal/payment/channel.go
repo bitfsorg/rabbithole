@@ -308,8 +308,9 @@ func BuildPunishmentTx(
 	return tx, nil
 }
 
-// generateRevocationKey generates a deterministic revocation key for a
-// given channel and sequence number.
+// generateRevocationKey generates a revocation key for a given channel
+// and sequence number, incorporating random salt for entropy.
+// Panics if the system CSPRNG is unavailable (unrecoverable).
 func generateRevocationKey(channelID []byte, seqNum uint64) []byte {
 	var buf []byte
 	buf = append(buf, channelID...)
@@ -320,7 +321,9 @@ func generateRevocationKey(channelID []byte, seqNum uint64) []byte {
 
 	// Use random salt for additional entropy.
 	salt := make([]byte, 16)
-	rand.Read(salt)
+	if _, err := rand.Read(salt); err != nil {
+		panic("crypto/rand: failed to read random bytes: " + err.Error())
+	}
 	buf = append(buf, salt...)
 
 	hash := sha256.Sum256(buf)
@@ -333,17 +336,6 @@ func signData(privKey []byte, data []byte) []byte {
 	mac := hmac.New(sha256.New, privKey)
 	mac.Write(data)
 	return mac.Sum(nil)
-}
-
-// verifySignature verifies HMAC-SHA256(pubKey-as-key, data) matches sig.
-// In production, this would verify an ECDSA signature.
-// Since we simulate with HMAC, we use the "associated private key" concept:
-// the verification uses the private key material that would be embedded
-// in a real signature. For testing, we accept any well-formed signature.
-func verifySignature(pubKey []byte, data []byte, sig []byte) bool {
-	// In a real implementation, this would do ECDSA verification.
-	// For the simulation, we just verify the signature has the right length.
-	return len(sig) == 32 && len(data) > 0
 }
 
 // validatePubKey checks that a public key is a valid 33-byte compressed key.

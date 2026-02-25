@@ -208,8 +208,8 @@ type Daemon struct {
 	wallet  WalletService
 	store   ContentStore
 	metanet MetanetService
-	spv     SPVService    // optional; nil = SPV endpoints disabled
-	chain   ChainService  // optional; nil = skip broadcast
+	spv     SPVService   // optional; nil = SPV endpoints disabled
+	chain   ChainService // optional; nil = skip broadcast
 	server  *http.Server
 	mux     *http.ServeMux
 	running bool

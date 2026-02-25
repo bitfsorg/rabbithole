@@ -47,7 +47,7 @@ func TestHomePage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Fatalf("status: %d", resp.StatusCode)
@@ -73,7 +73,7 @@ func TestBlockPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		t.Fatalf("status: %d", resp.StatusCode)
@@ -98,7 +98,7 @@ func TestSearch_Height(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 302 {
 		t.Fatalf("expected redirect, got %d", resp.StatusCode)
@@ -117,7 +117,7 @@ func TestSearch_NotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "not found") && !strings.Contains(string(body), "Nothing found") {

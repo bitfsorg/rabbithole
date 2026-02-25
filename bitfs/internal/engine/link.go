@@ -186,8 +186,8 @@ func (e *Engine) createHardLink(opts *LinkOpts, targetNode *NodeState) (*Result,
 	parent.Children = childrenAfter
 	parent.NextChildIdx = nextIdxAfter
 	txHex, txIDHex, err := e.buildParentSelfUpdate(parent)
-	parent.Children = origChildren     // restore
-	parent.NextChildIdx = origNextIdx  // restore
+	parent.Children = origChildren    // restore
+	parent.NextChildIdx = origNextIdx // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: build self-update tx: %w", err)
 	}

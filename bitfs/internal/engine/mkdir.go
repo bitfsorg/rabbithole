@@ -158,16 +158,6 @@ func (e *Engine) Mkdir(opts *MkdirOpts) (*Result, error) {
 	}, nil
 }
 
-// getNodeUTXO retrieves a node's UTXO from local state, converting to tx.UTXO.
-func (e *Engine) getNodeUTXO(pubKeyHex string) (*txUTXO, error) {
-	utxoState := e.State.GetNodeUTXO(pubKeyHex)
-	if utxoState == nil {
-		return nil, fmt.Errorf("no UTXO for node %s", pubKeyHex[:16])
-	}
-	utxoState.Spent = true
-	return e.utxoStateToTx(utxoState)
-}
-
 // getNodeUTXOWithState retrieves a node's UTXO from local state and returns both
 // the tx UTXO (with private key) and the underlying UTXOState for rollback.
 // If the transaction build/sign fails, the caller should set utxoState.Spent = false

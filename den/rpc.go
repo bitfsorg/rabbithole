@@ -187,11 +187,6 @@ func (e *Explorer) SearchQuery(ctx context.Context, q string) (string, error) {
 	return "", fmt.Errorf("not found: %s", q)
 }
 
-// btcToSat converts BTC float to satoshis.
-func btcToSat(v float64) int64 {
-	return int64(v * 1e8)
-}
-
 // formatSat formats satoshis as a display string.
 func formatSat(sat int64) string {
 	btc := float64(sat) / 1e8

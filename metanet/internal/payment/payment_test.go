@@ -312,7 +312,9 @@ func TestSignCommitmentInvalidKey(t *testing.T) {
 func TestCloseChannelCooperative(t *testing.T) {
 	ch, _ := OpenChannel(ChannelBSV, testFundingTxID, 0, 100_000,
 		testInitiatorPubKey, testResponderPubKey, nil)
-	UpdateChannel(ch, 30_000, testInitiatorPrivKey)
+	if _, _, err := UpdateChannel(ch, 30_000, testInitiatorPrivKey); err != nil {
+		t.Fatalf("UpdateChannel: %v", err)
+	}
 
 	signedTx, err := CloseChannelCooperative(ch, testInitiatorPrivKey, testResponderPrivKey)
 	if err != nil {
@@ -340,7 +342,9 @@ func TestCloseChannelCooperativeAlreadyClosed(t *testing.T) {
 func TestCloseChannelUnilateral(t *testing.T) {
 	ch, _ := OpenChannel(ChannelBSV, testFundingTxID, 0, 100_000,
 		testInitiatorPubKey, testResponderPubKey, nil)
-	UpdateChannel(ch, 10_000, testInitiatorPrivKey)
+	if _, _, err := UpdateChannel(ch, 10_000, testInitiatorPrivKey); err != nil {
+		t.Fatalf("UpdateChannel: %v", err)
+	}
 
 	tx, err := CloseChannelUnilateral(ch)
 	if err != nil {

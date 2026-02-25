@@ -7,6 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -40,13 +41,17 @@ func cmdStop(args []string) int {
 
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: cannot stop daemon (PID %d): %v\n", pid, err)
-		// Remove stale PID file if the process no longer exists.
-		os.Remove(pidPath)
+		// Remove stale PID file if the process no longer exists (best-effort).
+		if removeErr := os.Remove(pidPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			log.Printf("warning: failed to remove stale PID file %s: %v", pidPath, removeErr)
+		}
 		return exitError
 	}
 
-	// Remove PID file after sending signal.
-	os.Remove(pidPath)
+	// Remove PID file after sending signal (best-effort).
+	if err := os.Remove(pidPath); err != nil && !os.IsNotExist(err) {
+		log.Printf("warning: failed to remove PID file %s: %v", pidPath, err)
+	}
 
 	fmt.Printf("Sent stop signal to Metanet node (PID %d).\n", pid)
 	return exitSuccess
