@@ -42,11 +42,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 
 | ID | Severity | Status | Notes |
 |----|----------|--------|-------|
-| C-1 | CRITICAL | **UNFIXED** | `VerifyMerkleProof` still rejects single-tx blocks (`ErrEmptyProofNodes`) |
-| H-1 | HIGH | **UNFIXED** | No PoW validation in SPV header chain |
+| C-1 | CRITICAL | **FIXED** | Dead `ErrEmptyProofNodes` removed; single-tx blocks verified working |
+| H-1 | HIGH | **FIXED** | `VerifyPoW` call added to `VerifyTransaction` |
 | H-2 | HIGH | **FIXED** | TxID replay map added in daemon layer (`usedTxIDs` + `usedTxIDsMu`) |
-| H-3 | HIGH | **UNFIXED** | `http.Server` still has no ReadTimeout/WriteTimeout/IdleTimeout |
-| H-4 | HIGH | **UNFIXED** | Both `io.ReadAll` calls in paymail still lack `io.LimitReader` |
+| H-3 | HIGH | **FIXED** | `ReadTimeout=30s, WriteTimeout=60s, IdleTimeout=120s, ReadHeaderTimeout=10s, MaxHeaderBytes=1MB` |
+| H-4 | HIGH | **FIXED** | `io.LimitReader(resp.Body, MaxPaymailResponseSize)` on both calls |
 | M-1 | MEDIUM | **UNFIXED** | TLV Uvarint overflow — `int(length)` wraps negative for large values |
 | M-2 | MEDIUM | **UNFIXED** | Child name length overflow — no max-length check |
 | M-3 | MEDIUM | **UNFIXED** | `CalculatePrice` integer overflow — no overflow guard on multiplication |
@@ -66,22 +66,22 @@ All previously failing integration tests have been fixed in libbitfs-go:
 | L-1 | LOW | **UNFIXED** | Paid access mode mapped to `AccessFree` in cat/copy/move |
 | L-9 | LOW | **CHANGED** | DustLimit corrected to 1 sat; practical impact now negligible |
 
-**Summary: 1 fixed, 2 partial, 18 unfixed, 1 changed** out of 22 tracked findings.
+**Summary: 5 fixed, 2 partial, 14 unfixed, 1 changed** out of 22 tracked findings.
 
 ---
 
 ## New CRITICAL Findings
 
-### C-1 (unchanged): VerifyMerkleProof Rejects Valid Single-Transaction Blocks
+### C-1: VerifyMerkleProof Rejects Valid Single-Transaction Blocks (**FIXED**)
 
 - **File**: `libbitfs-go/spv/merkle.go:65-67`
-- **Status**: Still present from first audit. Fix is a 2-line deletion.
+- **Status**: Dead `ErrEmptyProofNodes` sentinel removed. Single-tx block proofs verified working in tests.
 
 ---
 
 ## New HIGH Findings
 
-### H-NEW-1: TOCTOU Race in Invoice Payment — Concurrent Capsule Double-Delivery
+### H-NEW-1: TOCTOU Race in Invoice Payment — Concurrent Capsule Double-Delivery (**FIXED** — commit `7c7e25c`)
 
 - **Severity**: HIGH
 - **File**: `bitfs/internal/daemon/payment.go:117-319`
@@ -97,7 +97,7 @@ All previously failing integration tests have been fixed in libbitfs-go:
   invoice.Paid = true
   ```
 
-### H-NEW-2: Path Traversal in `mget` via Malicious Remote Filenames
+### H-NEW-2: Path Traversal in `mget` via Malicious Remote Filenames (**FIXED**)
 
 - **Severity**: HIGH
 - **File**: `bitfs/internal/engine/mget.go:57-64`
@@ -110,21 +110,21 @@ All previously failing integration tests have been fixed in libbitfs-go:
   }
   ```
 
-### H-NEW-3: `ContentResolver.fetchFromEndpoint` Has No Response Body Size Limit
+### H-NEW-3: `ContentResolver.fetchFromEndpoint` Has No Response Body Size Limit (**FIXED**)
 
 - **Severity**: HIGH
 - **File**: `libbitfs-go/storage/resolver.go:90`
 - **Description**: `io.ReadAll(resp.Body)` with no limit. Analogous to H-4 (paymail) but in the primary content-retrieval path. A compromised daemon endpoint can cause OOM. Endpoints can be user-configured or resolved from DNS/Paymail.
 - **Fix**: `data, err := io.ReadAll(io.LimitReader(resp.Body, maxCiphertextSize))`
 
-### H-NEW-4: `BuildBuyerRefundTx` Does Not Verify Pre-Signed Tx References Expected HTLC UTXO
+### H-NEW-4: `BuildBuyerRefundTx` Does Not Verify Pre-Signed Tx References Expected HTLC UTXO (**FIXED**)
 
 - **Severity**: HIGH
 - **File**: `libbitfs-go/x402/htlc_tx.go:452-519`
 - **Description**: A malicious seller could provide a pre-signed transaction that spends a different output. The buyer signs it without verifying that input 0 references the expected `FundingTxID:FundingVout`. The buyer's signature is then valid for an unintended UTXO.
 - **Fix**: Verify `tx.Inputs[0].SourceTxID == params.FundingTxID && tx.Inputs[0].SourceTxOutIndex == params.FundingVout`.
 
-### H-NEW-5: Merkle Tree Traversal OOM from Malicious RPC Node
+### H-NEW-5: Merkle Tree Traversal OOM from Malicious RPC Node (**FIXED**)
 
 - **Severity**: HIGH
 - **File**: `libbitfs-go/network/rpc_blockchain.go:124-127, 214-215`
