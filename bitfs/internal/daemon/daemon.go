@@ -263,8 +263,13 @@ func New(config *Config, wallet WalletService, store ContentStore, metanet Metan
 	d.RegisterRoutes(d.mux)
 
 	d.server = &http.Server{
-		Addr:    config.ListenAddr,
-		Handler: d.mux,
+		Addr:              config.ListenAddr,
+		Handler:           d.mux,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 
 	return d, nil

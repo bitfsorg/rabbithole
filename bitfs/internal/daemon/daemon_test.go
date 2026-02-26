@@ -1450,6 +1450,20 @@ func TestConcurrentDataRequests(t *testing.T) {
 	wg.Wait()
 }
 
+// --- Server Timeout Tests ---
+
+func TestDaemon_ServerTimeouts(t *testing.T) {
+	cfg := DefaultConfig()
+	d, err := New(cfg, newMockWallet(t), newMockStore(), nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, 30*time.Second, d.server.ReadTimeout, "ReadTimeout should be set")
+	assert.Equal(t, 60*time.Second, d.server.WriteTimeout, "WriteTimeout should be set")
+	assert.Equal(t, 120*time.Second, d.server.IdleTimeout, "IdleTimeout should be set")
+	assert.Equal(t, 10*time.Second, d.server.ReadHeaderTimeout, "ReadHeaderTimeout should be set")
+	assert.Equal(t, 1<<20, d.server.MaxHeaderBytes, "MaxHeaderBytes should be set")
+}
+
 // --- PrivateKey from big.Int for mock ---
 
 func init() {
