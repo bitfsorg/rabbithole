@@ -14,6 +14,7 @@ import (
 	bsvhash "github.com/bsv-blockchain/go-sdk/primitives/hash"
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
@@ -148,7 +149,7 @@ func (e *Engine) createRootNode(vaultIdx uint32, rootPubHex string) (*NodeState,
 	return rootState, result, nil
 }
 
-// buildAndSignRootTx builds and signs a CreateRoot transaction.
+// buildAndSignRootTx builds and signs a CreateRoot transaction using MutationBatch.
 func (e *Engine) buildAndSignRootTx(kp *wallet.KeyPair, node *metanet.Node, nodePubHex string) (*Result, error) {
 	payload, err := metanet.SerializePayload(node)
 	if err != nil {
@@ -173,22 +174,22 @@ func (e *Engine) buildAndSignRootTx(kp *wallet.KeyPair, node *metanet.Node, node
 		}
 	}()
 
-	mtx, err := buildUnsignedCreateRootTx(kp, payload, feeUTXO, changeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("engine: build root tx: %w", err)
-	}
+	batch := tx.NewMutationBatch()
+	batch.AddCreateRoot(kp.PublicKey, payload)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
 
-	txHex, err := signCreateRootTx(mtx, feeUTXO)
+	txHex, result, err := buildAndSignBatch(batch)
 	if err != nil {
-		return nil, fmt.Errorf("engine: sign root tx: %w", err)
+		return nil, fmt.Errorf("engine: batch root tx: %w", err)
 	}
 
 	success = true
-	e.TrackNewUTXOs(mtx, nodePubHex, changePubHex)
+	e.TrackBatchUTXOs(result, []string{nodePubHex}, changePubHex)
 
 	return &Result{
 		TxHex:   txHex,
-		TxID:    hex.EncodeToString(mtx.TxID),
+		TxID:    hex.EncodeToString(result.TxID),
 		Message: "Root node created",
 		NodePub: nodePubHex,
 	}, nil
