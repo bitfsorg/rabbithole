@@ -16,6 +16,7 @@ import (
 
 	"github.com/ergochat/readline"
 
+	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/config"
 )
@@ -43,7 +44,7 @@ func ensureHistoryFilePermissions(path string) {
 // shellCommands is the list of all shell command names for tab completion.
 var shellCommands = []string{
 	"ls", "cd", "lcd", "pwd", "cat", "get", "mget", "mput", "mkdir", "put", "rm", "mv", "cp",
-	"link", "sell", "encrypt", "decrypt", "publish", "unpublish", "help", "quit", "exit",
+	"link", "sell", "encrypt", "decrypt", "sales", "publish", "unpublish", "help", "quit", "exit",
 }
 
 // runShell handles the "bitfs shell" command.
@@ -547,6 +548,30 @@ func runShell(args []string) int {
 			} else {
 				fmt.Println(result.Message)
 			}
+		case "sales":
+			daemonURL := "http://localhost:8080" // default daemon port
+			cl := client.New(daemonURL)
+			records, salesErr := cl.GetSales("all", 50)
+			if salesErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v (is daemon running?)\n", salesErr)
+				continue
+			}
+			if len(records) == 0 {
+				fmt.Println("No sales records.")
+				continue
+			}
+			fmt.Printf("%-36s  %10s  %5s  %s\n", "INVOICE", "PRICE(sat)", "PAID", "KEY_HASH")
+			for _, r := range records {
+				paid := "no"
+				if r.Paid {
+					paid = "yes"
+				}
+				kh := r.KeyHash
+				if len(kh) > 16 {
+					kh = kh[:16] + "..."
+				}
+				fmt.Printf("%-36s  %10d  %5s  %s\n", r.InvoiceID, r.Price, paid, kh)
+			}
 		default:
 			fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", cmd)
 		}
@@ -572,6 +597,7 @@ func shellHelp() {
   sell <path> <price> [-r]      Set price sats/KB (-r for recursive)
   encrypt <path>                Encrypt (FREE -> PRIVATE)
   decrypt <path>                Decrypt (PRIVATE -> FREE)
+  sales                         View sales records (requires daemon)
   publish [domain]              List or bind domain via DNSLink
   unpublish <domain>            Remove domain binding
   help                          Show this help
