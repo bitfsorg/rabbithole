@@ -18,6 +18,7 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tongxiaofeng/bitfs/internal/buyer"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
@@ -1031,4 +1032,183 @@ func TestDecryptFailure_NoPartialFile(t *testing.T) {
 	_, statErr := os.Stat(outFile)
 	assert.True(t, os.IsNotExist(statErr),
 		"no file should be left on disk after decrypt failure, but got: %v", statErr)
+}
+
+// ===========================================================================
+// --json flag tests
+// ===========================================================================
+
+func TestJSON_FlagParsing(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", "http://localhost:1"}, &stdout, &stderr)
+	assert.Equal(t, 6, code, "missing URI should still exit 6")
+}
+
+func TestJSON_MissingURI(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json"}, &stdout, &stderr)
+	assert.Equal(t, 6, code)
+}
+
+func TestJSON_FreeContent_Success(t *testing.T) {
+	plaintext := []byte("Hello, JSON output!")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:    testPubKey,
+				Type:     "file",
+				Path:     "/hello.txt",
+				MimeType: "text/plain",
+				FileSize: uint64(len(plaintext)),
+				KeyHash:  keyHashHex,
+				Access:   "free",
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+	)
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "hello.txt")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "-o", outFile, "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+
+	// Parse JSON output.
+	var resp buyer.GetResponse
+	err = json.Unmarshal(stdout.Bytes(), &resp)
+	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
+
+	assert.NotNil(t, resp.Meta)
+	assert.Equal(t, "free", resp.Meta.Access)
+	assert.Equal(t, outFile, resp.OutputPath)
+	assert.Equal(t, int64(len(plaintext)), resp.BytesWritten)
+	assert.False(t, resp.PaymentRequired)
+
+	// Verify file was actually written.
+	data, err := os.ReadFile(outFile)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, data)
+}
+
+func TestJSON_PaidContent_PaymentRequired(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      testPubKey,
+				Type:       "file",
+				Path:       "/premium.pdf",
+				FileSize:   5242880,
+				Access:     "paid",
+				PricePerKB: 100,
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "JSON payment required should exit 0")
+
+	var resp buyer.GetResponse
+	err := json.Unmarshal(stdout.Bytes(), &resp)
+	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
+
+	assert.True(t, resp.PaymentRequired)
+	assert.NotNil(t, resp.PaymentInfo)
+	assert.Equal(t, uint64(100), resp.PaymentInfo.PricePerKB)
+	assert.True(t, resp.PaymentInfo.Price > 0, "total price should be computed")
+}
+
+func TestJSON_PrivateContent_Error(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:  testPubKey,
+				Type:   "file",
+				Path:   "/secret.key",
+				Access: "private",
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/secret.key")}, &stdout, &stderr)
+
+	assert.Equal(t, 1, code, "private content JSON should exit 1")
+
+	var resp buyer.ErrorResponse
+	err := json.Unmarshal(stdout.Bytes(), &resp)
+	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
+
+	assert.Contains(t, resp.Error, "private content")
+	assert.Equal(t, 1, resp.Code)
+}
+
+func TestJSON_NotFoundError(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "no such path", http.StatusNotFound)
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/nonexistent")}, &stdout, &stderr)
+
+	assert.Equal(t, 2, code, "not found should exit 2")
+
+	var resp buyer.ErrorResponse
+	err := json.Unmarshal(stdout.Bytes(), &resp)
+	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
+
+	assert.Equal(t, "not found", resp.Error)
+	assert.Equal(t, 2, resp.Code)
+}
+
+func TestJSON_DirectoryError(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:  testPubKey,
+				Type:   "dir",
+				Path:   "/docs",
+				Access: "free",
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/docs")}, &stdout, &stderr)
+
+	assert.Equal(t, 1, code, "directory JSON should exit 1")
+
+	var resp buyer.ErrorResponse
+	err := json.Unmarshal(stdout.Bytes(), &resp)
+	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
+
+	assert.Contains(t, resp.Error, "directory")
 }

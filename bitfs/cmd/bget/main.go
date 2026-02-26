@@ -7,6 +7,7 @@ package main
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/tongxiaofeng/bitfs/internal/buyer"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 	"github.com/tongxiaofeng/libbitfs-go/x402"
@@ -38,6 +40,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
 	utxoStr := fs.String("utxo", "", "buyer UTXO for purchase (txid:vout:amount)")
 	version := fs.Bool("version", false, "show version-specific content")
+	jsonOut := fs.Bool("json", false, "JSON output")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
 
@@ -51,7 +54,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if fs.NArg() < 1 {
-		fmt.Fprintf(stderr, "Usage: bget [-o FILE] [--buy] [--host URL] [--timeout DURATION] <bitfs-uri>\n")
+		fmt.Fprintf(stderr, `Usage: bget [-o FILE] [--buy] [--host URL] [--timeout DURATION] <bitfs-uri>
+
+Examples:
+  bget bitfs://example.com/docs/report.pdf            (domain)
+  bget bitfs://alice@example.com/docs/report.pdf      (paymail)
+  bget bitfs://02abc...66chars.../docs/report.pdf     (pubkey, requires --host)
+`)
 		return 6
 	}
 
@@ -76,11 +85,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	meta, err := c.GetMeta(resolved.PNode, uriPath)
 	if err != nil {
+		if *jsonOut {
+			return handleErrorJSON(err, stdout)
+		}
 		return handleError(err, stderr)
 	}
 
 	// Directories cannot be downloaded.
 	if meta.Type == "dir" {
+		if *jsonOut {
+			return handleErrorJSON(fmt.Errorf("is a directory"), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: %s: is a directory\n", uriPath)
 		return 6
 	}
@@ -102,13 +117,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// Handle access modes.
 	switch meta.Access {
 	case "free":
+		if *jsonOut {
+			return downloadContentJSON(c, meta, *output, stdout, stderr)
+		}
 		return downloadContent(c, meta, *output, stdout, stderr)
 	case "paid":
-		return handlePaid(c, meta, *buy, *walletKey, *utxoStr, *output, stdout, stderr)
+		return handlePaid(c, meta, *buy, *walletKey, *utxoStr, *output, *jsonOut, stdout, stderr)
 	case "private":
+		if *jsonOut {
+			return handleErrorJSON(fmt.Errorf("private content"), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: private content cannot be accessed remotely\n")
 		return 6
 	default:
+		if *jsonOut {
+			return handleErrorJSON(fmt.Errorf("unknown access mode %q", meta.Access), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: unknown access mode %q\n", meta.Access)
 		return 1
 	}
@@ -202,8 +226,11 @@ func deriveFilename(uriPath string) string {
 }
 
 // handlePaid handles paid content access (with or without --buy).
-func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, utxoFlag, outputName string, stdout, stderr io.Writer) int {
+func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, utxoFlag, outputName string, jsonOut bool, stdout, stderr io.Writer) int {
 	if !buy {
+		if jsonOut {
+			return outputPaymentRequiredJSON(meta, stdout, stderr)
+		}
 		fmt.Fprintf(stderr, "bget: content requires payment: %d sat/KB (%d bytes)\nUse --buy to purchase\n",
 			meta.PricePerKB, meta.FileSize)
 		return 5
@@ -454,5 +481,147 @@ func handleError(err error, stderr io.Writer) int {
 	default:
 		fmt.Fprintf(stderr, "bget: %v\n", err)
 		return 1
+	}
+}
+
+// ---------------------------------------------------------------------------
+// JSON output helpers
+// ---------------------------------------------------------------------------
+
+// downloadContentJSON fetches and decrypts free content, then outputs a JSON
+// result instead of the human-readable "Downloaded N bytes" message.
+func downloadContentJSON(c *client.Client, meta *client.MetaResponse, outputName string, stdout, stderr io.Writer) int {
+	if meta.KeyHash == "" {
+		return handleErrorJSON(fmt.Errorf("no content hash available"), stdout)
+	}
+
+	filename := outputName
+	if filename == "" {
+		filename = deriveFilename(meta.Path)
+	}
+
+	reader, err := c.GetData(meta.KeyHash)
+	if err != nil {
+		return handleErrorJSON(err, stdout)
+	}
+	defer func() { _ = reader.Close() }()
+
+	ciphertext, err := io.ReadAll(reader)
+	if err != nil {
+		return handleErrorJSON(fmt.Errorf("read error: %w", err), stdout)
+	}
+
+	// Decrypt using Method 42 free mode.
+	var plaintext []byte
+	if len(ciphertext) > 0 {
+		pubKeyBytes, err := hex.DecodeString(meta.PNode)
+		if err != nil {
+			return handleErrorJSON(fmt.Errorf("invalid pnode hex: %w", err), stdout)
+		}
+		pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+		if err != nil {
+			return handleErrorJSON(fmt.Errorf("invalid pnode key: %w", err), stdout)
+		}
+
+		keyHashBytes, err := hex.DecodeString(meta.KeyHash)
+		if err != nil {
+			return handleErrorJSON(fmt.Errorf("invalid key hash hex: %w", err), stdout)
+		}
+
+		result, err := method42.Decrypt(ciphertext, nil, pubKey, keyHashBytes, method42.AccessFree)
+		if err != nil {
+			return handleErrorJSON(fmt.Errorf("decrypt: %w", err), stdout)
+		}
+		plaintext = result.Plaintext
+	}
+
+	file, err := os.Create(filename)
+	if err != nil {
+		return handleErrorJSON(fmt.Errorf("cannot create file %q: %w", filename, err), stdout)
+	}
+
+	n, err := file.Write(plaintext)
+	if err != nil {
+		_ = file.Close()
+		_ = os.Remove(filename)
+		return handleErrorJSON(fmt.Errorf("write error: %w", err), stdout)
+	}
+
+	if err := file.Close(); err != nil {
+		_ = os.Remove(filename)
+		return handleErrorJSON(fmt.Errorf("close error: %w", err), stdout)
+	}
+
+	resp := &buyer.GetResponse{
+		Meta:         meta,
+		OutputPath:   filename,
+		BytesWritten: int64(n),
+	}
+	return writeJSON(resp, stdout, stderr)
+}
+
+// outputPaymentRequiredJSON outputs a JSON response indicating payment is required.
+func outputPaymentRequiredJSON(meta *client.MetaResponse, stdout, stderr io.Writer) int {
+	resp := &buyer.GetResponse{
+		Meta:            meta,
+		PaymentRequired: true,
+		PaymentInfo: &buyer.PaymentInfo{
+			Price:      meta.PricePerKB * (meta.FileSize/1024 + 1),
+			PricePerKB: meta.PricePerKB,
+		},
+	}
+	return writeJSON(resp, stdout, stderr)
+}
+
+// handleErrorJSON outputs a JSON error response to stdout and returns the
+// appropriate exit code.
+func handleErrorJSON(err error, stdout io.Writer) int {
+	code := errorToCode(err)
+	resp := &buyer.ErrorResponse{Error: errorMessage(err), Code: code}
+	data, _ := json.Marshal(resp)
+	fmt.Fprintln(stdout, string(data))
+	return code
+}
+
+// writeJSON marshals v as indented JSON to stdout.
+func writeJSON(v interface{}, stdout, stderr io.Writer) int {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: json marshal: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(stdout, string(data))
+	return 0
+}
+
+// errorToCode maps an error to an exit code for JSON output.
+func errorToCode(err error) int {
+	switch {
+	case errors.Is(err, client.ErrNotFound):
+		return 2
+	case errors.Is(err, client.ErrTimeout), errors.Is(err, client.ErrNetwork):
+		return 4
+	case errors.Is(err, client.ErrServer):
+		return 4
+	case errors.Is(err, client.ErrPaymentRequired):
+		return 5
+	default:
+		return 1
+	}
+}
+
+// errorMessage returns a human-readable error string for JSON output.
+func errorMessage(err error) string {
+	switch {
+	case errors.Is(err, client.ErrNotFound):
+		return "not found"
+	case errors.Is(err, client.ErrTimeout):
+		return "request timeout"
+	case errors.Is(err, client.ErrNetwork):
+		return "network error"
+	case errors.Is(err, client.ErrServer):
+		return "server error"
+	default:
+		return err.Error()
 	}
 }
