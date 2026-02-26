@@ -143,7 +143,7 @@ func TestMetaEndpoint_ShortPnode(t *testing.T) {
 // --- BSVAlias ---
 
 // TestBSVAliasEndpoint_TLSScheme verifies that when TLS is enabled the
-// capability URLs use the https:// scheme.
+// capability URLs use the https:// scheme and the configured ListenAddr.
 func TestBSVAliasEndpoint_TLSScheme(t *testing.T) {
 	wallet := newMockWallet(t)
 	store := newMockStore()
@@ -154,7 +154,7 @@ func TestBSVAliasEndpoint_TLSScheme(t *testing.T) {
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/.well-known/bsvalias", nil)
-	req.Host = "bitfs.example.com"
+	req.Host = "bitfs.example.com" // should be ignored
 	w := httptest.NewRecorder()
 	d.Handler().ServeHTTP(w, req)
 
@@ -169,24 +169,28 @@ func TestBSVAliasEndpoint_TLSScheme(t *testing.T) {
 
 	pki, ok := caps["pki"].(string)
 	require.True(t, ok)
-	assert.True(t, strings.HasPrefix(pki, "https://bitfs.example.com/"),
-		"pki URL should use https scheme, got: %s", pki)
+	assert.True(t, strings.HasPrefix(pki, "https://localhost:8080/"),
+		"pki URL should use https scheme with configured addr, got: %s", pki)
 }
 
-// TestBSVAliasEndpoint_CustomHost verifies that the Host header is propagated
-// into the capability URLs.
+// TestBSVAliasEndpoint_CustomHost verifies that the configured ListenAddr is
+// used for capability URLs, and the Host header is ignored (L-NEW-11).
 func TestBSVAliasEndpoint_CustomHost(t *testing.T) {
-	d, _, _, _ := newTestDaemon(t)
+	config := DefaultConfig()
+	config.ListenAddr = "my-custom-host.io:9090"
+	config.Security.RateLimit.RPM = 0
+	d, err := New(config, newMockWallet(t), newMockStore(), nil)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/.well-known/bsvalias", nil)
-	req.Host = "my-custom-host.io:9090"
+	req.Host = "evil.attacker.com"
 	w := httptest.NewRecorder()
 	d.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
 	caps, ok := resp["capabilities"].(map[string]interface{})
@@ -195,7 +199,9 @@ func TestBSVAliasEndpoint_CustomHost(t *testing.T) {
 	pki, ok := caps["pki"].(string)
 	require.True(t, ok)
 	assert.Contains(t, pki, "my-custom-host.io:9090",
-		"pki URL should contain the custom host header value")
+		"pki URL should contain the configured ListenAddr")
+	assert.NotContains(t, pki, "evil.attacker.com",
+		"pki URL must not contain the request Host header")
 }
 
 // --- Content Negotiation: Link Node ---

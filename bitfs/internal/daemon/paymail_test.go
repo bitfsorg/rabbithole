@@ -143,17 +143,21 @@ func TestHandlePKI_DomainIgnored(t *testing.T) {
 // --- BSVAlias Capabilities Include PKI URL Tests ---
 
 func TestBSVAliasEndpoint_PKIURLTemplate(t *testing.T) {
-	d, _, _, _ := newTestDaemon(t)
+	config := DefaultConfig()
+	config.ListenAddr = "bitfs.example.com:8080"
+	config.Security.RateLimit.RPM = 0
+	d, err := New(config, newMockWallet(t), newMockStore(), nil)
+	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "/.well-known/bsvalias", nil)
-	req.Host = "bitfs.example.com"
+	req.Host = "should-be-ignored.com"
 	w := httptest.NewRecorder()
 	d.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
 	caps, ok := resp["capabilities"].(map[string]interface{})
@@ -162,8 +166,8 @@ func TestBSVAliasEndpoint_PKIURLTemplate(t *testing.T) {
 	pki, ok := caps["pki"].(string)
 	require.True(t, ok)
 
-	// The PKI URL template should contain the host and the path template.
-	assert.Contains(t, pki, "bitfs.example.com")
+	// The PKI URL template should contain the configured addr and the path template.
+	assert.Contains(t, pki, "bitfs.example.com:8080")
 	assert.Contains(t, pki, "/api/v1/pki/")
 	assert.Contains(t, pki, "{alias}")
 	assert.Contains(t, pki, "{domain.tld}")

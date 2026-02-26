@@ -104,10 +104,16 @@ func (d *Daemon) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleBSVAlias serves the .well-known/bsvalias capabilities document.
+// Uses the configured ListenAddr instead of the request Host header to prevent
+// attackers from injecting arbitrary hostnames into capability URLs (L-NEW-11).
 func (d *Daemon) handleBSVAlias(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
-	if host == "" {
-		host = "localhost"
+	host := d.config.ListenAddr
+	if host == "" || strings.HasPrefix(host, "0.0.0.0:") || strings.HasPrefix(host, ":") {
+		port := strings.TrimPrefix(host, "0.0.0.0")
+		if port == "" {
+			port = ":8080"
+		}
+		host = "localhost" + port
 	}
 
 	scheme := "https"
