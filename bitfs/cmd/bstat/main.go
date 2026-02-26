@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/tongxiaofeng/bitfs/internal/buyer"
@@ -29,6 +30,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	versions := fs.Bool("versions", false, "show version history")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
+	noCache := fs.Bool("no-cache", false, "skip metadata cache")
+	offline := fs.Bool("offline", false, "cache-only mode")
 
 	if err := fs.Parse(args); err != nil {
 		return 6
@@ -68,7 +71,19 @@ Examples:
 		c = c.WithTimeout(d)
 	}
 
-	meta, err := c.GetMeta(resolved.PNode, resolved.Path)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "bstat: cannot determine home directory: %v\n", err)
+		return 1
+	}
+	cacheDir := filepath.Join(homeDir, ".bitfs", "cache", "meta")
+	cache := client.NewMetaCache(cacheDir, 5*time.Minute)
+	cc := client.NewCachedClient(c, cache)
+	cc.NoCache = *noCache
+	cc.Offline = *offline
+	cc.Prefix = c.BaseURL
+
+	meta, err := cc.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
 		return buyer.HandleError(err, "bstat", stderr)
 	}

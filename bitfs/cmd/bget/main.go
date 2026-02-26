@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -43,6 +44,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	jsonOut := fs.Bool("json", false, "JSON output")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
+	noCache := fs.Bool("no-cache", false, "skip metadata cache")
+	offline := fs.Bool("offline", false, "cache-only mode")
 
 	if err := fs.Parse(args); err != nil {
 		return 6
@@ -81,9 +84,21 @@ Examples:
 		c = c.WithTimeout(d)
 	}
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "bget: cannot determine home directory: %v\n", err)
+		return 1
+	}
+	cacheDir := filepath.Join(homeDir, ".bitfs", "cache", "meta")
+	cache := client.NewMetaCache(cacheDir, 5*time.Minute)
+	cc := client.NewCachedClient(c, cache)
+	cc.NoCache = *noCache
+	cc.Offline = *offline
+	cc.Prefix = c.BaseURL
+
 	uriPath := resolved.Path
 
-	meta, err := c.GetMeta(resolved.PNode, uriPath)
+	meta, err := cc.GetMeta(resolved.PNode, uriPath)
 	if err != nil {
 		if *jsonOut {
 			return handleErrorJSON(err, stdout)

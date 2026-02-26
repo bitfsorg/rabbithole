@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,6 +33,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.IntVar(depth, "depth", 0, "max depth (0 = unlimited)")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
+	noCache := fs.Bool("no-cache", false, "skip metadata cache")
+	offline := fs.Bool("offline", false, "cache-only mode")
 
 	if err := fs.Parse(args); err != nil {
 		return 6
@@ -65,10 +68,22 @@ Examples:
 		c = c.WithTimeout(d)
 	}
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(stderr, "btree: cannot determine home directory: %v\n", err)
+		return 1
+	}
+	cacheDir := filepath.Join(homeDir, ".bitfs", "cache", "meta")
+	cache := client.NewMetaCache(cacheDir, 5*time.Minute)
+	cc := client.NewCachedClient(c, cache)
+	cc.NoCache = *noCache
+	cc.Offline = *offline
+	cc.Prefix = c.BaseURL
+
 	pnode := resolved.PNode
 	uriPath := resolved.Path
 
-	meta, err := c.GetMeta(pnode, uriPath)
+	meta, err := cc.GetMeta(pnode, uriPath)
 	if err != nil {
 		return buyer.HandleError(err, "btree", stderr)
 	}
@@ -98,7 +113,7 @@ Examples:
 
 	// Build full tree recursively.
 	var dirs, files int
-	root := buildTree(c, pnode, meta, *depth, 1, &dirs, &files)
+	root := buildTree(cc, pnode, meta, *depth, 1, &dirs, &files)
 
 	if *jsonOut {
 		return outputJSON(root, stdout, stderr)
@@ -131,7 +146,7 @@ type treeNode struct {
 }
 
 // buildTree recursively builds a treeNode from a MetaResponse that is a directory.
-func buildTree(c *client.Client, pnode string, meta *client.MetaResponse, maxDepth, currentDepth int, dirs, files *int) treeNode {
+func buildTree(c client.MetaGetter, pnode string, meta *client.MetaResponse, maxDepth, currentDepth int, dirs, files *int) treeNode {
 	name := path.Base(meta.Path)
 	if meta.Path == "/" || meta.Path == "" {
 		name = "/"

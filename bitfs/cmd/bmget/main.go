@@ -44,6 +44,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	failFast := fs.Bool("fail-fast", false, "stop on first error")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
+	noCache := fs.Bool("no-cache", false, "skip metadata cache")
+	offline := fs.Bool("offline", false, "cache-only mode")
 
 	if err := fs.Parse(args); err != nil {
 		return 6
@@ -88,10 +90,25 @@ Examples:
 		c = c.WithTimeout(d)
 	}
 
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		if *jsonOut {
+			return handleErrorJSON(fmt.Errorf("cannot determine home directory: %w", err), stdout)
+		}
+		fmt.Fprintf(stderr, "bmget: cannot determine home directory: %v\n", err)
+		return 1
+	}
+	cacheDir := filepath.Join(homeDir, ".bitfs", "cache", "meta")
+	cache := client.NewMetaCache(cacheDir, 5*time.Minute)
+	cc := client.NewCachedClient(c, cache)
+	cc.NoCache = *noCache
+	cc.Offline = *offline
+	cc.Prefix = c.BaseURL
+
 	uriPath := resolved.Path
 
 	// Get directory metadata.
-	meta, err := c.GetMeta(resolved.PNode, uriPath)
+	meta, err := cc.GetMeta(resolved.PNode, uriPath)
 	if err != nil {
 		if *jsonOut {
 			return handleErrorJSON(err, stdout)
@@ -212,7 +229,7 @@ Examples:
 
 			childPath := path.Join(uriPath, childEntry.Name)
 			localPath := filepath.Join(localDir, childEntry.Name)
-			entry := downloadFile(c, resolved.PNode, childPath, localPath, *buyFlag, buyerCfg)
+			entry := downloadFile(cc, c, resolved.PNode, childPath, localPath, *buyFlag, buyerCfg)
 			entry.Path = childEntry.Name
 
 			mu.Lock()
@@ -270,9 +287,9 @@ Examples:
 
 // downloadFile downloads a single file from the daemon, decrypting it with
 // Method 42. For paid content with --buy, it executes the purchase flow first.
-func downloadFile(c *client.Client, pnode, remotePath, localPath string, buyEnabled bool, buyerCfg *buyer.BuyerConfig) buyer.BatchFileEntry {
+func downloadFile(mg client.MetaGetter, c *client.Client, pnode, remotePath, localPath string, buyEnabled bool, buyerCfg *buyer.BuyerConfig) buyer.BatchFileEntry {
 	// Get file metadata.
-	meta, err := c.GetMeta(pnode, remotePath)
+	meta, err := mg.GetMeta(pnode, remotePath)
 	if err != nil {
 		return buyer.BatchFileEntry{Error: fmt.Sprintf("get meta: %v", err), Code: buyer.ExitCodeFromError(err)}
 	}
