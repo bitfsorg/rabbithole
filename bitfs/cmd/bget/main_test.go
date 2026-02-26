@@ -523,13 +523,130 @@ func TestPrivate_ReturnsExit6(t *testing.T) {
 // --version flag
 // ---------------------------------------------------------------------------
 
-func TestVersionFlag_ReturnsExit0(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"--version"}, &stdout, &stderr)
+func TestVersionFlag_DownloadsSpecificVersion(t *testing.T) {
+	plaintext := []byte("Hello, BitFS version 2!")
 
-	assert.Equal(t, 0, code, "--version should exit 0")
-	assert.Contains(t, stdout.String(), "not yet supported")
+	// Encrypt with Method 42 AccessFree.
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:    testPubKey,
+			Type:     "file",
+			Path:     "/hello.txt",
+			MimeType: "text/plain",
+			FileSize: uint64(len(plaintext)),
+			KeyHash:  keyHashHex,
+			Access:   "free",
+			TxID:     "latest-txid",
+		})
+	})
+	mux.HandleFunc("/_bitfs/versions/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, []client.VersionEntry{
+			{Version: 1, TxID: "latest-txid", FileSize: uint64(len(plaintext)), Access: "free"},
+			{Version: 2, TxID: "older-txid", FileSize: 100, Access: "free"},
+		})
+	})
+	mux.HandleFunc("/_bitfs/data/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(encResult.Ciphertext)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "hello.txt")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--version", "2", "-o", outFile, "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	assert.Empty(t, stderr.String())
+	assert.Contains(t, stdout.String(), "Downloaded")
+
+	data, err := os.ReadFile(outFile)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, data)
+}
+
+func TestVersionFlag_OutOfRange(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:   testPubKey,
+			Type:    "file",
+			Path:    "/hello.txt",
+			KeyHash: testKeyHash("aa"),
+			Access:  "free",
+		})
+	})
+	mux.HandleFunc("/_bitfs/versions/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, []client.VersionEntry{
+			{Version: 1, TxID: "only-txid", FileSize: 10, Access: "free"},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--version", "5", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 2, code, "out-of-range version should exit 2")
+	assert.Contains(t, stderr.String(), "version 5 not found")
+	assert.Contains(t, stderr.String(), "only 1 versions")
+}
+
+func TestVersionFlag_Zero_NoVersionLookup(t *testing.T) {
+	// --version 0 (default) should behave as if --version was not specified.
+	plaintext := []byte("no version lookup")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	versionsCalled := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode:   testPubKey,
+			Type:    "file",
+			Path:    "/hello.txt",
+			KeyHash: keyHashHex,
+			Access:  "free",
+		})
+	})
+	mux.HandleFunc("/_bitfs/versions/", func(w http.ResponseWriter, r *http.Request) {
+		versionsCalled = true
+		serveJSON(w, []client.VersionEntry{})
+	})
+	mux.HandleFunc("/_bitfs/data/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(encResult.Ciphertext)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "hello.txt")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--version", "0", "-o", outFile, "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	assert.False(t, versionsCalled, "versions endpoint should not be called when --version is 0")
 }
 
 // ---------------------------------------------------------------------------

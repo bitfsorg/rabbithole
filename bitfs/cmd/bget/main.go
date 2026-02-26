@@ -40,7 +40,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before downloading")
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 bytes)")
 	utxoStr := fs.String("utxo", "", "buyer UTXO for purchase (txid:vout:amount)")
-	version := fs.Bool("version", false, "show version-specific content")
+	version := fs.Int("version", 0, "download a specific version (1=latest, 2=previous, ...)")
 	jsonOut := fs.Bool("json", false, "JSON output")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
@@ -49,11 +49,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if err := fs.Parse(args); err != nil {
 		return 6
-	}
-
-	if *version {
-		fmt.Fprintf(stdout, "bget: --version not yet supported\n")
-		return 0
 	}
 
 	if fs.NArg() < 1 {
@@ -104,6 +99,29 @@ Examples:
 			return handleErrorJSON(err, stdout)
 		}
 		return buyer.HandleError(err, "bget", stderr)
+	}
+
+	// Version override: fetch version history and apply the selected version's metadata.
+	if *version > 0 {
+		vers, versErr := c.GetVersions(resolved.PNode, uriPath)
+		if versErr != nil {
+			if *jsonOut {
+				return handleErrorJSON(versErr, stdout)
+			}
+			return buyer.HandleError(versErr, "bget", stderr)
+		}
+		if *version > len(vers) {
+			msg := fmt.Errorf("version %d not found (only %d versions)", *version, len(vers))
+			if *jsonOut {
+				return handleErrorJSON(msg, stdout)
+			}
+			fmt.Fprintf(stderr, "bget: %v\n", msg)
+			return 2
+		}
+		v := vers[*version-1]
+		meta.TxID = v.TxID
+		meta.FileSize = v.FileSize
+		meta.Access = v.Access
 	}
 
 	// Directories cannot be downloaded.
