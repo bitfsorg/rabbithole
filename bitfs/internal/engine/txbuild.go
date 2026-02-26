@@ -70,6 +70,20 @@ func signSelfUpdateTx(mtx *tx.MetanetTx, nodeUTXO, feeUTXO *tx.UTXO) (string, er
 	return tx.SignMetanetTx(mtx, []*tx.UTXO{nodeUTXO, feeUTXO})
 }
 
+// buildAndSignBatch builds and signs a MutationBatch transaction.
+// Returns the signed tx hex and the BatchResult (with TxID set on all UTXOs).
+func buildAndSignBatch(batch *tx.MutationBatch) (string, *tx.BatchResult, error) {
+	result, err := batch.Build()
+	if err != nil {
+		return "", nil, fmt.Errorf("batch build: %w", err)
+	}
+	txHex, err := batch.Sign(result)
+	if err != nil {
+		return "", nil, fmt.Errorf("batch sign: %w", err)
+	}
+	return txHex, result, nil
+}
+
 // pubKeyFromBytes parses compressed public key bytes.
 func pubKeyFromBytes(data []byte) (*ec.PublicKey, error) {
 	if len(data) != 33 {

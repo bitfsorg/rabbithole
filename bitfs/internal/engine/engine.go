@@ -381,6 +381,49 @@ func (e *Engine) TrackParentRefreshUTXO(mtx *tx.MetanetTx, parentPubHex string) 
 	})
 }
 
+// TrackBatchUTXOs registers all UTXOs produced by a BatchResult into local state.
+// opPubKeys maps op index -> pubkey hex for the node that op creates/updates.
+// changePubHex is the change address owner.
+func (e *Engine) TrackBatchUTXOs(result *tx.BatchResult, opPubKeys []string, changePubHex string) {
+	txIDHex := hex.EncodeToString(result.TxID)
+
+	for i, opResult := range result.NodeOps {
+		if opResult.NodeUTXO == nil {
+			continue // OpDelete — no UTXO produced
+		}
+		if i >= len(opPubKeys) || opPubKeys[i] == "" {
+			continue
+		}
+		scriptPK, _ := tx.BuildP2PKHScript(mustDecompressPubKey(opPubKeys[i]))
+		e.State.AddUTXO(&UTXOState{
+			TxID:         txIDHex,
+			Vout:         opResult.NodeUTXO.Vout,
+			Amount:       opResult.NodeUTXO.Amount,
+			ScriptPubKey: hex.EncodeToString(scriptPK),
+			PubKeyHex:    opPubKeys[i],
+			Type:         "node",
+		})
+	}
+
+	if result.ChangeUTXO != nil && changePubHex != "" {
+		scriptPK, _ := tx.BuildP2PKHScript(mustDecompressPubKey(changePubHex))
+		feeDerivIdx := uint32(0)
+		if e.WState.NextChangeIndex > 0 {
+			feeDerivIdx = e.WState.NextChangeIndex - 1
+		}
+		e.State.AddUTXO(&UTXOState{
+			TxID:         txIDHex,
+			Vout:         result.ChangeUTXO.Vout,
+			Amount:       result.ChangeUTXO.Amount,
+			ScriptPubKey: hex.EncodeToString(scriptPK),
+			PubKeyHex:    changePubHex,
+			Type:         "fee",
+			FeeChain:     wallet.InternalChain,
+			FeeDerivIdx:  feeDerivIdx,
+		})
+	}
+}
+
 // IsOnline returns true if a blockchain service is configured.
 func (e *Engine) IsOnline() bool {
 	return e.Chain != nil
