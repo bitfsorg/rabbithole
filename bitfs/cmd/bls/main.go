@@ -6,7 +6,6 @@
 package main
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -16,7 +15,6 @@ import (
 	"time"
 
 	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/libbitfs-go/paymail"
 )
 
 func main() {
@@ -30,7 +28,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	jsonOut := fs.Bool("json", false, "JSON output")
 	long := fs.Bool("long", false, "detailed listing")
 	longAlias := fs.Bool("l", false, "detailed listing (alias)")
-	host := fs.String("host", "http://localhost:8080", "daemon URL")
+	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
 
 	if err := fs.Parse(args); err != nil {
@@ -48,27 +46,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	uri := fs.Arg(0)
-	parsed, err := paymail.ParseURI(uri)
+	resolved, err := client.ResolveURI(uri, *host, nil, nil)
 	if err != nil {
 		fmt.Fprintf(stderr, "bls: %v\n", err)
 		return 6
 	}
 
-	// Resolve pnode from parsed URI.
-	var pnode string
-	switch parsed.Type {
-	case paymail.AddressPubKey:
-		pnode = hex.EncodeToString(parsed.PubKey)
-	case paymail.AddressPaymail, paymail.AddressDNSLink:
-		fmt.Fprintf(stderr, "bls: paymail/dnslink resolution not yet supported\n")
-		return 6
-	default:
-		fmt.Fprintf(stderr, "bls: unknown address type\n")
-		return 6
-	}
-
-	// Build client.
-	c := client.New(*host)
+	c := resolved.Client
 	if *timeout != "" {
 		d, err := time.ParseDuration(*timeout)
 		if err != nil {
@@ -78,13 +62,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		c = c.WithTimeout(d)
 	}
 
-	// Determine the path to query. Default to root "/" if none specified.
-	path := parsed.Path
-	if path == "" {
-		path = "/"
-	}
-
-	meta, err := c.GetMeta(pnode, path)
+	meta, err := c.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
 		return handleError(err, stderr)
 	}
