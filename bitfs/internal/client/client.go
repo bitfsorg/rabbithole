@@ -1,7 +1,8 @@
 // Package client provides an HTTP client for the BitFS daemon API.
 //
 // It is the foundation that all b-tools (bls, bcat, bget, bstat, btree) use
-// to communicate with the local BitFS daemon over the LFCP HTTP interface.
+// to communicate with BitFS daemons over the LFCP HTTP interface.
+// Daemon endpoints are resolved from bitfs:// URIs via paymail PKI or DNS SRV records.
 package client
 
 import (

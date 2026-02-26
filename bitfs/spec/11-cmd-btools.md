@@ -116,7 +116,9 @@ Output:
 - 通过 `libbitfs/paymail.ResolveURI()` 进行端点解析
 - 通过 HTTP 从守护进程获取元数据
 - `~/.bitfs/cache/meta/` 中的本地缓存（可选）
-- 公共标志：`--json`、`--no-cache`、`--timeout`、`--offline`
+- 公共标志：`--json`、`--no-cache`、`--timeout`、`--offline`、`--host`（可选覆盖）
+- `--host` 为可选覆盖：未指定时从 URI 域名解析 daemon 端点（Paymail SRV / DNSLink SRV / domain:443 fallback）
+- 裸公钥 URI（`bitfs://02abc...`）必须提供 `--host`
 - 退出码：与 cmd/bitfs 相同
 
 ## 依赖
