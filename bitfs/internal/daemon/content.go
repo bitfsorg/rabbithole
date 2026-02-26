@@ -167,6 +167,83 @@ type metaChildResponse struct {
 	Type string `json:"type"`
 }
 
+// versionEntryResponse is the JSON response structure for a single version entry.
+type versionEntryResponse struct {
+	Version     int    `json:"version"`
+	TxID        string `json:"txid"`
+	BlockHeight uint32 `json:"block_height"`
+	Timestamp   int64  `json:"timestamp"`
+	FileSize    uint64 `json:"file_size"`
+	Access      string `json:"access"`
+}
+
+// handleVersions handles GET /_bitfs/versions/{pnode}/{path...} for version history.
+// Currently returns a single-entry array with the current node's data,
+// since full version history tracking is not yet implemented.
+func (d *Daemon) handleVersions(w http.ResponseWriter, r *http.Request) {
+	pnode := r.PathValue("pnode")
+	if pnode == "" {
+		writeJSONError(w, http.StatusBadRequest, "MISSING_PNODE", "P_node parameter is required")
+		return
+	}
+
+	pnodeBytes, err := hex.DecodeString(pnode)
+	if err != nil || len(pnodeBytes) != 33 {
+		writeJSONError(w, http.StatusBadRequest, "INVALID_PNODE", "P_node must be 66 hex characters (33 bytes)")
+		return
+	}
+
+	path := r.PathValue("path")
+
+	// Prepend "/" to path if missing.
+	if path == "" || path[0] != '/' {
+		path = "/" + path
+	}
+
+	// Reject path traversal attempts.
+	if containsPathTraversal(path) {
+		writeJSONError(w, http.StatusBadRequest, "INVALID_PATH", "Path must not contain '..' segments")
+		return
+	}
+
+	// Check that the Metanet service is available.
+	if d.metanet == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Metanet service is not available")
+		return
+	}
+
+	// Resolve the path via the Metanet service.
+	node, err := d.metanet.GetNodeByPath(path)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+			writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Path not found")
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to resolve path")
+		}
+		return
+	}
+
+	// Validate that the resolved node's PNode matches the URL pnode.
+	if !bytes.Equal(node.PNode, pnodeBytes) {
+		writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Path not found for this pnode")
+		return
+	}
+
+	// Build a single-entry version history from the current node state.
+	// Full version history will be populated once version tracking is implemented.
+	entry := versionEntryResponse{
+		Version:  1,
+		FileSize: node.FileSize,
+		Access:   node.Access,
+	}
+	if node.Timestamp > 0 {
+		entry.Timestamp = int64(node.Timestamp)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode([]versionEntryResponse{entry})
+}
+
 // containsPathTraversal returns true if the path contains ".." segments
 // that could allow directory traversal attacks. It iteratively URL-decodes
 // (up to 3 rounds) to catch percent-encoded and double-encoded sequences.

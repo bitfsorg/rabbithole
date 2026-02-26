@@ -214,6 +214,49 @@ func (c *Client) SubmitHTLC(txid string, htlcRawTx []byte) (*CapsuleResponse, er
 	return &capsule, nil
 }
 
+// VersionEntry represents a single version of a node.
+type VersionEntry struct {
+	Version     int    `json:"version"`      // 1=latest, 2=previous, etc.
+	TxID        string `json:"txid"`         // Transaction ID for this version
+	BlockHeight uint32 `json:"block_height"` // Block height (0 if unconfirmed)
+	Timestamp   int64  `json:"timestamp"`    // Unix timestamp (seconds)
+	FileSize    uint64 `json:"file_size"`    // File size in bytes
+	Access      string `json:"access"`       // "free", "paid", "private"
+}
+
+// GetVersions retrieves the version history for a node.
+// Endpoint: GET /_bitfs/versions/{pnode}/{path}
+func (c *Client) GetVersions(pnode, path string) ([]VersionEntry, error) {
+	// Validate pnode is a 66-char hex string (33-byte compressed pubkey).
+	if err := validateHex(pnode, 33, "pnode"); err != nil {
+		return nil, err
+	}
+
+	// URL-encode each path segment to handle spaces, #, ?, etc.
+	segments := strings.Split(path, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	escapedPath := strings.Join(segments, "/")
+	reqURL := fmt.Sprintf("%s/_bitfs/versions/%s/%s", c.BaseURL, pnode, escapedPath)
+
+	resp, err := c.HTTPClient.Get(reqURL)
+	if err != nil {
+		return nil, wrapNetworkError(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if err := checkStatus(resp); err != nil {
+		return nil, err
+	}
+
+	var versions []VersionEntry
+	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
+		return nil, fmt.Errorf("client: decode versions: %w", err)
+	}
+	return versions, nil
+}
+
 // SPVProofResponse holds the SPV verification result returned by the daemon.
 type SPVProofResponse struct {
 	TxID        string `json:"txid"`

@@ -26,6 +26,7 @@ func (d *Daemon) RegisterRoutes(mux *http.ServeMux) {
 	// Content endpoints
 	mux.HandleFunc("GET /_bitfs/data/{hash}", wrap(d.handleData))
 	mux.HandleFunc("GET /_bitfs/meta/{pnode}/{path...}", wrap(d.handleMeta))
+	mux.HandleFunc("GET /_bitfs/versions/{pnode}/{path...}", wrap(d.handleVersions))
 
 	// x402 Buy endpoints
 	mux.HandleFunc("GET /_bitfs/buy/{txid}", wrap(d.handleGetBuyInfo))
