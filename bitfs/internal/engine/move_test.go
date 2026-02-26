@@ -12,7 +12,7 @@ import (
 
 // setupMoveTestEngine sets up a test engine with root, /src, /dst directories,
 // and a file at /src/file.txt. Returns the engine. Multiple fee UTXOs are
-// pre-loaded to support cross-directory moves (which need 4 txs).
+// pre-loaded to support cross-directory moves (atomic batch with 4 ops).
 func setupMoveTestEngine(t *testing.T) *Engine {
 	t.Helper()
 	eng := initTestEngine(t)
@@ -130,7 +130,7 @@ func TestMove_CrossDirectory(t *testing.T) {
 
 	assert.NotEmpty(t, result.TxHex, "expected non-empty TxHex")
 	assert.NotEmpty(t, result.TxID, "expected non-empty TxID")
-	assert.Contains(t, result.Message, "4 txs", "message should mention '4 txs', got: %s", result.Message)
+	assert.Contains(t, result.Message, "atomic", "message should mention '4 txs', got: %s", result.Message)
 
 	// Verify the new node exists at destination with a NEW pubkey (not original).
 	movedNode := eng.State.FindNodeByPath("/dst/file.txt")
@@ -187,7 +187,7 @@ func TestMove_CrossDirectory_WithRename(t *testing.T) {
 	require.NoError(t, err, "Move cross-dir with rename")
 
 	assert.NotEmpty(t, result.TxID, "expected non-empty TxID")
-	assert.Contains(t, result.Message, "4 txs", "message should mention '4 txs'")
+	assert.Contains(t, result.Message, "atomic", "message should mention '4 txs'")
 
 	// Verify the node exists at the new path with a NEW pubkey.
 	movedNode := eng.State.FindNodeByPath("/dst/newname.txt")
@@ -406,7 +406,7 @@ func TestMove_CrossDirectory_FromRoot(t *testing.T) {
 	})
 	require.NoError(t, err, "Move from root to subdir")
 	assert.NotEmpty(t, result.TxID, "expected non-empty TxID")
-	assert.Contains(t, result.Message, "4 txs", "message should mention '4 txs'")
+	assert.Contains(t, result.Message, "atomic", "message should mention '4 txs'")
 
 	// Verify the new node at destination has a NEW identity.
 	movedNode := eng.State.FindNodeByPath("/subdir/moved_file.txt")

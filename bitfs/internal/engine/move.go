@@ -8,6 +8,7 @@ import (
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // MoveOpts holds options for the Move (rename) operation.
@@ -80,18 +81,16 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 	}, nil
 }
 
-// crossDirectoryMove moves a node between two different directories using the
-// DELETE + CreateChild pattern. It produces four transactions:
+// crossDirectoryMove moves a node between two different directories using a
+// single atomic batch transaction containing four operations:
 //
-//	Tx1: CreateChild at destination (new node with new key, re-encrypted content)
-//	Tx2: SelfUpdate destination parent (add child entry)
-//	Tx3: SelfUpdate source node (op=DELETE, LinkTarget=new P_node as moved_to pointer)
-//	Tx4: SelfUpdate source parent (remove child entry)
+//	Op1: OpCreate — create new child at destination (new key, re-encrypted content)
+//	Op2: OpDelete — delete source node (UTXO dies, LinkTarget=new P_node as moved_to)
+//	Op3: OpUpdate — update source parent (remove child entry)
+//	Op4: OpUpdate — update destination parent (add child entry)
 //
-// The implementation uses a build-then-apply pattern: all four transactions are
-// built first (Phase 1) without permanently mutating state. Only after all builds
-// succeed are the state changes applied (Phase 2). This ensures that if any
-// build fails, local state remains consistent.
+// All four operations are packed into one transaction: single fee UTXO, single
+// signing pass, fully atomic. If any part fails, nothing is broadcast.
 func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*Result, error) {
 	// Cross-directory move only supports files.
 	// Directory moves would require recursive re-keying of all descendants.
@@ -181,9 +180,9 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 		return nil, fmt.Errorf("engine: encrypt copy: %w", err)
 	}
 
-	// --- Phase 1: Build all 4 TXs without mutating state ---
+	// --- Build single atomic batch with 4 ops ---
 
-	// === Tx1: CreateChild at destination ===
+	// Build Op1 payload: CreateChild at destination.
 	var accessLevel metanet.AccessLevel
 	switch srcNodeState.Access {
 	case "private":
@@ -211,12 +210,50 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 		OnChain:     srcNodeState.OnChain,
 		Compression: srcNodeState.Compression,
 	}
-
 	createPayload, err := metanet.SerializePayload(createNode)
 	if err != nil {
 		return nil, fmt.Errorf("engine: serialize create payload: %w", err)
 	}
 
+	// Build Op2 payload: Delete source node.
+	deleteNode := &metanet.Node{
+		Version:    1,
+		Type:       metanet.NodeType(nodeTypeInt(srcNodeState.Type)),
+		Op:         metanet.OpDelete,
+		Timestamp:  uint64(time.Now().Unix()),
+		LinkTarget: childKP.PublicKey.Compressed(), // "moved_to" pointer
+	}
+	deletePayload, err := metanet.SerializePayload(deleteNode)
+	if err != nil {
+		return nil, fmt.Errorf("engine: serialize delete payload: %w", err)
+	}
+
+	// Build Op3 payload: Update source parent (remove child entry).
+	srcChildrenAfter := make([]*ChildState, 0, len(srcParent.Children)-1)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[:srcChildIdx]...)
+	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[srcChildIdx+1:]...)
+
+	origSrcChildren := srcParent.Children
+	srcParent.Children = srcChildrenAfter
+	srcParentPayload, err := e.buildParentUpdatePayload(srcParent, nil)
+	srcParent.Children = origSrcChildren // restore
+	if err != nil {
+		return nil, fmt.Errorf("engine: serialize src parent payload: %w", err)
+	}
+
+	// Build Op4 payload: Update destination parent (add child entry).
+	dstParentPayload, err := e.buildParentUpdatePayload(dstParent, &ChildState{
+		Name:     dstName,
+		Type:     srcNodeState.Type,
+		PubKey:   childPubHex,
+		Index:    childIdx,
+		Hardened: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("engine: serialize dst parent payload: %w", err)
+	}
+
+	// Allocate UTXOs: dst parent, src node, src parent, fee.
 	dstParentTxID, err := TxIDBytes(dstParent.TxID)
 	if err != nil {
 		return nil, fmt.Errorf("engine: dst parent txid: %w", err)
@@ -226,89 +263,57 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 		return nil, fmt.Errorf("engine: dst parent UTXO: %w", err)
 	}
 
-	changeAddr1, changePriv1, err := e.DeriveChangeAddr()
+	srcNodeUTXO, srcNodeUS, err := e.getNodeUTXOWithState(srcNodeState.PubKeyHex)
 	if err != nil {
 		dstParentUS.Spent = false
-		return nil, err
+		return nil, fmt.Errorf("engine: src node UTXO: %w", err)
 	}
-	changePubHex1 := hex.EncodeToString(changePriv1.PubKey().Compressed())
 
-	feeUTXO1, feeUS1, err := e.AllocateFeeUTXOWithState(3000)
+	srcParentUTXO, srcParentUS, err := e.getNodeUTXOWithState(srcParent.PubKeyHex)
 	if err != nil {
 		dstParentUS.Spent = false
+		srcNodeUS.Spent = false
+		return nil, fmt.Errorf("engine: src parent UTXO: %w", err)
+	}
+
+	changeAddr, changePriv, err := e.DeriveChangeAddr()
+	if err != nil {
+		dstParentUS.Spent = false
+		srcNodeUS.Spent = false
+		srcParentUS.Spent = false
+		return nil, err
+	}
+	changePubHex := hex.EncodeToString(changePriv.PubKey().Compressed())
+
+	feeUTXO, feeUS, err := e.AllocateFeeUTXOWithState(5000)
+	if err != nil {
+		dstParentUS.Spent = false
+		srcNodeUS.Spent = false
+		srcParentUS.Spent = false
 		return nil, err
 	}
 
-	// Track all allocated UTXOs for rollback on failure.
 	allSuccess := false
 	defer func() {
 		if !allSuccess {
 			dstParentUS.Spent = false
-			feeUS1.Spent = false
+			srcNodeUS.Spent = false
+			srcParentUS.Spent = false
+			feeUS.Spent = false
 		}
 	}()
 
-	dstParentPubBytes := mustDecodeHex(dstParent.PubKeyHex)
-	createMtx, err := buildUnsignedCreateChildTx(childKP, dstParentTxID, createPayload, dstParentUTXO, feeUTXO1, dstParentPubBytes, changeAddr1)
+	// Derive keys for all participants.
+	dstParentKP, err := e.Wallet.DeriveNodeKey(dstParent.VaultIndex, dstParent.ChildIndices, nil)
 	if err != nil {
-		return nil, fmt.Errorf("engine: build create child tx: %w", err)
+		return nil, fmt.Errorf("engine: derive dst parent key: %w", err)
 	}
-
-	createTxHex, err := signCreateChildTx(createMtx, dstParentUTXO, feeUTXO1)
-	if err != nil {
-		return nil, fmt.Errorf("engine: sign create child tx: %w", err)
-	}
-	createTxID := hex.EncodeToString(createMtx.TxID)
-
-	// Track parent refresh UTXO from Tx1 so Tx2 can find a node UTXO for dstParent.
-	// Tx1 (CreateChild) consumed dstParent's UTXO as input and produces a fresh
-	// parent UTXO as output — we must register it before buildParentSelfUpdate.
-	// We snapshot the UTXO list length so we can roll back if Tx2-Tx4 fail,
-	// preventing phantom UTXOs from a never-broadcast Tx1.
-	utxoSnapshot := len(e.State.UTXOs)
-	e.TrackNewUTXOs(createMtx, childPubHex, changePubHex1)
-	e.TrackParentRefreshUTXO(createMtx, dstParent.PubKeyHex)
-	defer func() {
-		if !allSuccess {
-			e.State.UTXOs = e.State.UTXOs[:utxoSnapshot]
+	var dstParentParentTxID []byte
+	if dstParent.ParentTxID != "" {
+		dstParentParentTxID, err = TxIDBytes(dstParent.ParentTxID)
+		if err != nil {
+			return nil, err
 		}
-	}()
-
-	// === Tx2: SelfUpdate destination parent (add child entry) ===
-	newChild := &ChildState{
-		Name:     dstName,
-		Type:     srcNodeState.Type,
-		PubKey:   childPubHex,
-		Index:    childIdx,
-		Hardened: true,
-	}
-	dstChildrenAfter := make([]*ChildState, len(dstParent.Children)+1)
-	copy(dstChildrenAfter, dstParent.Children)
-	dstChildrenAfter[len(dstParent.Children)] = newChild
-
-	origDstChildren := dstParent.Children
-	origDstNextIdx := dstParent.NextChildIdx
-	dstParent.Children = dstChildrenAfter
-	dstParent.NextChildIdx = childIdx + 1
-	dstParentTxHex, dstParentTxIDHex, err := e.buildParentSelfUpdate(dstParent)
-	dstParent.Children = origDstChildren    // restore
-	dstParent.NextChildIdx = origDstNextIdx // restore
-	if err != nil {
-		return nil, fmt.Errorf("engine: update destination parent: %w", err)
-	}
-
-	// === Tx3: SelfUpdate source node (op=DELETE, LinkTarget=new_P_node) ===
-	deleteNode := &metanet.Node{
-		Version:    1,
-		Type:       metanet.NodeType(nodeTypeInt(srcNodeState.Type)),
-		Op:         metanet.OpDelete,
-		Timestamp:  uint64(time.Now().Unix()),
-		LinkTarget: childKP.PublicKey.Compressed(), // "moved_to" pointer
-	}
-
-	deletePayload, err := metanet.SerializePayload(deleteNode)
-	if err != nil {
-		return nil, fmt.Errorf("engine: serialize delete payload: %w", err)
 	}
 
 	var srcParentTxIDBytes []byte
@@ -319,73 +324,56 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 		}
 	}
 
-	srcNodeUTXO, srcNodeUS, err := e.getNodeUTXOWithState(srcNodeState.PubKeyHex)
+	srcParentKP, err := e.Wallet.DeriveNodeKey(srcParent.VaultIndex, srcParent.ChildIndices, nil)
 	if err != nil {
-		return nil, fmt.Errorf("engine: src node UTXO: %w", err)
+		return nil, fmt.Errorf("engine: derive src parent key: %w", err)
 	}
-	defer func() {
-		if !allSuccess {
-			srcNodeUS.Spent = false
+	var srcParentParentTxID []byte
+	if srcParent.ParentTxID != "" {
+		srcParentParentTxID, err = TxIDBytes(srcParent.ParentTxID)
+		if err != nil {
+			return nil, err
 		}
-	}()
-
-	changeAddr3, changePriv3, err := e.DeriveChangeAddr()
-	if err != nil {
-		return nil, err
-	}
-	changePubHex3 := hex.EncodeToString(changePriv3.PubKey().Compressed())
-
-	feeUTXO3, feeUS3, err := e.AllocateFeeUTXOWithState(2000)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if !allSuccess {
-			feeUS3.Spent = false
-		}
-	}()
-
-	deleteMtx, err := buildUnsignedSelfUpdateTx(srcKP, srcParentTxIDBytes, deletePayload, srcNodeUTXO, feeUTXO3, changeAddr3)
-	if err != nil {
-		return nil, fmt.Errorf("engine: build delete tx: %w", err)
 	}
 
-	deleteTxHex, err := signSelfUpdateTx(deleteMtx, srcNodeUTXO, feeUTXO3)
+	// Assemble batch: 4 ops in one atomic transaction.
+	batch := tx.NewMutationBatch()
+
+	// Op1: Create child at destination (spends dstParentUTXO as Metanet edge).
+	batch.AddCreateChild(childKP.PublicKey, dstParentTxID, createPayload, dstParentUTXO, dstParentUTXO.PrivateKey)
+
+	// Op2: Delete source node (spends srcNodeUTXO, no P2PKH refresh — UTXO dies).
+	batch.AddDelete(srcKP.PublicKey, srcParentTxIDBytes, deletePayload, srcNodeUTXO, srcKP.PrivateKey)
+
+	// Op3: Update source parent (remove child from children list).
+	batch.AddSelfUpdate(srcParentKP.PublicKey, srcParentParentTxID, srcParentPayload, srcParentUTXO, srcParentKP.PrivateKey)
+
+	// Op4: Update destination parent (add child to children list).
+	// dstParentUTXO is same as Op1's — gets deduped to one input.
+	batch.AddSelfUpdate(dstParentKP.PublicKey, dstParentParentTxID, dstParentPayload, dstParentUTXO, dstParentKP.PrivateKey)
+
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
+
+	txHex, result, err := buildAndSignBatch(batch)
 	if err != nil {
-		return nil, fmt.Errorf("engine: sign delete tx: %w", err)
-	}
-	deleteTxID := hex.EncodeToString(deleteMtx.TxID)
-
-	// === Tx4: SelfUpdate source parent (remove child entry) ===
-	srcChildrenAfter := make([]*ChildState, 0, len(srcParent.Children)-1)
-	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[:srcChildIdx]...)
-	srcChildrenAfter = append(srcChildrenAfter, srcParent.Children[srcChildIdx+1:]...)
-
-	origSrcChildren := srcParent.Children
-	srcParent.Children = srcChildrenAfter
-	srcParentTxHex, srcParentTxIDHex, err := e.buildParentSelfUpdate(srcParent)
-	srcParent.Children = origSrcChildren // restore
-	if err != nil {
-		return nil, fmt.Errorf("engine: update source parent: %w", err)
+		return nil, fmt.Errorf("engine: batch cross-move tx: %w", err)
 	}
 
-	// Store new encrypted content (deferred until all TXs built successfully).
+	// Store new encrypted content.
 	if err := e.Store.Put(encResult.KeyHash, encResult.Ciphertext); err != nil {
 		return nil, fmt.Errorf("engine: store copy: %w", err)
 	}
-	defer func() {
-		if !allSuccess {
-			_ = e.Store.Delete(encResult.KeyHash)
-		}
-	}()
 
-	// --- Phase 2: All 4 builds succeeded — apply state ---
 	allSuccess = true
+	txIDHex := hex.EncodeToString(result.TxID)
 
-	// Register new child node in state.
+	// --- Apply state changes ---
+
+	// Register new child node.
 	childState := &NodeState{
 		PubKeyHex:    childPubHex,
-		TxID:         createTxID,
+		TxID:         txIDHex,
 		ParentTxID:   dstParent.TxID,
 		Type:         srcNodeState.Type,
 		Access:       srcNodeState.Access,
@@ -407,33 +395,34 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	e.State.SetNode(childPubHex, childState)
 
 	// Update destination parent.
-	dstParent.Children = dstChildrenAfter
+	dstParent.Children = append(dstParent.Children, &ChildState{
+		Name:     dstName,
+		Type:     srcNodeState.Type,
+		PubKey:   childPubHex,
+		Index:    childIdx,
+		Hardened: true,
+	})
 	dstParent.NextChildIdx = childIdx + 1
-	dstParent.TxID = dstParentTxIDHex
+	dstParent.TxID = txIDHex
 
-	// Mark source node as deleted (remove its path so it doesn't resolve).
-	srcNodeState.TxID = deleteTxID
+	// Mark source node as deleted.
+	srcNodeState.TxID = txIDHex
 	srcNodeState.Path = "" // no longer resolvable
 
 	// Update source parent.
 	srcParent.Children = srcChildrenAfter
-	srcParent.TxID = srcParentTxIDHex
+	srcParent.TxID = txIDHex
 
-	// Clean up old encrypted content from storage (best-effort).
-	// The source content has been re-encrypted under the new key, so the old
-	// ciphertext at srcKeyHash is no longer needed.
+	// Clean up old encrypted content (best-effort).
 	_ = e.Store.Delete(srcKeyHash)
 
-	// Tx1 UTXOs already tracked before Tx2 build (needed for UTXO chaining).
-	// Track UTXOs from Tx3 (Delete source node).
-	e.TrackNewUTXOs(deleteMtx, srcNodeState.PubKeyHex, changePubHex3)
-
-	combinedTxHex := createTxHex + "\n" + dstParentTxHex + "\n" + deleteTxHex + "\n" + srcParentTxHex
+	// Track batch UTXOs: [0]=child(create), [1]=delete(nil), [2]=srcParent, [3]=dstParent.
+	e.TrackBatchUTXOs(result, []string{childPubHex, "", srcParent.PubKeyHex, dstParent.PubKeyHex}, changePubHex)
 
 	return &Result{
-		TxHex:   combinedTxHex,
-		TxID:    createTxID,
-		Message: fmt.Sprintf("Moved %s -> %s (4 txs: create=%s, dstParent=%s, delete=%s, srcParent=%s)", opts.SrcPath, opts.DstPath, createTxID[:8], dstParentTxIDHex[:8], deleteTxID[:8], srcParentTxIDHex[:8]),
+		TxHex:   txHex,
+		TxID:    txIDHex,
+		Message: fmt.Sprintf("Moved %s -> %s (atomic: create+delete+srcUpdate+dstUpdate)", opts.SrcPath, opts.DstPath),
 		NodePub: childPubHex,
 	}, nil
 }
