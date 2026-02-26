@@ -22,6 +22,7 @@
 | 十四-B 收益权 ISO | 十一-f 收益权代币化 | 编号偏移 |
 | 十五-B BIP32 访问控制 | (跨章节) | 系统设计无独立章节 |
 | 十六-B Paymail | 六 DNSLink / Paymail | 编号偏移 |
+| 二十二-B 版本日志/共享列表/ACL | 二十二 权限管理 + 十二 版本控制 | 实现说明 |
 
 ---
 
@@ -245,36 +246,37 @@ PRIVATE / PAID:
 
 #### PRIVATE 模式 Payload Envelope
 
+> **设计决策 #10** (交易规范): 不存储明文 key_hash / file_index。通过独立的元数据加密密钥
+> (`info="bitfs-metadata-encryption"`, `salt=SHA256(P_node)`) 实现 PRIVATE 信封加密,
+> 配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密实现恢复。
+
 ```
 加密 (EncryptPrivatePayload):
   1. data = proto.Marshal(完整 BitFSPayload)
-  2. key_hash = SHA256(SHA256(data))             ← 注: 以序列化 payload 为输入
-  3. file_index = payload.Index
-  4. S_node = ECDH(D_node, P_node).x
-  5. aes_key = HKDF-SHA256(ikm=S_node, salt=key_hash, info="bitfs-file-encryption")
-  6. enc_payload = nonce(12B) || AES-256-GCM(data, aes_key) || tag
+  2. S_node = ECDH(D_node, P_node).x
+  3. meta_key = HKDF-SHA256(ikm=S_node, salt=SHA256(P_node), info="bitfs-metadata-encryption")
+  4. enc_payload = nonce(12B) || AES-256-GCM(data, meta_key) || tag
 
   返回 envelope:
     BitFSPayload {
       encrypted: true,
-      private_key_hash: key_hash (32B, 明文),
-      private_file_index: file_index (明文),
       enc_payload: enc_payload
     }
-    → 其余字段为零值
+    → 其余字段为零值, 不存储明文 key_hash / file_index
 
 解密 (DecryptPrivatePayload):
-  1. key_hash = envelope.private_key_hash
-  2. file_index = envelope.private_file_index
-  3. S_node = ECDH(D_node, P_node).x
-  4. aes_key = HKDF-SHA256(ikm=S_node, salt=key_hash, info="bitfs-file-encryption")
-  5. data = AES-256-GCM.Open(enc_payload, aes_key)
-  6. payload = proto.Unmarshal(data)
+  1. S_node = ECDH(D_node, P_node).x
+  2. meta_key = HKDF-SHA256(ikm=S_node, salt=SHA256(P_node), info="bitfs-metadata-encryption")
+  3. data = AES-256-GCM.Open(enc_payload, meta_key)
+  4. payload = proto.Unmarshal(data)
 
-恢复可行性:
-  - D_node: 从 HD 种子 + 文件路径确定性派生
-  - private_key_hash + private_file_index: 在 envelope 明文中
-  → 即使丢失其他所有数据, 仅凭助记词 + envelope 即可恢复
+钱包恢复:
+  - P_node: 始终明文 (OP_RETURN 中)
+  - D_node: 从 HD 种子 + BIP32 路径确定性派生
+  - meta_key: HKDF(ECDH(D_node, P_node).x, SHA256(P_node), "bitfs-metadata-encryption")
+  - 解密 enc_payload → 恢复完整 TLV (含 key_hash, file_index 等)
+  - 目录节点解密后, ChildEntry 包含子节点 P_node + BIP32 索引 → 递归恢复
+  → 仅凭助记词即可恢复整棵树
 ```
 
 #### 模式转换 (ReEncrypt)
@@ -404,10 +406,10 @@ bitfs wallet restore:
   → 相同的 aes_key = HKDF-SHA256(ikm=S_node, salt=key_hash, info="bitfs-file-encryption")
   → 可解密对应文件
 
-给定 PRIVATE envelope (encrypted=true, private_key_hash, private_file_index):
-  → D_node 从路径派生, P_node 从 D_node 计算
-  → aes_key = HKDF-SHA256(ikm=ECDH(D_node, P_node).x, salt=private_key_hash, info="bitfs-file-encryption")
-  → 可解密 enc_payload → 恢复完整 TLV 元数据
+给定 PRIVATE envelope (encrypted=true, enc_payload):
+  → D_node 从路径派生, P_node 从 OP_RETURN 明文获取
+  → meta_key = HKDF-SHA256(ikm=ECDH(D_node, P_node).x, salt=SHA256(P_node), info="bitfs-metadata-encryption")
+  → 可解密 enc_payload → 恢复完整 TLV 元数据 (含 key_hash, file_index 等)
 ```
 
 ### G. 网络配置
@@ -3083,6 +3085,105 @@ Paymail 与 DNSLink 冲突:
   - 两套 DNS 记录独立: _bsvalias._tcp vs _bitfs._tcp
   - 可指向同一服务器, 不冲突
   - Paymail 多用户, DNSLink 单用户 → 互补而非替代
+```
+
+---
+
+## 二十二-B、版本日志、共享列表与 ACL 实现说明
+
+本节补充系统设计第十二章 (版本控制) 和第二十二章 (权限管理) 中 Version Log、Share List、ACL 三项功能的实现细节。
+
+### A. 版本日志 (Version Log)
+
+```
+TLV 定义:
+  field 31, tag 0x1F (TagVersionLog)
+  value: 33 bytes compressed public key (指向版本记录 Metanet 节点)
+
+版本记录节点 payload:
+  prev_version_txid: [32]byte    // 前一版本记录节点的 TxID (全零 = 首版本)
+
+链表结构:
+  file.version_log → VersionNode_N → VersionNode_{N-1} → ... → VersionNode_0
+                      (最新)           (prev_version_txid)        (prev = 0x00...00)
+
+创建时机:
+  SelfUpdate 且 node.VersionLog != nil 时, 自动创建新版本记录节点:
+    1. 新建 VersionNode, prev_version_txid = 当前最新版本 TxID
+    2. SelfUpdate 交易中包含该 VersionNode 的 CreateChild 操作
+
+遍历算法:
+  func ListVersions(versionLogPK []byte) []TxID:
+    current = resolve(versionLogPK)  // 通过 P_node 解析到最新 tx
+    versions = []
+    while current != nil:
+      versions.append(current.TxID)
+      prev = current.payload.prev_version_txid
+      if prev == zero_bytes:
+        break
+      current = lookupByTxID(prev)
+    return versions
+```
+
+### B. 共享列表 (Share List)
+
+```
+TLV 定义:
+  field 32, tag 0x27 (TagShareList)
+  value: 33 bytes compressed public key (指向共享列表 Metanet 节点)
+
+共享列表节点 payload:
+  addresses: repeated [20]byte   // P2PKH 地址列表 (RIPEMD160(SHA256(pubkey)))
+
+序列化: 直接拼接, 总长度 = N × 20 bytes, N = len(payload) / 20
+
+访问检查算法:
+  func CheckShareAccess(shareListPK []byte, requesterAddr [20]byte) bool:
+    node = resolve(shareListPK)
+    for i := 0; i < len(node.payload); i += 20:
+      if node.payload[i:i+20] == requesterAddr:
+        return true
+    return false
+
+与 ACL 的关系:
+  - Share List: 简化版, 仅地址白名单, 无分组/权限级别
+  - ACL: 完整版, POSIX ACL 风格, 群签名/群加密, 支持子群
+  - 两者互斥: 同一 ChildEntry 不应同时设置 share_list 和 acl_ref
+  - 优先级: acl_ref > share_list > 默认 owner 权限
+```
+
+### C. ACL 实现路径 (Phase 4)
+
+```
+ACL 节点 TLV:
+  field 41, tag 0x29 (TagACLRef)
+  value: 33 bytes compressed public key (指向 ACL Metanet 节点)
+
+BLS12-381 库选型:
+  候选 1: github.com/kilic/bls12-381 (纯 Go, 无 CGO, MIT)
+  候选 2: github.com/consensys/gnark-crypto (高性能, Apache 2.0)
+  选型标准: 纯 Go 优先 (CGO 增加构建复杂度), 性能次要
+
+凭证结构:
+  Credential = BLS.Sign(GMK, H(member_pubkey || subgroup || attributes || expiry))
+  - member_pubkey: secp256k1 公钥 (33 bytes, 身份绑定)
+  - subgroup: 子群名称 UTF-8 编码
+  - attributes: 权限属性 (r/w)
+  - expiry: Unix timestamp (0 = 永不过期)
+
+BLS 密钥派生 (从 BIP39 seed):
+  bls_ikm = HKDF-SHA256(seed, salt="bitfs-bls12-381", info="", L=48)
+  bls_sk = KeyGen(bls_ikm)   // 按 EIP-2333 或 draft-irtf-cfrg-bls-signature
+  bls_pk = bls_sk × G1        // BLS12-381 G1 点
+
+凭证分发:
+  encrypted_cred = Method42_Encrypt(PK_owner, PK_member, raw_credential)
+  存储在 ACL 节点的 subgroups[].members[].credential 字段中
+
+凭证撤销:
+  1. Owner 从 ACL 节点移除该成员条目
+  2. SelfUpdate ACL 节点
+  3. (可选) 用新 GPK 重新加密内容, 防止被撤销成员解密新版本
 ```
 
 ---

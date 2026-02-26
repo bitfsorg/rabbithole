@@ -1536,6 +1536,19 @@ $ bstat --versions bitfs://example.com/docs/report.pdf
 $ bget --version 1 bitfs://example.com/docs/report.pdf
 ```
 
+### 版本日志节点 (Version Log)
+
+`version_log` 字段 (field 31, tag 0x1F) 指向一个独立的 Metanet 版本记录节点。
+
+**版本节点结构**:
+- 独立 Metanet 节点, P_node 存储在父文件的 version_log 字段
+- payload 包含 `prev_version_txid` (32 bytes), 指向前一版本记录节点
+- 形成单向链表: 最新 → 前一版本 → ... → 第一版本 (prev_version_txid = 0)
+
+**遍历**: 从 version_log P_node 获取最新版本 → 沿 prev_version_txid 回溯
+**创建**: 每次 SelfUpdate 且 version_log 非空时, 自动创建新版本记录节点
+**限制**: 不剪枝 (区块链数据不可删除), 客户端可选择只获取最近 N 个版本
+
 ### Git Remote Helper
 
 `git-remote-bitfs` 自定义 remote helper, 实现 `import`/`export` capabilities, 让 BitFS 成为完整的 git remote:
@@ -2054,6 +2067,15 @@ share/unshare/chown 全部推迟到群签名 (Group Signature) 技术成熟后�
 
 当前阶段只有 sell/buy (查看权交易)。
 
+#### 共享列表节点 (Share List)
+
+`share_list` 字段 (field 32, tag 0x27) 指向一个独立的 Metanet 共享列表节点。
+
+**节点结构**: payload 包含 repeated P2PKH 地址 (20 bytes each)
+**查询**: Daemon 检查请求者地址是否在列表中
+**更新**: Owner 通过 SelfUpdate 修改列表节点
+**与 ACL 的关系**: Share List 是 ACL 的简化版 (无签名验证, 仅地址列表)
+
 ### 20.2 sCrypt 链上验证 (远期)
 
 用 sCrypt 在 Bitcoin Script 中实现 EC 运算, 用于**验证** capsule 和签名的链上有效性, 使交易无需 Seller 在线即可自动完成。注意: sCrypt 用于验证而非生成 — 密钥和签名仍在链下计算。当前用 HTLC/Token 方案 (需 Seller daemon 在线)。
@@ -2511,6 +2533,14 @@ Alice 的目录                               Bob 的目录
 - **单用户场景**（私有文件、买卖交易）：继续使用 Method 42 ECDH，无需 ACL
 - **多用户协作场景**：ACL 节点 + 群签名/群加密，credential 通过 Method 42 分发
 - **ChildEntry 无 acl_ref 时**：使用节点 P_node 的 owner 权限（默认行为，向后兼容）
+
+### 实现说明 (Phase 4)
+
+- BLS12-381 库待选: github.com/kilic/bls12-381 (纯 Go, 无 CGO) 或 gnark-crypto
+- 凭证结构: BLS signature over (member_pubkey, attributes, expiry)
+- 凭证颁发: Owner 生成群密钥 → 签发凭证 → 通过 Method 42 ECDH 分发
+- 凭证撤销: SelfUpdate 更新 ACL 引用 → 新 Registry 不含被撤销成员
+- ACLRef 指向 Metanet 节点, 该节点 payload 包含 group public key + 成员列表
 
 
 ---
