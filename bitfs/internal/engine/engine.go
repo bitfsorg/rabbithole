@@ -22,6 +22,7 @@ type Engine struct {
 	Wallet   *wallet.Wallet
 	WState   *wallet.WalletState
 	Store    *storage.FileStore
+	Resolver *storage.ContentResolver // multi-source content fetcher
 	State    *LocalState
 	DataDir  string
 	DNS      DNSResolver               // injectable for testing; nil uses default net.LookupTXT
@@ -89,12 +90,17 @@ func New(dataDir, password string) (*Engine, error) {
 		return nil, fmt.Errorf("engine: load local state: %w", err)
 	}
 
+	// Initialize content resolver with local store.
+	// Remote endpoints are added via SetResolverEndpoints().
+	resolver := storage.NewContentResolver(store)
+
 	return &Engine{
-		Wallet:  w,
-		WState:  wState,
-		Store:   store,
-		State:   localState,
-		DataDir: dataDir,
+		Wallet:   w,
+		WState:   wState,
+		Store:    store,
+		Resolver: resolver,
+		State:    localState,
+		DataDir:  dataDir,
 	}, nil
 }
 

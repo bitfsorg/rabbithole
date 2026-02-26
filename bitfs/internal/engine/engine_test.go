@@ -83,6 +83,12 @@ func TestNew_Success(t *testing.T) {
 	}
 }
 
+func TestNew_ResolverInitialized(t *testing.T) {
+	eng := initTestEngine(t)
+	assert.NotNil(t, eng.Resolver, "Resolver should be initialized")
+	assert.Equal(t, eng.Store, eng.Resolver.Store, "Resolver should use engine's store")
+}
+
 func TestNew_MissingWallet(t *testing.T) {
 	_, err := New(t.TempDir(), "pass")
 	if err == nil {
