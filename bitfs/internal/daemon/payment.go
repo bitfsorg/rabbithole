@@ -140,9 +140,11 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Compute capsule on demand when buyer provides their pubkey.
-	if len(invoice.Capsule) == 0 && len(invoice.NodePNode) > 0 {
-		buyerPubHex := r.URL.Query().Get("buyer_pubkey")
-		if buyerPubHex != "" {
+	// Use write lock for the entire check-compute-set to prevent TOCTOU race.
+	buyerPubHex := r.URL.Query().Get("buyer_pubkey")
+	if buyerPubHex != "" && len(invoice.NodePNode) > 0 {
+		d.invoicesMu.Lock()
+		if len(invoice.Capsule) == 0 {
 			buyerPubBytes, err := hex.DecodeString(buyerPubHex)
 			if err == nil && len(buyerPubBytes) == 33 {
 				buyerPub, err := ec.PublicKeyFromBytes(buyerPubBytes)
@@ -166,18 +168,17 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 									Timeout:      x402.DefaultHTLCTimeout,
 								})
 							}
-							d.invoicesMu.Lock()
 							invoice.Capsule = capsule
 							invoice.CapsuleHash = hex.EncodeToString(capsuleHash)
 							if len(htlcScript) > 0 {
 								invoice.HTLCScript = htlcScript
 							}
-							d.invoicesMu.Unlock()
 						}
 					}
 				}
 			}
 		}
+		d.invoicesMu.Unlock()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -202,49 +203,54 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d.invoicesMu.RLock()
-	invoice, ok := d.invoices[txid]
-	d.invoicesMu.RUnlock()
-
-	if !ok {
-		writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Invoice not found")
-		return
-	}
-
-	// Check if the invoice has expired.
-	if time.Now().After(invoice.Expiry) {
-		d.invoicesMu.Lock()
-		delete(d.invoices, txid)
-		d.invoicesMu.Unlock()
-		writeJSONError(w, http.StatusNotFound, "EXPIRED", "Invoice has expired")
-		return
-	}
-
-	// Check if already paid.
-	if invoice.Paid {
-		writeJSONError(w, http.StatusConflict, "ALREADY_PAID", "Invoice has already been paid")
-		return
-	}
-
-	// Read the HTLC transaction from the request body.
+	// Read body BEFORE acquiring lock (I/O should not hold locks).
 	defer func() { _ = r.Body.Close() }()
 	htlcBody, err := io.ReadAll(io.LimitReader(r.Body, maxHTLCBodySize))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
 		return
 	}
-
-	// Require a non-empty transaction body.
 	if len(htlcBody) == 0 {
 		writeJSONError(w, http.StatusBadRequest, "EMPTY_TX", "HTLC transaction body is required")
 		return
 	}
 
-	// Verify the payment transaction.
+	// Single write lock for the entire check-verify-set sequence to prevent TOCTOU.
+	d.invoicesMu.Lock()
+	invoice, ok := d.invoices[txid]
+	if !ok {
+		d.invoicesMu.Unlock()
+		writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Invoice not found")
+		return
+	}
+	if time.Now().After(invoice.Expiry) {
+		delete(d.invoices, txid)
+		d.invoicesMu.Unlock()
+		writeJSONError(w, http.StatusNotFound, "EXPIRED", "Invoice has expired")
+		return
+	}
+	if invoice.Paid {
+		d.invoicesMu.Unlock()
+		writeJSONError(w, http.StatusConflict, "ALREADY_PAID", "Invoice has already been paid")
+		return
+	}
+	// Mark paid immediately to prevent concurrent claims (optimistic lock).
+	invoice.Paid = true
+	d.invoicesMu.Unlock()
+
+	// Verify the payment transaction (outside lock — crypto/parsing is CPU-bound, not lock-worthy).
+	// On any failure below, rollback the Paid flag.
+	rollbackPaid := func() {
+		d.invoicesMu.Lock()
+		invoice.Paid = false
+		d.invoicesMu.Unlock()
+	}
+
 	if len(invoice.HTLCScript) > 0 {
 		// HTLC path: verify the funding tx has a matching HTLC output.
 		_, err := x402.VerifyHTLCFunding(htlcBody, invoice.HTLCScript, invoice.TotalPrice)
 		if err != nil {
+			rollbackPaid()
 			writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID",
 				fmt.Sprintf("HTLC verification failed: %v", err))
 			return
@@ -261,6 +267,7 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 			Expiry:      invoice.Expiry.Unix(),
 		}
 		if err := x402.VerifyPayment(proof, inv); err != nil {
+			rollbackPaid()
 			writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", "Payment verification failed")
 			return
 		}
@@ -269,6 +276,7 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 	// Replay protection: ensure the same transaction is not used for multiple invoices.
 	submittedTx, parseErr := transaction.NewTransactionFromBytes(htlcBody)
 	if parseErr != nil {
+		rollbackPaid()
 		writeJSONError(w, http.StatusBadRequest, "PAYMENT_INVALID", "Cannot parse transaction")
 		return
 	}
@@ -277,6 +285,7 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 	d.usedTxIDsMu.Lock()
 	if existingInvoice, used := d.usedTxIDs[submittedTxID]; used {
 		d.usedTxIDsMu.Unlock()
+		rollbackPaid()
 		writeJSONError(w, http.StatusConflict, "TX_REUSED",
 			fmt.Sprintf("Transaction already used for invoice %s", existingInvoice))
 		return
@@ -289,20 +298,16 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		txHex := hex.EncodeToString(htlcBody)
 		_, broadcastErr := d.chain.BroadcastTx(r.Context(), txHex)
 		if broadcastErr != nil {
-			// Rollback replay tracking on broadcast failure.
+			// Rollback replay tracking and paid flag on broadcast failure.
 			d.usedTxIDsMu.Lock()
 			delete(d.usedTxIDs, submittedTxID)
 			d.usedTxIDsMu.Unlock()
+			rollbackPaid()
 			writeJSONError(w, http.StatusBadRequest, "BROADCAST_FAILED",
 				fmt.Sprintf("Payment tx not accepted: %v", broadcastErr))
 			return
 		}
 	}
-
-	// Mark as paid.
-	d.invoicesMu.Lock()
-	invoice.Paid = true
-	d.invoicesMu.Unlock()
 
 	// Return the capsule (ECDH shared secret).
 	if len(invoice.Capsule) == 0 {

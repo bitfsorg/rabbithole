@@ -650,6 +650,64 @@ func TestFullPurchaseFlow(t *testing.T) {
 	assert.Contains(t, w4.Body.String(), "ALREADY_PAID")
 }
 
+// --- Concurrent Double-Payment Test ---
+
+func TestHandleSubmitHTLC_ConcurrentDoublePayment(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	capsuleData := []byte("test-capsule-ecdh-secret-32bytes!")
+	totalPrice := x402.CalculatePrice(75, 2048)
+
+	invoice := &InvoiceRecord{
+		ID:          "race-invoice",
+		TotalPrice:  totalPrice,
+		PricePerKB:  75,
+		FileSize:    2048,
+		PaymentAddr: testPaymentAddr,
+		CapsuleHash: strings.Repeat("dd", 32),
+		Capsule:     capsuleData,
+		Expiry:      time.Now().Add(time.Hour),
+		Paid:        false,
+	}
+	d.invoicesMu.Lock()
+	d.invoices["race-invoice"] = invoice
+	d.invoicesMu.Unlock()
+
+	const numGoroutines = 10
+	results := make(chan int, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			htlcTx := buildTestPaymentTx(t, testPaymentAddr, totalPrice)
+			req := httptest.NewRequest("POST", "/_bitfs/buy/race-invoice", bytes.NewReader(htlcTx))
+			w := httptest.NewRecorder()
+			d.Handler().ServeHTTP(w, req)
+			results <- w.Code
+		}()
+	}
+
+	successCount := 0
+	alreadyPaidCount := 0
+	txReusedCount := 0
+	for i := 0; i < numGoroutines; i++ {
+		code := <-results
+		switch code {
+		case http.StatusOK:
+			successCount++
+		case http.StatusConflict:
+			// Could be ALREADY_PAID or TX_REUSED
+			alreadyPaidCount++
+		default:
+			txReusedCount++
+		}
+	}
+
+	// Only 1 goroutine should get the capsule (200 OK).
+	assert.Equal(t, 1, successCount, "exactly one concurrent request should succeed")
+	assert.Equal(t, numGoroutines-1, alreadyPaidCount+txReusedCount,
+		"remaining requests should get ALREADY_PAID or TX_REUSED")
+}
+
 // --- CORS Preflight for Buy Endpoint ---
 
 func TestBuyEndpoint_OptionsPreflight(t *testing.T) {
