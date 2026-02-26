@@ -1,6 +1,8 @@
 # BitFS Transaction Specification v1.0
 
-> **状态**: DRAFT
+> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · **交易规范** (本文档)
+>
+> **状态**: DRAFT v1.1
 > **日期**: 2026-02-26
 > **权威性**: 本文档是 BitFS 交易结构的唯一权威参考 (Single Source of Truth)。
 > 代码实现、白皮书、设计文档如有矛盾，均以本规范为准。
@@ -9,15 +11,15 @@
 
 ## 目录
 
-- [第 1 层：密码学基础](#第-1-层密码学基础-cryptographic-primitives)
-- [第 2 层：Metanet 协议](#第-2-层metanet-协议-protocol-layer)
-- [第 3 层：交易结构](#第-3-层交易结构-transaction-templates)
-- [第 4 层：加密协议 Method 42](#第-4-层加密协议-method-42)
-- [第 5 层：文件系统操作映射](#第-5-层文件系统操作映射)
-- [第 6 层：命令行接口](#第-6-层命令行接口-cli)
+- [第 1 层：密码学基础](#第-1-层密码学基础-cryptographic-primitives) — secp256k1, ECDH, HKDF, AES-GCM, BIP32, Argon2id
+- [第 2 层：Metanet 协议](#第-2-层metanet-协议-protocol-layer) — 节点模型, 边模型, TLV 编码, 验证规则
+- [第 3 层：交易结构](#第-3-层交易结构-transaction-templates) — CreateRoot, CreateChild, SelfUpdate, DataTx
+- [第 4 层：加密协议 Method 42](#第-4-层加密协议-method-42) — 三种访问模式, PRIVATE 信封, Capsule 交换
+- [第 5 层：文件系统操作映射](#第-5-层文件系统操作映射) — 操作→交易映射, UTXO 管理, 索引管理
+- [第 6 层：命令行接口](#第-6-层命令行接口-cli) — bitfs Owner 命令, b\* Visitor 工具
 - [附录 A：TLV Tag 常量表](#附录-atlv-tag-常量表)
 - [附录 B：Bitcoin Script 模板](#附录-bbitcoin-script-模板)
-- [附录 C：设计决策记录](#附录-c设计决策记录)
+- [附录 C：设计决策记录](#附录-c设计决策记录) — 13 项设计决策
 - [附录 D：与 CSW Method 42 原始论文的关系](#附录-d与-csw-method-42-原始论文的关系)
 
 ---
@@ -71,8 +73,17 @@ derived_key = HKDF-SHA256(ikm, salt, info, length=32)
 
 | info 值 | 用途 | 常量名 |
 |---------|------|--------|
-| `"bitfs-file-encryption"` | 文件加密密钥派生 | `HKDFInfo` |
+| `"bitfs-file-encryption"` | 文件内容加密密钥派生 | `HKDFInfo` |
 | `"bitfs-buyer-mask"` | 买家掩码密钥派生 | `HKDFBuyerMaskInfo` |
+| `"bitfs-metadata-encryption"` | PRIVATE 元数据信封加密 | `HKDFMetadataInfo` |
+
+**盐的选择**：
+
+| 用途 | salt 值 | 来源 |
+|------|---------|------|
+| 文件内容加密 | `SHA256(SHA256(plaintext))` | 文件内容的双重哈希 |
+| 买家掩码 | `SHA256(SHA256(plaintext))` | 同上 |
+| 元数据信封加密 | `SHA256(P_node)` | 节点公钥哈希（始终可从 OP_RETURN 获取） |
 
 > **设计决策 #5**: info 使用 `"bitfs-file-encryption"` 而非 `"bitfs-method42"`，
 > 因为域分隔符应标识密钥用途而非协议名称，便于未来扩展新用途。
@@ -318,10 +329,61 @@ Offset        Type      Size      Field
 
 Link 节点的 `LinkTarget` 字段 (tag `0x09`) 存储目标节点的 `P_node`。
 
-**链接解析**：
-- 最大单次解析深度：`MaxLinkDepth = 10`
+**链接与路径解析**：
+
+| 常量 | 值 | 说明 |
+|------|-----|------|
+| `MaxLinkDepth` | 10 | 单条软链接链的最大跟随次数 |
+| `MaxTotalLinkFollows` | 40 | 单次路径解析中所有链接跟随次数之和 |
+| `MaxPathComponents` | 256 | 路径中最大组件数 |
+
 - 解析时跟随 `LinkTarget` 找到目标节点
-- 如果目标也是 Link，递归解析（受深度限制）
+- 如果目标也是 Link，递归解析（受 `MaxLinkDepth` 限制）
+- `SoftRemote` 链接需要通过网络请求远程 daemon 解析
+- 路径中的 `.` 表示当前目录（跳过），`..` 返回父目录（不可超过根节点）
+
+---
+
+### 2.7 协议验证规则
+
+实现必须遵守以下验证规则。未通过验证的交易或节点应被拒绝。
+
+#### 交易结构验证
+
+1. OP_RETURN 必须包含恰好 **4 个 push data**（MetaFlag, P_node, TxID_parent, Payload）
+2. Push[0] (MetaFlag) 必须等于 `0x6d657461`
+3. Push[1] (P_node) 必须为 33 字节压缩公钥，且为有效 secp256k1 曲线点
+4. Push[2] (TxID_parent) 必须为 0 字节（根节点）或 32 字节
+5. Push[3] (Payload) 不得为空
+6. CreateChild: Input 0 必须由 `D_parent` 签名（建立 Metanet 边）
+7. SelfUpdate: Input 0 必须由 `D_node` 签名（证明节点所有权）
+8. 所有 P2PKH 输出金额 ≥ `DustLimit` (1 sat)
+9. 找零金额 < `DustLimit` 时，不创建找零输出
+
+#### TLV 编码验证
+
+10. 未知 tag 必须跳过，不得报错（前向兼容）
+11. 固定长度字段（uint32=4B, uint64=8B）长度不匹配时忽略该字段
+12. ChildEntry 二进制格式必须严格遵循 §2.4 定义
+13. ChildEntry 的 PubKey 长度必须为 33 字节
+14. ChildEntry 的 Name 长度不得超过 255 字节
+
+#### 文件系统约束
+
+15. 子节点名称禁止字符：`/`、`\x00`、控制字符 (Unicode IsControl)、格式字符 (Unicode Cf)
+16. 保留名称 `.` 和 `..` 不可用作子节点名称
+17. 同一目录下子节点名称不得重复
+18. 子索引 (NextChildIndex) 单调递增，删除后**不重用**
+19. 软链接解析深度限制：单链 ≤ 10 次，全路径 ≤ 40 次
+20. 路径组件数上限 256
+
+#### SPV 验证
+
+21. 区块头必须为 80 字节
+22. PoW 验证：`DoubleHash(header) ≤ CompactToTarget(header.Bits)`
+23. 头链连续性：`header[i].PrevBlock == Hash(header[i-1])`
+24. Merkle 证明：`ComputeMerkleRoot(TxID, index, proofNodes) == header.MerkleRoot`
+25. Merkle 成员性证明使用**常数时间比较** (constant-time compare) 防止时序攻击
 
 ---
 
@@ -540,24 +602,143 @@ aes_key = HKDF-SHA256(ECDH(D_node, P_node).x, key_hash, "bitfs-file-encryption")
 - `ciphertext`: 加密后的密文 (含 nonce + tag)
 - `key_hash`: 32 bytes，写入 Metanet 节点的 tag `0x06`
 
-### 4.3 PRIVATE 模式信封
+### 4.3 PRIVATE 模式信封加密
 
-当节点为 PRIVATE 模式 (`Encrypted=true`)，整个 TLV payload 被加密：
+当节点为 PRIVATE 模式 (`Encrypted=true`)，整个 TLV payload 使用独立的元数据加密密钥加密。
+
+#### 4.3.1 元数据加密密钥
+
+PRIVATE 模式使用**两层密钥**：元数据加密密钥（解密 TLV payload）和文件加密密钥（解密文件内容）。
+两者使用不同的 HKDF info 和 salt，实现密钥隔离。
+
+**元数据加密密钥**：
+
+```
+metadata_key = HKDF-SHA256(
+    ikm  = ECDH(D_node, P_node).x,          // 自身密钥对 ECDH，32 bytes
+    salt = SHA256(P_node),                    // 节点公钥哈希，32 bytes
+    info = "bitfs-metadata-encryption"        // 元数据域分隔符
+)
+```
+
+盐使用 `SHA256(P_node)` 而非 `key_hash`，因为：
+- `key_hash` 位于加密 payload 内部，加密前不可知
+- `P_node` 始终在 OP_RETURN 中以明文存在，加密和恢复时均可获取
+
+#### 4.3.2 信封格式
 
 ```
 加密前的 Payload:
-  version, type, op, mime_type, file_size, key_hash, access, ...
+  version, type, op, mime_type, file_size, key_hash, access, children, ...
 
-加密后的 Payload:
-  encrypted = true (tag 0x13)
-  enc_payload = nonce || AES-GCM(原始 Payload) || tag   (tag 0x1B)
+加密后的 OP_RETURN Payload（仅 2 个 TLV 字段）:
+  tag 0x13: encrypted = true
+  tag 0x1B: enc_payload = nonce(12B) || AES-GCM(原始 Payload, metadata_key) || tag(16B)
 ```
 
-**钱包恢复机制**：待设计。需要一种机制让恢复的钱包能定位并解密 PRIVATE 节点，
-而不在链上泄露 file_index 或 key_hash 明文。
+**链上可见信息**：
 
-> **设计决策 #10**: 不在加密信封外部存储明文 `private_key_hash` 和 `private_file_index`。
-> 恢复机制将通过 BIP32 路径扫描或链上加密索引实现（方案待定）。
+| 字段 | 位置 | 可见性 |
+|------|------|--------|
+| `P_node` | OP_RETURN Push[1] | 明文（节点身份） |
+| `TxID_parent` | OP_RETURN Push[2] | 明文（父节点引用） |
+| `encrypted` | TLV tag 0x13 | 明文（标志位） |
+| `enc_payload` | TLV tag 0x1B | 密文 |
+
+所有元数据（文件名、类型、大小、key_hash、子节点列表）均在密文内部，链上不可见。
+
+#### 4.3.3 两层解密流程
+
+Owner 解密 PRIVATE 文件的完整流程：
+
+```
+步骤 1: 解密元数据
+  metadata_key = HKDF(ECDH(D_node, P_node).x, SHA256(P_node), "bitfs-metadata-encryption")
+  raw_payload  = AES-GCM.Open(enc_payload, metadata_key)
+
+步骤 2: 从解密后的 TLV 中提取 key_hash
+  key_hash = raw_payload.KeyHash                  // tag 0x06
+
+步骤 3: 计算文件加密密钥
+  aes_key = HKDF(ECDH(D_node, P_node).x, key_hash, "bitfs-file-encryption")
+
+步骤 4: 解密文件内容
+  plaintext = AES-GCM.Open(ciphertext, aes_key)
+
+步骤 5: 完整性校验
+  assert SHA256(SHA256(plaintext)) == key_hash
+```
+
+#### 4.3.4 钱包恢复算法
+
+恢复依赖两个性质：
+1. **P_node 始终明文**：OP_RETURN 中的 P_node 不受加密影响
+2. **树结构自描述**：目录节点解密后，ChildEntry 包含子节点的 P_node 和 BIP32 索引
+
+**Phase 1: Vault 发现**
+
+```
+GAP_LIMIT = 20
+
+for account = 1, 2, 3, ...:
+    P_root = PubKey(m/44'/236'/account'/0/0)
+    搜索区块链: OP_RETURN 中 P_node == P_root 的交易
+    if found:
+        discovered_vaults.append(account)
+        gap_count = 0
+    else:
+        gap_count++
+    if gap_count >= GAP_LIMIT:
+        break
+```
+
+类似 BIP44 标准的地址发现：连续 20 个未使用的 account 后停止扫描。
+
+**Phase 2: 树重建**
+
+```
+for each discovered vault (account):
+    D_root = PrivKey(m/44'/236'/account'/0/0)
+    P_root = PubKey(D_root)
+
+    // 找到根节点最新交易
+    root_tx = 查找 P_root 的最新 Metanet 交易
+
+    // 解密根节点元数据
+    metadata_key = HKDF(ECDH(D_root, P_root).x, SHA256(P_root), "bitfs-metadata-encryption")
+    root_payload = AES-GCM.Open(root_tx.enc_payload, metadata_key)
+
+    // 从 ChildEntry 列表递归恢复
+    for each child in root_payload.Children:
+        // child 包含: Index, Name, Type, PubKey, Hardened
+        D_child = BIP32_Derive(D_root, child.Index, child.Hardened)
+        child_tx = 查找 child.PubKey 的最新 Metanet 交易
+        解密子节点 metadata (同上方法)
+        if child.Type == Dir:
+            递归处理子目录
+```
+
+**恢复性质**：
+
+| 性质 | 说明 |
+|------|------|
+| 仅需助记词 | 不依赖任何链外数据 |
+| 确定性 | 同一助记词始终恢复相同的文件树 |
+| 无需明文索引 | 不在链上泄露 file_index 或 key_hash |
+| 增量扫描 | 只需扫描 vault 根公钥（有限个），子树通过递归解密发现 |
+
+**不可恢复的数据**（需用户备份）：
+
+| 数据 | 原因 |
+|------|------|
+| `~/.bitfs/storage/` | 本地缓存的解密文件内容 |
+| `~/.bitfs/txstore/` | 交易数据 + Merkle proof（可从网络重新获取） |
+| `~/.bitfs/headers/` | 区块头链（可从网络重新同步） |
+| UTXO 状态 | 可通过扫描恢复后的交易重建 |
+
+> **设计决策 #10** (已解决): 不存储明文 `key_hash` / `file_index`。
+> 通过独立的元数据加密密钥（`info="bitfs-metadata-encryption"`, `salt=SHA256(P_node)`）
+> 实现 PRIVATE 信封加密，配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密实现恢复。
 
 ### 4.4 Capsule 交换 (Paid 模式)
 
@@ -645,6 +826,47 @@ P_node (不变)
 ```
 
 最新版本 = 使用相同 P_node 的最近一笔未花费交易。
+
+### 5.4 子索引管理
+
+每个目录维护 `NextChildIndex` 计数器（tag `0x0F`），用于为新建子节点分配 BIP32 派生索引。
+
+**初始值**：1（索引 0 保留）
+
+**分配规则**：
+
+| 操作 | 索引行为 |
+|------|---------|
+| `mkdir` / `put` (新建) | 分配 `NextChildIndex`，然后递增 |
+| `rm` (删除) | 从 ChildEntry 列表移除，`NextChildIndex` **不减少** |
+| `mv` (同目录) | 保留原索引，仅修改 `ChildEntry.Name` |
+| `mv` (跨目录) | 源目录移除 ChildEntry；目标目录分配新索引 |
+| `cp` (复制) | 目标目录分配新索引 + 新 BIP32 密钥对 |
+
+**索引不重用的原因**：
+
+如果新文件获得已删除文件的索引，它将通过 BIP32 派生出**相同的密钥对**。
+这意味着：
+- 新文件的 `P_node` 与已删除文件相同
+- 区块链上无法区分两者的 Metanet 交易
+- 旧文件的加密内容可能被新密钥持有者解密
+
+因此，已分配的索引永远不回收。这确保每个文件获得唯一的密钥对和链上身份。
+
+### 5.5 目录变更的原子性
+
+单个文件系统操作可能涉及多笔交易。例如：
+
+| 操作 | 交易数 | 原子性保证 |
+|------|--------|-----------|
+| `put` (新文件) | 2 (CreateChild + SelfUpdate) | 两笔交易同时广播 |
+| `mv` (跨目录) | 2 (SelfUpdate×2) | 两笔交易同时广播 |
+| `rm` | 1 (SelfUpdate) | 单笔交易，天然原子 |
+| `mv` (同目录) | 1 (SelfUpdate) | 单笔交易，天然原子 |
+
+多交易操作应在同一批次中广播，但 BSV 无跨交易原子性保证。
+如果部分广播失败（例如 CreateChild 成功但 SelfUpdate 失败），
+系统通过**幂等重试**恢复：检测已有子节点 UTXO，仅重试失败的交易。
 
 ---
 
@@ -1062,8 +1284,10 @@ Buyer Refund (ELSE branch, after timeout):
 | 7 | HTLC 发起方 | 待定 | 支付模型需单独设计 |
 | 8 | Hard Link | 删除 | Metanet DAG 是严格树，不支持多父节点 |
 | 9 | NodeType | File/Dir/Link (移除 Anchor) | Anchor 是扩展类型，不属于核心规范 |
-| 10 | PRIVATE 恢复 | 重新设计 | 不在链上泄露明文 file_index/key_hash |
+| 10 | PRIVATE 恢复 | 两层密钥 + 递归解密（已解决） | 元数据用独立密钥（salt=SHA256(P_node)），通过目录 ChildEntry 递归恢复 |
 | 11 | DNS TXT 格式 | `_bitfs.{domain}`, 值 `bitfs=<hex_pubkey>` | 可扩展格式，类似 DKIM |
+| 12 | 元数据加密密钥 | `HKDF(ECDH.x, SHA256(P_node), "bitfs-metadata-encryption")` | 与文件加密密钥隔离，P_node 始终可用 |
+| 13 | 子索引不重用 | 删除后 NextChildIndex 不递减 | 防止密钥碰撞：重用索引会派生相同 BIP32 密钥对 |
 
 ---
 
