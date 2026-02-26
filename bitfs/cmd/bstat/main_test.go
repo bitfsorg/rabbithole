@@ -280,22 +280,138 @@ func TestJSONOutput_IsValidJSON(t *testing.T) {
 // --versions flag
 // ---------------------------------------------------------------------------
 
-func TestVersionsFlag(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	code := run([]string{"--versions", makeURI("/hello.txt")}, &stdout, &stderr)
+// newMockDaemonMulti creates an httptest.Server that dispatches on URL prefix.
+func newMockDaemonMulti(t *testing.T, handlers map[string]func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	for pattern, handler := range handlers {
+		mux.HandleFunc(pattern, handler)
+	}
+	return httptest.NewServer(mux)
+}
 
-	assert.Equal(t, 0, code, "versions should exit 0")
-	assert.Contains(t, stderr.String(), "version listing not yet supported")
-	assert.Empty(t, stdout.String())
+func TestVersionsFlag_HumanOutput(t *testing.T) {
+	versions := []client.VersionEntry{
+		{Version: 1, TxID: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890", BlockHeight: 800100, Timestamp: 1700000000, FileSize: 2048, Access: "free"},
+		{Version: 2, TxID: "1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff", BlockHeight: 800050, Timestamp: 1699000000, FileSize: 1024, Access: "paid"},
+	}
+
+	srv := newMockDaemonMulti(t, map[string]func(w http.ResponseWriter, r *http.Request){
+		"/_bitfs/versions/": func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, versions)
+		},
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--versions", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+
+	out := stdout.String()
+	assert.Contains(t, out, "Versions for /hello.txt (2 total):")
+	assert.Contains(t, out, "v1")
+	assert.Contains(t, out, "v2")
+	assert.Contains(t, out, "abcdef1234567890...")
+	assert.Contains(t, out, "[free]")
+	assert.Contains(t, out, "[paid]")
+	assert.Contains(t, out, "height=800100")
+	assert.Contains(t, out, "height=800050")
+}
+
+func TestVersionsFlag_JSONOutput(t *testing.T) {
+	versions := []client.VersionEntry{
+		{Version: 1, TxID: "aabb", BlockHeight: 100, Timestamp: 1700000000, FileSize: 512, Access: "private"},
+	}
+
+	srv := newMockDaemonMulti(t, map[string]func(w http.ResponseWriter, r *http.Request){
+		"/_bitfs/versions/": func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, versions)
+		},
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--versions", "--json", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	assert.Empty(t, stderr.String())
+
+	var got []client.VersionEntry
+	err := json.Unmarshal(stdout.Bytes(), &got)
+	require.NoError(t, err, "output should be valid JSON")
+	require.Len(t, got, 1)
+	assert.Equal(t, 1, got[0].Version)
+	assert.Equal(t, "aabb", got[0].TxID)
+	assert.Equal(t, "private", got[0].Access)
+}
+
+func TestVersionsFlag_EmptyTxID(t *testing.T) {
+	// Edge case: daemon returns empty TxID (stub implementation).
+	versions := []client.VersionEntry{
+		{Version: 1, TxID: "", BlockHeight: 0, Timestamp: 1700000000, Access: "free"},
+	}
+
+	srv := newMockDaemonMulti(t, map[string]func(w http.ResponseWriter, r *http.Request){
+		"/_bitfs/versions/": func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, versions)
+		},
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--versions", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	// Should not panic on short/empty TxID.
+	assert.NotContains(t, stdout.String(), "...")
+}
+
+func TestVersionsFlag_ShortTxID(t *testing.T) {
+	// Edge case: TxID is shorter than 16 chars — should display as-is.
+	versions := []client.VersionEntry{
+		{Version: 1, TxID: "shortid", BlockHeight: 42, Timestamp: 1700000000, Access: "free"},
+	}
+
+	srv := newMockDaemonMulti(t, map[string]func(w http.ResponseWriter, r *http.Request){
+		"/_bitfs/versions/": func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, versions)
+		},
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--versions", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code)
+	out := stdout.String()
+	assert.Contains(t, out, "shortid")
+	assert.NotContains(t, out, "shortid...")
 }
 
 func TestVersionsFlag_NoURIRequired(t *testing.T) {
-	// --versions should work even without a URI argument (it exits before URI parsing).
+	// --versions without URI should show usage (URI is needed for version query).
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--versions"}, &stdout, &stderr)
 
-	assert.Equal(t, 0, code, "versions should exit 0 even without URI")
-	assert.Contains(t, stderr.String(), "version listing not yet supported")
+	assert.Equal(t, 6, code, "missing URI should exit 6")
+	assert.Contains(t, stderr.String(), "Usage:")
+}
+
+func TestVersionsFlag_ServerError(t *testing.T) {
+	srv := newMockDaemonMulti(t, map[string]func(w http.ResponseWriter, r *http.Request){
+		"/_bitfs/versions/": func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		},
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--versions", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code, "server error should produce non-zero exit")
+	assert.Contains(t, stderr.String(), "server error")
 }
 
 // ---------------------------------------------------------------------------

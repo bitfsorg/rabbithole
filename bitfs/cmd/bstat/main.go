@@ -37,12 +37,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 6
 	}
 
-	// --versions is a placeholder for future functionality.
-	if *versions {
-		fmt.Fprintf(stderr, "version listing not yet supported\n")
-		return 0
-	}
-
 	if fs.NArg() < 1 {
 		fmt.Fprintf(stderr, `Usage: bstat [--json] [--versions] [--host URL] [--timeout DURATION] <bitfs-uri>
 
@@ -69,6 +63,30 @@ Examples:
 			return 6
 		}
 		c = c.WithTimeout(d)
+	}
+
+	// --versions: fetch version history using the raw (non-cached) client.
+	if *versions {
+		vers, versErr := c.GetVersions(resolved.PNode, resolved.Path)
+		if versErr != nil {
+			return buyer.HandleError(versErr, "bstat", stderr)
+		}
+		if *jsonOut {
+			data, _ := json.Marshal(vers)
+			fmt.Fprintln(stdout, string(data))
+			return 0
+		}
+		fmt.Fprintf(stdout, "Versions for %s (%d total):\n\n", resolved.Path, len(vers))
+		for _, v := range vers {
+			txID := v.TxID
+			if len(txID) > 16 {
+				txID = txID[:16] + "..."
+			}
+			t := time.Unix(v.Timestamp, 0).UTC().Format("2006-01-02 15:04:05")
+			fmt.Fprintf(stdout, "  v%-4d  %s  height=%-8d  %s  [%s]\n",
+				v.Version, txID, v.BlockHeight, t, v.Access)
+		}
+		return 0
 	}
 
 	homeDir, err := os.UserHomeDir()
