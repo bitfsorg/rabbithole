@@ -1,0 +1,34 @@
+graph TD
+    subgraph CreateRoot
+        direction LR
+        CR_I0[Input 0\nFee UTXO\nSig D_fee] --> CR_TX((CreateRoot\nTx))
+        CR_TX --> CR_O0[Output 0\nOP_RETURN\nMetaFlag P_root empty Payload]
+        CR_TX --> CR_O1[Output 1\nP2PKH P_root\n546 sat]
+        CR_TX --> CR_O2[Output 2\nP2PKH Change]
+    end
+
+    subgraph CreateChild
+        direction LR
+        CC_I0[Input 0\nP_parent UTXO\nSig D_parent] --> CC_TX((CreateChild\nTx))
+        CC_I1[Input 1\nFee UTXO\nSig D_fee] --> CC_TX
+        CC_TX --> CC_O0[Output 0\nOP_RETURN\nMetaFlag P_child TxID_parent Payload]
+        CC_TX --> CC_O1[Output 1\nP2PKH P_child\n546 sat]
+        CC_TX --> CC_O2[Output 2\nP2PKH P_parent\n546 sat refresh]
+        CC_TX --> CC_O3[Output 3\nP2PKH Change]
+    end
+
+    subgraph SelfUpdate
+        direction LR
+        SU_I0[Input 0\nP_node UTXO\nSig D_node] --> SU_TX((SelfUpdate\nTx))
+        SU_I1[Input 1\nFee UTXO\nSig D_fee] --> SU_TX
+        SU_TX --> SU_O0[Output 0\nOP_RETURN\nMetaFlag P_node TxID_parent Payload]
+        SU_TX --> SU_O1[Output 1\nP2PKH P_node\n546 sat refresh]
+        SU_TX --> SU_O2[Output 2\nP2PKH Change]
+    end
+
+    subgraph DataTransaction
+        direction LR
+        DT_I0[Input 0\nAny UTXO\nSig D_node] --> DT_TX((DataTx))
+        DT_TX --> DT_O0[Output 0\nEncrypted Content\nOP_DROP + P2PKH P_node]
+        DT_TX --> DT_O1[Output 1\nP2PKH Change]
+    end

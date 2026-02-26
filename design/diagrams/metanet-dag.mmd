@@ -1,0 +1,20 @@
+graph TD
+    subgraph Self-Update Chain
+        R1[Root v1\nTxID_0\nP_root] -->|SelfUpdate| R2[Root v2\nTxID_1\nP_root]
+        R2 -->|SelfUpdate| R3[Root v3\nTxID_2\nP_root]
+    end
+
+    R3 -->|CreateChild\nSig D_root| D1[DIR docs/\nP_dir1]
+    R3 -->|CreateChild\nSig D_root| F1[FILE readme.md\nP_file1]
+    R3 -->|CreateChild\nSig D_root| L1[LINK ref\nP_link1]
+
+    D1 -->|CreateChild\nSig D_dir1| F2[FILE spec.pdf\nP_file2]
+    D1 -->|CreateChild\nSig D_dir1| F3[FILE notes.txt\nP_file3]
+
+    L1 -.->|target: P_file2| F2
+
+    subgraph Legend
+        N1[Node ID = H P_node TxID]
+        N2[P_node = BIP32 HD pubkey]
+        N3[Edge = Sig D_parent in Input 0]
+    end

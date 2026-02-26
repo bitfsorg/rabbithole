@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant B as Buyer
+    participant D as Seller Daemon
+    participant N as BSV Network
+
+    Note over B,D: Phase 1 — Method 42 Handshake
+    B->>D: POST /handshake {P_buyer, nonce_b}
+    D->>D: session_key = SHA256(ECDH.x || nonce_b || nonce_s)
+    D->>B: {P_seller, nonce_s, HMAC verify}
+    B->>B: Verify HMAC, session established
+
+    Note over B,D: Phase 2 — Price Discovery
+    B->>D: GET /buy/{txid}?buyer_pubkey=P_buyer
+    D->>B: {price, capsule_hash}
+
+    Note over B,N: Phase 3 — HTLC Construction
+    B->>B: Build HTLC script
+    Note right of B: OP_IF SHA256 capsule_hash EQUALVERIFY seller CHECKSIG\nOP_ELSE timeout CSV buyer CHECKSIG OP_ENDIF
+    B->>N: Broadcast HTLC tx
+
+    Note over B,D: Phase 4 — Atomic Swap
+    B->>D: POST /buy/{txid} {buyer_pubkey, htlc_tx}
+    D->>D: capsule = aes_key XOR buyer_mask
+    D->>B: {capsule}
+    D->>N: Claim HTLC (reveal preimage)
+    B->>B: Verify SHA256(capsule) == capsule_hash
+    B->>B: aes_key = capsule XOR buyer_mask
+
+    Note over B,D: Phase 5 — Content Download
+    B->>D: GET /_bitfs/data/{hash}
+    D->>B: encrypted ciphertext
+    B->>B: Decrypt with AES-256-GCM

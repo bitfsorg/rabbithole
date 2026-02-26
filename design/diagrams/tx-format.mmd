@@ -1,0 +1,27 @@
+graph LR
+    subgraph OP_RETURN Payload
+        direction LR
+        MF[MetaFlag\n0x6d657461\n4 bytes]
+        PN[P_node\nCompressed Pubkey\n33 bytes]
+        TP[TxID_parent\n0 bytes root\n32 bytes child]
+        TLV[TLV Body\nVariable]
+    end
+
+    MF --> PN --> TP --> TLV
+
+    subgraph TLV Fields
+        direction TD
+        T01[0x01 Version uint32]
+        T02[0x02 Type FILE/DIR/LINK]
+        T03[0x03 Op CREATE/UPDATE/DELETE]
+        T04[0x04 MimeType string]
+        T05[0x05 FileSize uint64]
+        T06[0x06 KeyHash 32B]
+        T07[0x07 Access PVT/FREE/PAID]
+        T08[0x08 PricePerKB uint64]
+        T0E[0x0E ChildEntry repeated]
+        T1A[0x1A MerkleRoot 32B]
+        T1B[0x1B EncPayload bytes]
+    end
+
+    TLV --> T01

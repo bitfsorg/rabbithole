@@ -1,0 +1,18 @@
+graph TD
+    ROOT[MerkleRoot\n32 bytes\nTLV 0x1A] --- H01[H01\nDoubleHash\nleft || right]
+    ROOT --- H23[H23\nDoubleHash\nleft || right]
+
+    H01 --- L0[Leaf 0\nDoubleHash ChildEntry 0\nindex=0 readme.md FILE P0]
+    H01 --- L1[Leaf 1\nDoubleHash ChildEntry 1\nindex=1 docs/ DIR P1]
+    H23 --- L2[Leaf 2\nDoubleHash ChildEntry 2\nindex=2 config.json FILE P2]
+    H23 --- L3[Leaf 3\nDoubleHash ChildEntry 3\nindex=3 lib/ DIR P3]
+
+    subgraph ChildEntry Serialization
+        direction LR
+        S1[Index 4B LE] --> S2[Name Len 2B + UTF-8] --> S3[Type 4B LE] --> S4[PubKey Len 1B + 33B] --> S5[Hardened 1B]
+    end
+
+    subgraph Membership Proof for Leaf 2
+        direction LR
+        P1P[Leaf 2 hash] --> P2P[+ sibling Leaf 3] --> P3P[= H23] --> P4P[+ sibling H01] --> P5P[= MerkleRoot]
+    end

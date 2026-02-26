@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1028.5503749999998 975.5" width="1028.5503749999998" height="975.5" style="--bg:#0f172a;--fg:#e2e8f0;--line:#475569;--accent:#38bdf8;--muted:#94a3b8;--surface:#1e293b;--border:#334155;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter%2C%20SF%20Pro%20Display%2C%20system-ui%2C%20sans-serif:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter, SF Pro Display, system-ui, sans-serif', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<g class="subgraph" data-id="SelfUpdate_Chain" data-label="Self-Update Chain">
+  <rect x="144.568375" y="48" width="117.66900000000001" height="504.7" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="144.568375" y="48" width="117.66900000000001" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="156.568375" y="62" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Self-Update Chain</text>
+</g>
+<g class="subgraph" data-id="Legend" data-label="Legend">
+  <rect x="290.23737500000004" y="461.8" width="690.3129999999999" height="96.9" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="290.23737500000004" y="461.8" width="690.3129999999999" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="302.23737500000004" y="475.8" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Legend</text>
+</g>
+<polyline class="edge" data-from="D1" data-to="F2" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="CreateChild
+Sig D_dir1" points="103.36533333333333,744.25 103.36533333333333,779.0999999999999 81,779.0999999999999 81,861.7 165.60795833333333,861.7 165.60795833333333,867.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="D1" data-to="F3" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="CreateChild
+Sig D_dir1" points="136.12066666666664,744.25 136.12066666666664,779.0999999999999 205.82308333333333,779.0999999999999 205.82308333333333,837.7 337.768125,837.7 337.768125,867.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="L1" data-to="F2" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="target: P_file2" points="407.47249999999997,744.25 407.47249999999997,849.7 207.00829166666665,849.7 207.00829166666665,867.7" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R3" data-to="D1" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="CreateChild
+Sig D_root" points="181.985625,536.7 181.98562500000003,594.7 119.743,594.7 119.74300000000001,690.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R3" data-to="F1" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="CreateChild
+Sig D_root" points="203.402875,536.7 203.402875,594.7 265.64549999999997,594.7 265.64549999999997,690.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R3" data-to="L1" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="CreateChild
+Sig D_root" points="224.82012500000002,536.7 224.82012500000002,582.7 407.4725,582.7 407.4725,690.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R1" data-to="R2" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="SelfUpdate" points="203.402875,162.7 203.402875,279" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="R2" data-to="R3" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="SelfUpdate" points="203.402875,349.7 203.402875,466" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="D1" data-to="F2" data-label="CreateChild
+Sig D_dir1">
+  <rect x="43.99999999999999" y="786.0999999999999" width="73.486" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="80.743" y="808.3999999999999" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="80.743" dy="-3.3000000000000007">CreateChild</tspan><tspan x="80.743" dy="14.3">Sig D_dir1</tspan></text>
+</g>
+<g class="edge-label" data-from="D1" data-to="F3" data-label="CreateChild
+Sig D_dir1">
+  <rect x="168.82308333333333" y="786.0999999999999" width="73.486" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="205.56608333333332" y="808.3999999999999" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="205.56608333333332" dy="-3.3000000000000007">CreateChild</tspan><tspan x="205.56608333333332" dy="14.3">Sig D_dir1</tspan></text>
+</g>
+<g class="edge-label" data-from="L1" data-to="F2" data-label="target: P_file2">
+  <rect x="366.47249999999997" y="788.4000000000001" width="81.20800000000001" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="407.07649999999995" y="803.5500000000001" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">target: P_file2</text>
+</g>
+<g class="edge-label" data-from="R3" data-to="D1" data-label="CreateChild
+Sig D_root">
+  <rect x="82.743" y="601.7" width="73.486" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="119.48599999999999" y="624" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="119.48599999999999" dy="-3.3000000000000007">CreateChild</tspan><tspan x="119.48599999999999" dy="14.3">Sig D_root</tspan></text>
+</g>
+<g class="edge-label" data-from="R3" data-to="F1" data-label="CreateChild
+Sig D_root">
+  <rect x="228.64549999999997" y="601.7" width="73.486" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="265.38849999999996" y="624" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="265.38849999999996" dy="-3.3000000000000007">CreateChild</tspan><tspan x="265.38849999999996" dy="14.3">Sig D_root</tspan></text>
+</g>
+<g class="edge-label" data-from="R3" data-to="L1" data-label="CreateChild
+Sig D_root">
+  <rect x="370.47249999999997" y="604" width="73.486" height="44.6" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="407.21549999999996" y="626.3" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)"><tspan x="407.21549999999996" dy="-3.3000000000000007">CreateChild</tspan><tspan x="407.21549999999996" dy="14.3">Sig D_root</tspan></text>
+</g>
+<g class="edge-label" data-from="R1" data-to="R2" data-label="SelfUpdate">
+  <rect x="168.902875" y="205.7" width="68.73400000000001" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="203.269875" y="220.85" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">SelfUpdate</text>
+</g>
+<g class="edge-label" data-from="R2" data-to="R3" data-label="SelfUpdate">
+  <rect x="168.902875" y="392.7" width="68.73400000000001" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="203.269875" y="407.84999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">SelfUpdate</text>
+</g>
+<g class="node" data-id="D1" data-label="DIR docs/
+P_dir1" data-shape="rectangle">
+  <rect x="70.61" y="690.45" width="98.26599999999999" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="119.743" y="717.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="119.743" dy="-3.9000000000000012">DIR docs/</tspan><tspan x="119.743" dy="16.900000000000002">P_dir1</tspan></text>
+</g>
+<g class="node" data-id="F1" data-label="FILE readme.md
+P_file1" data-shape="rectangle">
+  <rect x="196.87599999999998" y="690.45" width="137.539" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="265.64549999999997" y="717.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="265.64549999999997" dy="-3.9000000000000012">FILE readme.md</tspan><tspan x="265.64549999999997" dy="16.900000000000002">P_file1</tspan></text>
+</g>
+<g class="node" data-id="L1" data-label="LINK ref
+P_link1" data-shape="rectangle">
+  <rect x="362.41499999999996" y="690.45" width="90.11500000000001" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="407.47249999999997" y="717.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="407.47249999999997" dy="-3.9000000000000012">LINK ref</tspan><tspan x="407.47249999999997" dy="16.900000000000002">P_link1</tspan></text>
+</g>
+<g class="node" data-id="F2" data-label="FILE spec.pdf
+P_file2" data-shape="rectangle">
+  <rect x="124.20762499999998" y="867.7" width="124.20100000000001" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="186.308125" y="894.6" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="186.308125" dy="-3.9000000000000012">FILE spec.pdf</tspan><tspan x="186.308125" dy="16.900000000000002">P_file2</tspan></text>
+</g>
+<g class="node" data-id="F3" data-label="FILE notes.txt
+P_file3" data-shape="rectangle">
+  <rect x="276.40862500000003" y="867.7" width="122.71900000000001" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="337.76812500000005" y="894.6" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="337.76812500000005" dy="-3.9000000000000012">FILE notes.txt</tspan><tspan x="337.76812500000005" dy="16.900000000000002">P_file3</tspan></text>
+</g>
+<g class="node" data-id="R1" data-label="Root v1
+TxID_0
+P_root" data-shape="rectangle">
+  <rect x="160.938875" y="92" width="84.928" height="70.7" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="203.402875" y="127.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="203.402875" dy="-12.350000000000001">Root v1</tspan><tspan x="203.402875" dy="16.900000000000002">TxID_0</tspan><tspan x="203.402875" dy="16.900000000000002">P_root</tspan></text>
+</g>
+<g class="node" data-id="R2" data-label="Root v2
+TxID_1
+P_root" data-shape="rectangle">
+  <rect x="160.568375" y="279" width="85.66900000000001" height="70.7" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="203.402875" y="314.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="203.402875" dy="-12.350000000000001">Root v2</tspan><tspan x="203.402875" dy="16.900000000000002">TxID_1</tspan><tspan x="203.402875" dy="16.900000000000002">P_root</tspan></text>
+</g>
+<g class="node" data-id="R3" data-label="Root v3
+TxID_2
+P_root" data-shape="rectangle">
+  <rect x="160.568375" y="466" width="85.66900000000001" height="70.7" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="203.402875" y="501.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="203.402875" dy="-12.350000000000001">Root v3</tspan><tspan x="203.402875" dy="16.900000000000002">TxID_2</tspan><tspan x="203.402875" dy="16.900000000000002">P_root</tspan></text>
+</g>
+<g class="node" data-id="N1" data-label="Node ID = H P_node TxID" data-shape="rectangle">
+  <rect x="548.099375" y="505.8" width="186.44499999999996" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="641.321875" y="524.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Node ID = H P_node TxID</text>
+</g>
+<g class="node" data-id="N2" data-label="P_node = BIP32 HD pubkey" data-shape="rectangle">
+  <rect x="762.544375" y="505.8" width="202.00599999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="863.5473749999999" y="524.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">P_node = BIP32 HD pubkey</text>
+</g>
+<g class="node" data-id="N3" data-label="Edge = Sig D_parent in Input 0" data-shape="rectangle">
+  <rect x="306.23737500000004" y="505.8" width="213.86199999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="413.168375" y="524.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Edge = Sig D_parent in Input 0</text>
+</g>
+</svg>

@@ -1,0 +1,41 @@
+graph TD
+    subgraph Key Derivation — Owner Encrypts
+        direction TD
+        DN[D_node\nBIP32 private key] --> ECDH1[ECDH\nD_node * P_node]
+        PN1[P_node\nBIP32 public key] --> ECDH1
+        ECDH1 --> SN[S_node = shared_point.x\n32 bytes]
+        SN --> HKDF1[HKDF-SHA256\nikm=S_node salt=key_hash\ninfo=bitfs-file-encryption]
+        KH1[key_hash\n= SHA256 SHA256 plaintext] --> HKDF1
+        HKDF1 --> AK[aes_key\n32 bytes]
+        AK --> AESGCM[AES-256-GCM\nEncrypt]
+        PT[Plaintext] --> AESGCM
+        AESGCM --> CT[Ciphertext\nnonce 12B + encrypted + tag 16B]
+    end
+
+    subgraph Three Access Modes
+        direction TD
+        FREE[FREE\nD_node = scalar 1\nAnyone computes aes_key\nfrom public P_node]
+        PRIVATE[PRIVATE\nD_node = BIP32 derived\nOnly owner can decrypt]
+        PAID[PAID\nBuyer obtains capsule\nvia HTLC atomic swap]
+    end
+
+    subgraph Key Delivery — Buyer Purchases
+        direction TD
+        DNO[D_node owner] --> ECDH2[ECDH\nD_node * P_buyer]
+        PB1[P_buyer] --> ECDH2
+        ECDH2 --> BM1[buyer_mask = HKDF\nikm=ECDH.x salt=key_hash\ninfo=bitfs-buyer-mask]
+        AK2[aes_key] --> XOR1[capsule\n= aes_key XOR buyer_mask]
+        BM1 --> XOR1
+        XOR1 --> HTLC[HTLC Atomic Swap\ncapsule_hash = SHA256 capsule]
+        HTLC --> CAPSULE[Buyer receives capsule]
+    end
+
+    subgraph Key Recovery — Buyer Decrypts
+        direction TD
+        DB[D_buyer] --> ECDH3[ECDH\nD_buyer * P_node]
+        PN2[P_node] --> ECDH3
+        ECDH3 --> BM2[buyer_mask = HKDF\nikm=ECDH.x salt=key_hash\ninfo=bitfs-buyer-mask]
+        CAPSULE2[capsule from HTLC] --> XOR2[aes_key\n= capsule XOR buyer_mask]
+        BM2 --> XOR2
+        XOR2 --> DEC[AES-256-GCM Decrypt]
+    end

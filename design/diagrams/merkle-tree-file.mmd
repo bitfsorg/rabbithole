@@ -1,0 +1,38 @@
+graph TD
+    subgraph Upload Flow
+        direction TD
+        PLAIN[Plaintext] --> KH[key_hash = SHA256 SHA256 plaintext]
+        PLAIN --> ENC[AES-256-GCM Encrypt]
+        ENC --> CIPHER[Ciphertext]
+        CIPHER --> SPLIT[Split by chunk_size]
+        SPLIT --> C0[Chunk 0]
+        SPLIT --> C1[Chunk 1]
+        SPLIT --> C2[Chunk 2]
+        SPLIT --> CN[Chunk N-1]
+    end
+
+    subgraph Data Transactions
+        direction TD
+        C0 --> TX0[DataTx 0\nOP_DROP + P2PKH]
+        C1 --> TX1[DataTx 1\nOP_DROP + P2PKH]
+        C2 --> TX2[DataTx 2\nOP_DROP + P2PKH]
+        CN --> TXN[DataTx N-1\nOP_DROP + P2PKH]
+    end
+
+    subgraph Verification Hashes
+        direction TD
+        C0 --> RH[recombination_hash\n= SHA256 all chunks concat]
+        C1 --> RH
+        C2 --> RH
+        CN --> RH
+    end
+
+    subgraph Metanet Node Tx
+        direction LR
+        META[OP_RETURN\ncontent_txids = TxID_0..N-1\ntotal_chunks = N\nrecombination_hash\nkey_hash]
+    end
+
+    TX0 --> META
+    TXN --> META
+    RH --> META
+    KH --> META
