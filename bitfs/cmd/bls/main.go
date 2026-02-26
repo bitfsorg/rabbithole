@@ -7,13 +7,13 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
+	"github.com/tongxiaofeng/bitfs/internal/buyer"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 )
 
@@ -70,7 +70,7 @@ Examples:
 
 	meta, err := c.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
-		return handleError(err, stderr)
+		return buyer.HandleError(err, "bls", stderr)
 	}
 
 	// Format output.
@@ -134,27 +134,6 @@ func outputJSON(meta *client.MetaResponse, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout, string(data))
 	return 0
-}
-
-// handleError maps client errors to exit codes and prints a message.
-func handleError(err error, stderr io.Writer) int {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		fmt.Fprintf(stderr, "bls: not found\n")
-		return 2
-	case errors.Is(err, client.ErrTimeout):
-		fmt.Fprintf(stderr, "bls: request timeout\n")
-		return 4
-	case errors.Is(err, client.ErrNetwork):
-		fmt.Fprintf(stderr, "bls: network error: %v\n", err)
-		return 4
-	case errors.Is(err, client.ErrServer):
-		fmt.Fprintf(stderr, "bls: server error: %v\n", err)
-		return 4
-	default:
-		fmt.Fprintf(stderr, "bls: %v\n", err)
-		return 1
-	}
 }
 
 // formatSize returns a human-readable file size string.

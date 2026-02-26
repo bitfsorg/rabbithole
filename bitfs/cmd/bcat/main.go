@@ -9,7 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -76,7 +75,7 @@ Examples:
 
 	meta, err := c.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
-		return handleError(err, stderr)
+		return buyer.HandleError(err, "bcat", stderr)
 	}
 
 	// Directories cannot be cat'd.
@@ -133,7 +132,7 @@ func outputContent(c *client.Client, meta *client.MetaResponse, stdout, stderr i
 
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
-		return handleError(err, stderr)
+		return buyer.HandleError(err, "bcat", stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -236,7 +235,7 @@ func outputPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *b
 		if jsonOut {
 			return handleErrorJSON(err, stdout)
 		}
-		return handleError(err, stderr)
+		return buyer.HandleError(err, "bcat", stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -378,8 +377,8 @@ func outputPaymentRequiredJSON(meta *client.MetaResponse, stdout, stderr io.Writ
 
 // handleErrorJSON outputs an error as JSON and returns the exit code.
 func handleErrorJSON(err error, stdout io.Writer) int {
-	code := errorToCode(err)
-	resp := &buyer.ErrorResponse{Error: errorMessage(err), Code: code}
+	code := buyer.ExitCodeFromError(err)
+	resp := &buyer.ErrorResponse{Error: buyer.ErrorMessage(err), Code: code}
 	data, _ := json.Marshal(resp)
 	fmt.Fprintln(stdout, string(data))
 	return code
@@ -395,49 +394,3 @@ func writeJSON(v interface{}, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func errorToCode(err error) int {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		return 2
-	case errors.Is(err, client.ErrTimeout), errors.Is(err, client.ErrNetwork):
-		return 4
-	case errors.Is(err, client.ErrPaymentRequired):
-		return 5
-	default:
-		return 1
-	}
-}
-
-func errorMessage(err error) string {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		return "not found"
-	case errors.Is(err, client.ErrTimeout):
-		return "request timeout"
-	case errors.Is(err, client.ErrNetwork):
-		return "network error"
-	default:
-		return err.Error()
-	}
-}
-
-// handleError maps client errors to exit codes and prints a message.
-func handleError(err error, stderr io.Writer) int {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		fmt.Fprintf(stderr, "bcat: not found\n")
-		return 2
-	case errors.Is(err, client.ErrTimeout):
-		fmt.Fprintf(stderr, "bcat: request timeout\n")
-		return 4
-	case errors.Is(err, client.ErrNetwork):
-		fmt.Fprintf(stderr, "bcat: network error: %v\n", err)
-		return 4
-	case errors.Is(err, client.ErrServer):
-		fmt.Fprintf(stderr, "bcat: server error: %v\n", err)
-		return 4
-	default:
-		fmt.Fprintf(stderr, "bcat: %v\n", err)
-		return 1
-	}
-}

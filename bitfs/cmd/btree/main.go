@@ -7,7 +7,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -16,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tongxiaofeng/bitfs/internal/buyer"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 )
 
@@ -70,7 +70,7 @@ Examples:
 
 	meta, err := c.GetMeta(pnode, uriPath)
 	if err != nil {
-		return handleError(err, stderr)
+		return buyer.HandleError(err, "btree", stderr)
 	}
 
 	// If root target is a file (not a directory), print single file info.
@@ -239,27 +239,6 @@ func outputJSON(node treeNode, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout, string(data))
 	return 0
-}
-
-// handleError maps client errors to exit codes and prints a message.
-func handleError(err error, stderr io.Writer) int {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		fmt.Fprintf(stderr, "btree: not found\n")
-		return 2
-	case errors.Is(err, client.ErrTimeout):
-		fmt.Fprintf(stderr, "btree: request timeout\n")
-		return 4
-	case errors.Is(err, client.ErrNetwork):
-		fmt.Fprintf(stderr, "btree: network error: %v\n", err)
-		return 4
-	case errors.Is(err, client.ErrServer):
-		fmt.Fprintf(stderr, "btree: server error: %v\n", err)
-		return 4
-	default:
-		fmt.Fprintf(stderr, "btree: %v\n", err)
-		return 1
-	}
 }
 
 // formatSize returns a human-readable file size string (compact style).

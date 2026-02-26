@@ -10,7 +10,6 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -97,7 +96,7 @@ Examples:
 		if *jsonOut {
 			return handleErrorJSON(err, stdout)
 		}
-		return handleError(err, stderr)
+		return buyer.HandleError(err, "bmget", stderr)
 	}
 
 	if meta.Type != "dir" {
@@ -275,7 +274,7 @@ func downloadFile(c *client.Client, pnode, remotePath, localPath string, buyEnab
 	// Get file metadata.
 	meta, err := c.GetMeta(pnode, remotePath)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("get meta: %v", err), Code: errorToCode(err)}
+		return buyer.BatchFileEntry{Error: fmt.Sprintf("get meta: %v", err), Code: buyer.ExitCodeFromError(err)}
 	}
 
 	switch meta.Access {
@@ -304,7 +303,7 @@ func downloadFreeFile(c *client.Client, meta *client.MetaResponse, localPath str
 
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("get data: %v", err), Code: errorToCode(err)}
+		return buyer.BatchFileEntry{Error: fmt.Sprintf("get data: %v", err), Code: buyer.ExitCodeFromError(err)}
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -372,7 +371,7 @@ func downloadPaidFile(c *client.Client, meta *client.MetaResponse, localPath str
 	if err != nil {
 		return buyer.BatchFileEntry{
 			Error:   fmt.Sprintf("get data after purchase: %v", err),
-			Code:    errorToCode(err),
+			Code:    buyer.ExitCodeFromError(err),
 			Payment: &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
 		}
 	}
@@ -459,29 +458,9 @@ func writeFile(path string, data []byte) (int, error) {
 // Error handling and JSON output helpers
 // ---------------------------------------------------------------------------
 
-func handleError(err error, stderr io.Writer) int {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		fmt.Fprintf(stderr, "bmget: not found\n")
-		return 2
-	case errors.Is(err, client.ErrTimeout):
-		fmt.Fprintf(stderr, "bmget: request timeout\n")
-		return 4
-	case errors.Is(err, client.ErrNetwork):
-		fmt.Fprintf(stderr, "bmget: network error: %v\n", err)
-		return 4
-	case errors.Is(err, client.ErrServer):
-		fmt.Fprintf(stderr, "bmget: server error: %v\n", err)
-		return 4
-	default:
-		fmt.Fprintf(stderr, "bmget: %v\n", err)
-		return 1
-	}
-}
-
 func handleErrorJSON(err error, stdout io.Writer) int {
-	code := errorToCode(err)
-	resp := &buyer.ErrorResponse{Error: errorMessage(err), Code: code}
+	code := buyer.ExitCodeFromError(err)
+	resp := &buyer.ErrorResponse{Error: buyer.ErrorMessage(err), Code: code}
 	data, _ := json.Marshal(resp)
 	fmt.Fprintln(stdout, string(data))
 	return code
@@ -497,32 +476,3 @@ func writeJSON(v interface{}, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func errorToCode(err error) int {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		return 2
-	case errors.Is(err, client.ErrTimeout), errors.Is(err, client.ErrNetwork):
-		return 4
-	case errors.Is(err, client.ErrServer):
-		return 4
-	case errors.Is(err, client.ErrPaymentRequired):
-		return 5
-	default:
-		return 1
-	}
-}
-
-func errorMessage(err error) string {
-	switch {
-	case errors.Is(err, client.ErrNotFound):
-		return "not found"
-	case errors.Is(err, client.ErrTimeout):
-		return "request timeout"
-	case errors.Is(err, client.ErrNetwork):
-		return "network error"
-	case errors.Is(err, client.ErrServer):
-		return "server error"
-	default:
-		return err.Error()
-	}
-}
