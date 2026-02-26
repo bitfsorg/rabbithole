@@ -22,6 +22,9 @@ import (
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
+// maxContentSize is the maximum encrypted content size bget will read (1 GB).
+const maxContentSize = 1 << 30
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -154,7 +157,7 @@ func downloadContent(c *client.Client, meta *client.MetaResponse, outputName str
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		fmt.Fprintf(stderr, "bget: read error: %v\n", err)
 		return 4
@@ -275,7 +278,7 @@ func downloadPaidContent(c *client.Client, meta *client.MetaResponse, buyResult 
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		if jsonOut {
 			return handleErrorJSON(fmt.Errorf("read error: %w", err), stdout)
@@ -412,7 +415,7 @@ func downloadContentJSON(c *client.Client, meta *client.MetaResponse, outputName
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		return handleErrorJSON(fmt.Errorf("read error: %w", err), stdout)
 	}

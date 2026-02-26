@@ -755,8 +755,6 @@ func TestEncryptResultFieldSizes(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, encResult.KeyHash, 32, "KeyHash must be 32 bytes")
-	assert.Len(t, encResult.AESKey, 32, "AESKey must be 32 bytes")
-
 	expectedCiphertextLen := len(plaintext) + method42.NonceLen + method42.GCMTagLen
 	assert.Len(t, encResult.Ciphertext, expectedCiphertextLen,
 		"Ciphertext must be len(plaintext) + NonceLen + GCMTagLen")

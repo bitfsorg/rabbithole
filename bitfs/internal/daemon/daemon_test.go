@@ -362,10 +362,10 @@ func TestContentNegotiation_WithMetanet_File(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
-	var resp NodeInfo
+	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.Equal(t, "file", resp.Type)
-	assert.Equal(t, uint64(12345), resp.FileSize)
+	assert.Equal(t, "file", resp["type"])
+	assert.Equal(t, float64(12345), resp["file_size"])
 }
 
 func TestContentNegotiation_WithMetanet_Markdown(t *testing.T) {
@@ -384,7 +384,8 @@ func TestContentNegotiation_WithMetanet_Markdown(t *testing.T) {
 	d.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "readme.md")
+	// Dots and dashes are now escaped in markdown output.
+	assert.Contains(t, w.Body.String(), `readme\.md`)
 }
 
 func TestContentNegotiation_PaidContent(t *testing.T) {
@@ -1370,8 +1371,9 @@ func TestContentNegotiation_WithMetanet_DirMarkdown(t *testing.T) {
 	d.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "sunset.jpg")
-	assert.Contains(t, w.Body.String(), "dawn.jpg")
+	// Dots are escaped in markdown output.
+	assert.Contains(t, w.Body.String(), `sunset\.jpg`)
+	assert.Contains(t, w.Body.String(), `dawn\.jpg`)
 }
 
 func TestPaidContent_PriceHeaders(t *testing.T) {
@@ -1462,6 +1464,138 @@ func TestDaemon_ServerTimeouts(t *testing.T) {
 	assert.Equal(t, 120*time.Second, d.server.IdleTimeout, "IdleTimeout should be set")
 	assert.Equal(t, 10*time.Second, d.server.ReadHeaderTimeout, "ReadHeaderTimeout should be set")
 	assert.Equal(t, 1<<20, d.server.MaxHeaderBytes, "MaxHeaderBytes should be set")
+}
+
+// --- Markdown escape tests (M-NEW-21) ---
+
+func TestServeBasicInfo_MarkdownEscapesPath(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	req := httptest.NewRequest("GET", "/test*bold*path", nil)
+	req.Header.Set("Accept", "text/markdown")
+	w := httptest.NewRecorder()
+
+	d.handleRootOrPath(w, req)
+
+	body := w.Body.String()
+	assert.NotContains(t, body, "*bold*", "markdown special chars in path must be escaped")
+}
+
+func TestServeMarkdown_EscapesChildNames(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+	meta.nodes["/tricky"] = &NodeInfo{
+		Type: "dir",
+		Children: []ChildInfo{
+			{Name: "file_with*star", Type: "file"},
+			{Name: "[link](evil)", Type: "dir"},
+		},
+		Access: "free",
+	}
+
+	req := httptest.NewRequest("GET", "/tricky", nil)
+	req.Header.Set("Accept", "text/markdown")
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	// Verify that raw markdown special chars are escaped with backslashes.
+	assert.Contains(t, body, `\*star`, "star must be escaped with backslash")
+	assert.Contains(t, body, `\[link\]\(evil\)`, "brackets/parens must be escaped")
+	// Verify the raw unescaped patterns do NOT appear.
+	assert.NotContains(t, body, "file_with*star", "raw unescaped child name must not appear")
+	assert.NotContains(t, body, "[link](evil)", "raw markdown link in child name must not appear")
+}
+
+// --- Private node metadata exposure tests (M-NEW-24) ---
+
+func TestServeJSON_FiltersPrivateFields(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+	meta.nodes["/secret"] = &NodeInfo{
+		Type:     "file",
+		Access:   "private",
+		MimeType: "text/plain",
+		FileSize: 1024,
+		KeyHash:  []byte{0x01, 0x02, 0x03},
+	}
+
+	req := httptest.NewRequest("GET", "/secret", nil)
+	req.Header.Set("Accept", "application/json")
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.NotContains(t, body, "key_hash", "private node must not expose key_hash in JSON")
+}
+
+func TestServeJSON_ExposesKeyHashForFree(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+	meta.nodes["/public"] = &NodeInfo{
+		Type:     "file",
+		Access:   "free",
+		MimeType: "text/plain",
+		FileSize: 512,
+		KeyHash:  []byte{0xab, 0xcd},
+	}
+
+	req := httptest.NewRequest("GET", "/public", nil)
+	req.Header.Set("Accept", "application/json")
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	assert.Contains(t, body, "key_hash", "free node should expose key_hash in JSON")
+	assert.Contains(t, body, "abcd", "free node key_hash should be hex-encoded")
+}
+
+// --- Capsule overwrite race test (M-NEW-1) ---
+
+func TestCapsuleOverwrite_SecondBuyerCannotOverwrite(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+	d.config.X402.Enabled = true
+	meta.nodes["/paid-file"] = &NodeInfo{
+		Type:       "file",
+		FileSize:   2048,
+		Access:     "paid",
+		PricePerKB: 100,
+		PNode:      make([]byte, 33),
+		KeyHash:    make([]byte, 32),
+	}
+
+	// Trigger invoice creation via 402 response.
+	req := httptest.NewRequest("GET", "/paid-file", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+	assert.Equal(t, http.StatusPaymentRequired, w.Code)
+
+	invoiceID := w.Header().Get("X-Invoice-Id")
+	require.NotEmpty(t, invoiceID)
+
+	// First buyer provides their pubkey.
+	buyer1, _ := ec.NewPrivateKey()
+	buyer1Hex := hex.EncodeToString(buyer1.PubKey().Compressed())
+	req1 := httptest.NewRequest("GET", "/_bitfs/buy/"+invoiceID+"?buyer_pubkey="+buyer1Hex, nil)
+	w1 := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w1, req1)
+	assert.Equal(t, http.StatusOK, w1.Code)
+
+	var resp1 map[string]interface{}
+	json.Unmarshal(w1.Body.Bytes(), &resp1)
+	capsuleHash1 := resp1["capsule_hash"]
+
+	// Second buyer tries to overwrite.
+	buyer2, _ := ec.NewPrivateKey()
+	buyer2Hex := hex.EncodeToString(buyer2.PubKey().Compressed())
+	req2 := httptest.NewRequest("GET", "/_bitfs/buy/"+invoiceID+"?buyer_pubkey="+buyer2Hex, nil)
+	w2 := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w2, req2)
+	assert.Equal(t, http.StatusOK, w2.Code)
+
+	var resp2 map[string]interface{}
+	json.Unmarshal(w2.Body.Bytes(), &resp2)
+	capsuleHash2 := resp2["capsule_hash"]
+
+	// The capsule_hash must NOT change between calls.
+	assert.Equal(t, capsuleHash1, capsuleHash2, "capsule must not be overwritten by second buyer")
 }
 
 // --- PrivateKey from big.Int for mock ---

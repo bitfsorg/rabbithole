@@ -47,6 +47,11 @@ func (e *Engine) Mput(opts *MputOpts) (*MputResult, error) {
 			return nil // skip this entry, keep walking
 		}
 
+		// Explicitly skip symlinks and special files (defense in depth).
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+
 		// Compute relative path from baseDir.
 		rel, err := filepath.Rel(baseDir, localPath)
 		if err != nil {

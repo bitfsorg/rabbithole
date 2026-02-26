@@ -451,6 +451,24 @@ func TestSubmitHTLC_InvalidJSON(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// --- Query parameter injection tests ---
+
+func TestGetBuyInfo_EscapesBuyerPubKey(t *testing.T) {
+	var capturedURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedURL = r.URL.String()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"capsule_hash":"abc","price":1000,"payment_addr":"addr","seller_pubkey":"def"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	_, _ = c.GetBuyInfo("testtxid", "abc&injected=true")
+
+	assert.NotContains(t, capturedURL, "&injected=true", "query parameter injection must be prevented")
+	assert.Contains(t, capturedURL, "buyer_pubkey=abc%26injected%3Dtrue")
+}
+
 // --- Input validation tests (Task 20: security audit) ---
 
 // TestValidateHex verifies the hex validation helper directly.

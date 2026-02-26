@@ -210,13 +210,6 @@ func TestAccessModePreservedInPayload(t *testing.T) {
 		"ciphertext should differ between Free and Private modes")
 
 	// ------------------------------------------------------------------
-	// AES keys must differ (different ECDH shared secret as HKDF IKM).
-	// ------------------------------------------------------------------
-	assert.False(t, bytes.Equal(freeEnc.AESKey, privEnc.AESKey),
-		"AES keys should differ between Free and Private modes")
-	t.Logf("AES keys differ: Free=%x... Private=%x...", freeEnc.AESKey[:8], privEnc.AESKey[:8])
-
-	// ------------------------------------------------------------------
 	// Build OP_RETURN payloads (keyHash(32B) + ciphertext) as would be
 	// embedded in a Metanet transaction.
 	// ------------------------------------------------------------------

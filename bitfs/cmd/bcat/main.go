@@ -23,6 +23,9 @@ import (
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
+// maxContentSize is the maximum encrypted content size bcat will read (1 GB).
+const maxContentSize = 1 << 30
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -134,7 +137,7 @@ func outputContent(c *client.Client, meta *client.MetaResponse, stdout, stderr i
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		fmt.Fprintf(stderr, "bcat: read error: %v\n", err)
 		return 4
@@ -237,7 +240,7 @@ func outputPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *b
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		if jsonOut {
 			return handleErrorJSON(fmt.Errorf("read error: %w", err), stdout)
@@ -321,7 +324,7 @@ func outputContentJSON(c *client.Client, meta *client.MetaResponse, stdout, stde
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		return handleErrorJSON(fmt.Errorf("read error: %w", err), stdout)
 	}

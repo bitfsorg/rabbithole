@@ -72,7 +72,7 @@ func TestDaemonSeesEngineMkdir(t *testing.T) {
 	err = json.Unmarshal(body, &result)
 	require.NoError(t, err, "unmarshal JSON body: %s", string(body))
 
-	assert.Equal(t, "dir", result["Type"], "Type should be 'dir'")
+	assert.Equal(t, "dir", result["type"], "type should be 'dir'")
 }
 
 // --- Test 2: TestDaemonReflectsRemove ---
@@ -121,7 +121,7 @@ func TestDaemonReflectsRemove(t *testing.T) {
 	err = json.Unmarshal(body, &result)
 	require.NoError(t, err, "unmarshal JSON: %s", string(body))
 
-	assert.Equal(t, "file", result["Type"],
+	assert.Equal(t, "file", result["type"],
 		"removed node still reports as file (deletion only recorded on-chain)")
 }
 
@@ -149,7 +149,7 @@ func TestDaemonContentNegotiationWithEngine(t *testing.T) {
 			accept:         "application/json",
 			wantStatus:     http.StatusOK,
 			wantCTContains: "application/json",
-			wantContains:   `"Type":"dir"`,
+			wantContains:   `"type":"dir"`,
 		},
 		{
 			name:           "HTML",
@@ -235,14 +235,14 @@ func TestDaemonPriceInResponse(t *testing.T) {
 	err = json.Unmarshal(body, &result)
 	require.NoError(t, err, "unmarshal JSON: %s", string(body))
 
-	assert.Equal(t, "paid", result["Access"],
+	assert.Equal(t, "paid", result["access"],
 		"Access should be 'paid' after Sell")
 
-	// PricePerKB is uint64 in Go, JSON encodes it as a number.
-	priceVal, ok := result["PricePerKB"]
-	require.True(t, ok, "PricePerKB should be present in JSON response")
+	// price_per_kb is uint64 in Go, JSON encodes it as a number.
+	priceVal, ok := result["price_per_kb"]
+	require.True(t, ok, "price_per_kb should be present in JSON response")
 	assert.Equal(t, float64(1000), priceVal,
-		"PricePerKB should be 1000 (JSON numbers decode as float64)")
+		"price_per_kb should be 1000 (JSON numbers decode as float64)")
 }
 
 // --- Test 5: TestDaemonHealthWithEngine ---

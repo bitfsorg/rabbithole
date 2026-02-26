@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -197,7 +198,7 @@ func (d *Daemon) serveBasicInfo(w http.ResponseWriter, r *http.Request, path str
 <body><h1>BitFS LFCP Node</h1><p>Path: %s</p></body></html>`, htmlEscape(path))
 	case "text/markdown":
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		_, _ = fmt.Fprintf(w, "# BitFS LFCP Node\n\nPath: %s\n", path)
+		_, _ = fmt.Fprintf(w, "# BitFS LFCP Node\n\nPath: %s\n", markdownEscape(path))
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
@@ -234,7 +235,7 @@ func (d *Daemon) serveMarkdown(w http.ResponseWriter, node *NodeInfo) {
 	if node.Type == "dir" {
 		_, _ = fmt.Fprint(w, "# Directory Listing\n\n")
 		for _, child := range node.Children {
-			_, _ = fmt.Fprintf(w, "- %s (%s)\n", child.Name, child.Type)
+			_, _ = fmt.Fprintf(w, "- %s (%s)\n", markdownEscape(child.Name), markdownEscape(child.Type))
 		}
 	} else {
 		_, _ = fmt.Fprintf(w, "# File\n\nType: %s\nSize: %d bytes\n", node.MimeType, node.FileSize)
@@ -242,9 +243,54 @@ func (d *Daemon) serveMarkdown(w http.ResponseWriter, node *NodeInfo) {
 }
 
 // serveJSON serves node metadata as JSON.
+// Only fields safe for the node's access level are included.
+// In particular, key_hash is only exposed for "free" access nodes.
 func (d *Daemon) serveJSON(w http.ResponseWriter, node *NodeInfo) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(node)
+
+	resp := map[string]interface{}{
+		"type":   node.Type,
+		"access": node.Access,
+	}
+	if node.MimeType != "" {
+		resp["mime_type"] = node.MimeType
+	}
+	if node.FileSize > 0 {
+		resp["file_size"] = node.FileSize
+	}
+	if node.PricePerKB > 0 {
+		resp["price_per_kb"] = node.PricePerKB
+	}
+	// Only expose key_hash for free content.
+	if node.Access == "free" && len(node.KeyHash) > 0 {
+		resp["key_hash"] = hex.EncodeToString(node.KeyHash)
+	}
+	if node.Type == "dir" && len(node.Children) > 0 {
+		resp["children"] = node.Children
+	}
+
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// markdownEscape escapes Markdown special characters in a string.
+func markdownEscape(s string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		"`", "\\`",
+		"*", `\*`,
+		"_", `\_`,
+		"[", `\[`,
+		"]", `\]`,
+		"(", `\(`,
+		")", `\)`,
+		"#", `\#`,
+		"+", `\+`,
+		"-", `\-`,
+		".", `\.`,
+		"!", `\!`,
+		"|", `\|`,
+	)
+	return replacer.Replace(s)
 }
 
 // negotiateContentType determines the best content type from the Accept header.

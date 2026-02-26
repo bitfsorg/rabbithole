@@ -106,8 +106,6 @@ func testWalletEncryptDecryptRoundTrip(t *testing.T, network *wallet.NetworkConf
 		require.NoError(t, err)
 		assert.NotEmpty(t, encResult.Ciphertext)
 		assert.Len(t, encResult.KeyHash, 32)
-		assert.Len(t, encResult.AESKey, 32)
-
 		// 7. Decrypt with same keys
 		decResult, err := method42.Decrypt(encResult.Ciphertext, nodeKey.PrivateKey, nodeKey.PublicKey, encResult.KeyHash, method42.AccessPrivate)
 		require.NoError(t, err)

@@ -231,13 +231,6 @@ func TestVaultEncryptionIsolation(t *testing.T) {
 		"vault0 should fail to decrypt vault1 content")
 	t.Logf("Reverse cross-vault (D_vault0, P_vault1) correctly rejected: %v", err)
 
-	// ------------------------------------------------------------------
-	// AES keys must be completely different.
-	// ------------------------------------------------------------------
-	assert.False(t, bytes.Equal(enc0.AESKey, enc1.AESKey),
-		"AES keys from different vaults must differ")
-	t.Logf("AES key isolation confirmed: vault0=%x... vault1=%x...",
-		enc0.AESKey[:8], enc1.AESKey[:8])
 }
 
 // TestVaultEncryptionIsolationPaid verifies cross-vault isolation under

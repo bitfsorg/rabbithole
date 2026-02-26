@@ -162,7 +162,9 @@ func (c *Client) GetData(hash string) (io.ReadCloser, error) {
 func (c *Client) GetBuyInfo(txid string, buyerPubKeyHex ...string) (*BuyInfo, error) {
 	reqURL := fmt.Sprintf("%s/_bitfs/buy/%s", c.BaseURL, txid)
 	if len(buyerPubKeyHex) > 0 && buyerPubKeyHex[0] != "" {
-		reqURL += "?buyer_pubkey=" + buyerPubKeyHex[0]
+		q := url.Values{}
+		q.Set("buyer_pubkey", buyerPubKeyHex[0])
+		reqURL += "?" + q.Encode()
 	}
 
 	resp, err := c.HTTPClient.Get(reqURL)

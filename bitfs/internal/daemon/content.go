@@ -18,6 +18,11 @@ var randRead = func(b []byte) (int, error) {
 }
 
 // handleData handles GET /_bitfs/data/{hash} for encrypted data retrieval.
+//
+// Access control note: This endpoint intentionally serves encrypted ciphertext
+// without authentication. The ciphertext is AES-256-GCM encrypted and cannot
+// be decrypted without completing the Method 42 key exchange or HTLC purchase.
+// This is analogous to how IPFS serves encrypted blocks by CID.
 func (d *Daemon) handleData(w http.ResponseWriter, r *http.Request) {
 	hashStr := r.PathValue("hash")
 	if hashStr == "" {

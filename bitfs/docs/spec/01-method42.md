@@ -27,7 +27,6 @@ const (
 type EncryptResult struct {
     Ciphertext []byte // nonce(12B) || AES-256-GCM(plaintext, aes_key) || tag(16B)
     KeyHash    []byte // SHA256(SHA256(plaintext)), 32 bytes
-    AESKey     []byte // Derived AES-256 key, 32 bytes (caller may discard)
 }
 
 // DecryptResult holds the output of a decryption operation.

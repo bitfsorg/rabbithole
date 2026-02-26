@@ -56,6 +56,37 @@ func TestMput_NotDirectory(t *testing.T) {
 	assert.Contains(t, err.Error(), "not a directory")
 }
 
+func TestMput_SkipsSymlinks(t *testing.T) {
+	eng := initTestEngine(t)
+
+	// Create root and upload directory.
+	addFeeUTXO(t, eng, 100000)
+	_, err := eng.Mkdir(&MkdirOpts{VaultIndex: 0, Path: "/"})
+	require.NoError(t, err)
+
+	// Build a local directory with one real file and symlinks.
+	tmpDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "real.txt"), []byte("hello"), 0644))
+	require.NoError(t, os.Symlink("/etc/passwd", filepath.Join(tmpDir, "evil_link")))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "subdir"), 0755))
+	require.NoError(t, os.Symlink("/tmp", filepath.Join(tmpDir, "subdir", "dir_link")))
+
+	// Add fee UTXOs for subdir mkdir + real file upload.
+	addFeeUTXO(t, eng, 100000)
+	addFeeUTXO(t, eng, 100000)
+	addFeeUTXO(t, eng, 100000)
+
+	result, err := eng.Mput(&MputOpts{
+		VaultIndex: 0,
+		LocalDir:   tmpDir,
+		RemoteDir:  "/",
+		Access:     "free",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, result.FilesUploaded, "only regular files should be uploaded, symlinks must be skipped")
+}
+
 func TestMput_NonexistentLocal(t *testing.T) {
 	eng := initTestEngine(t)
 
