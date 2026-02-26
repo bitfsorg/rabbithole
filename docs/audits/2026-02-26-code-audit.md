@@ -12,7 +12,7 @@
 
 This is a **re-audit** of the BitFS codebase. It confirms that the core cryptographic engine remains sound, while identifying significant new issues missed by the first audit. The re-audit discovered **5 new HIGH**, **25 new MEDIUM**, and **23 new LOW** severity findings.
 
-**Fix progress**: Of 23 previous findings, **12 fixed** (C-1, H-1–H-4, M-1–M-3, M-6, M-7, M-8, M-15), 1 partial (M-12), 1 changed (L-9), 9 unfixed. Of 53 new findings, all 5 HIGH and 20 MEDIUM fixed, 2 MEDIUM by-design, 4 MEDIUM + 23 LOW remain open. **Total: ~54 open findings** (down from ~89 at re-audit time).
+**Fix progress**: Of 23 previous findings, **21 fixed** (C-1, H-1–H-4, M-1–M-16 except M-15 already fixed), 1 changed (L-9), 1 unfixed (L-1). Of 53 new findings, all 5 HIGH and **24 MEDIUM fixed**, 2 MEDIUM by-design, 23 LOW remain open. **Total: ~24 open findings** (down from ~89 at re-audit time). All MEDIUM and above findings are now FIXED or BY-DESIGN.
 
 ---
 
@@ -44,23 +44,23 @@ All previously failing integration tests have been fixed in libbitfs-go:
 | M-1 | MEDIUM | **FIXED** | TLV uint64 bounds check before int cast |
 | M-2 | MEDIUM | **FIXED** | MaxChildNameLen = 255 |
 | M-3 | MEDIUM | **FIXED** | Checked multiplication + overflow → MaxUint64 |
-| M-4 | MEDIUM | **UNFIXED** | `ParseHTLCPreimage` extracts from fragile position without hash verification |
-| M-5 | MEDIUM | **UNFIXED** | `BuildSellerClaimTx` does not verify `SHA256(Capsule)` against HTLC script |
+| M-4 | MEDIUM | **FIXED** | `ParseHTLCPreimage` now verifies SHA256(preimage) against expected hash parameter |
+| M-5 | MEDIUM | **FIXED** | `BuildSellerClaimTx` validates capsule hash against HTLC script via `ExtractCapsuleHashFromHTLC` |
 | M-6 | MEDIUM | **FIXED** | Fee estimation uses actual HTLC script length |
 | M-7 | MEDIUM | **FIXED** | HTTPS validation on all capability URLs + template var escaping |
 | M-8 | MEDIUM | **FIXED** | PKI URL template injection — `url.PathEscape()` applied |
-| M-9 | MEDIUM | **UNFIXED** | RPC client does not check HTTP status code |
-| M-10 | MEDIUM | **UNFIXED** | RPC response ID not validated |
-| M-11 | MEDIUM | **UNFIXED** | SPV header sync does not validate chain continuity |
-| M-12 | MEDIUM | **PARTIAL** | `cleanupExpiredSessions()` exists but never called from `Start()` |
-| M-13 | MEDIUM | **UNFIXED** | Unbounded invoice and rate limiter maps |
-| M-14 | MEDIUM | **UNFIXED** | Handshake timestamp not validated |
+| M-9 | MEDIUM | **FIXED** | HTTP status code check added before JSON decode |
+| M-10 | MEDIUM | **FIXED** | Response ID validated against request ID |
+| M-11 | MEDIUM | **FIXED** | PrevBlock chain continuity validation in `SyncHeaders` |
+| M-12 | MEDIUM | **FIXED** | Background cleanup goroutine wired into `Start()` with `stopCleanup` channel |
+| M-13 | MEDIUM | **FIXED** | Time-based eviction for invoices + rate limiter via `cleanupExpiredInvoices` + `rateLimiter.cleanup` |
+| M-14 | MEDIUM | **FIXED** | ±5 min timestamp skew window validated in `handleHandshake` |
 | M-15 | MEDIUM | **FIXED** | Atomic write-to-temp + rename |
-| M-16 | MEDIUM | **UNFIXED** | `SaveConfig` creates files with 0666 mode |
+| M-16 | MEDIUM | **FIXED** | `SaveConfig` uses `os.OpenFile` with 0600 permissions |
 | L-1 | LOW | **UNFIXED** | Paid access mode mapped to `AccessFree` in cat/copy/move |
 | L-9 | LOW | **CHANGED** | DustLimit corrected to 1 sat; practical impact now negligible |
 
-**Summary: 12 fixed, 1 partial, 9 unfixed, 1 changed** out of 23 previous findings + **20 fixed, 2 by-design, 4 unfixed** out of 25 new MEDIUM findings (+ all 5 new HIGH fixed).
+**Summary: 21 fixed, 1 changed, 1 unfixed (L-1)** out of 23 previous findings + **24 fixed, 2 by-design** out of 26 new MEDIUM findings (+ all 5 new HIGH fixed). All MEDIUM+ findings now FIXED or BY-DESIGN.
 
 ---
 
@@ -141,11 +141,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: `GetNodeUTXO` releases lock before caller sets `Spent = true`. Concurrent operations can double-spend the same UTXO. The daemon adapter exposes the same engine to concurrent HTTP handlers.
 - **Fix**: Documented single-writer model.
 
-### M-NEW-3: Shell `mput` Access Mode Unvalidated
+### M-NEW-3: Shell `mput` Access Mode Unvalidated — **FIXED**
 
 - **File**: `bitfs/cmd/bitfs/cmd_shell.go:374-381`
 - **Description**: Unlike the CLI which validates `--access` against `"free"|"private"`, the shell accepts any string. A typo like `"prviate"` silently becomes `"free"`.
-- **Fix**: Validate access mode in shell handler.
+- **Fix**: Added `validateAccessMode()` helper that checks against `free|private|paid` set. Wired into `mput` handler.
 
 ### M-NEW-4: `crossDirectoryMove` Stores Content Before TX Builds Complete — **FIXED**
 
@@ -255,17 +255,17 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: `serveBasicInfo` Markdown case does not escape `path`. If rendered to HTML downstream, enables XSS via crafted path.
 - **Fix**: Added `markdownEscape()` helper, applied to path in `serveBasicInfo` and child names in `serveMarkdown`.
 
-### M-NEW-22: `lookupPrivKey` O(n) with Hardcoded Lookahead
+### M-NEW-22: `lookupPrivKey` O(n) with Hardcoded Lookahead — **FIXED**
 
 - **File**: `bitfs/internal/engine/engine.go:282-305`
 - **Description**: Iterates 0 to `NextReceiveIndex+10` deriving and comparing keys. O(n) per UTXO lookup. Keys derived beyond `+10` range permanently locked.
-- **Fix**: Store derivation index alongside `UTXOState`.
+- **Fix**: Added `FeeChain`/`FeeDerivIdx` fields to `UTXOState`. `lookupPrivKey` uses stored index for O(1) direct derivation. Linear scan retained as fallback for legacy UTXOs.
 
-### M-NEW-23: Shell History File Contains Sensitive Commands
+### M-NEW-23: Shell History File Contains Sensitive Commands — **FIXED**
 
 - **File**: `bitfs/cmd/bitfs/cmd_shell.go:71-72`
 - **Description**: Shell history file stores vault paths and potentially `--password` flag values. History file permissions not explicitly set.
-- **Fix**: Set history file mode to 0600. Filter sensitive commands.
+- **Fix**: Added `ensureHistoryFilePermissions()` that calls `os.Chmod(path, 0600)` after readline initialization.
 
 ### M-NEW-24: `handleData` Endpoint Serves Private Node Metadata — **FIXED**
 
@@ -273,11 +273,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: `serveJSON` encodes entire `NodeInfo` including `PNode` and `KeyHash` for private nodes without checking session auth. Private node metadata leaked over HTTP.
 - **Fix**: Replaced `serveJSON` with sanitized map builder that only exposes `key_hash` for `"free"` access nodes.
 
-### M-NEW-25: Capsule Not Persisted — Process Crash Loses Delivery
+### M-NEW-25: Capsule Not Persisted — Process Crash Loses Delivery — **FIXED**
 
 - **File**: `bitfs/internal/daemon/payment.go:302-318`
 - **Description**: After marking `invoice.Paid = true`, if process crashes before response is written, buyer paid but lost capsule. On restart, in-memory invoice and `usedTxIDs` are lost — buyer must re-pay.
-- **Fix**: Persist invoice state to disk before responding.
+- **Fix**: Added `persistInvoice()` (atomic write-to-tmp + rename) called before HTTP response. `recoverPersistedInvoices()` called in `Start()` to reload paid invoices from disk. `SetInvoiceDir()` configures persistence directory.
 
 ---
 
