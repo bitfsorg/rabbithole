@@ -334,7 +334,7 @@ message BitFSPayload {
   string keywords = 17;              // 空格分隔的关键词
   string description = 18;           // 简短描述
 
-  // === 以下字段编号与代码 parser.go tag 常量一致 ===
+  // === fields 19-27: tag 字节 = field 编号的十六进制 (field 19 = 0x13, ..., field 27 = 0x1B) ===
 
   // PRIVATE 模式支持 (明文 envelope, 供钱包恢复)
   bool encrypted = 19;               // true = 加密模式 (其余字段为默认值)
@@ -361,11 +361,14 @@ message BitFSPayload {
   // PRIVATE 模式加密载荷
   bytes enc_payload = 27;                  // nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
 
-  // === 以下字段已设计但尚未实现 (编号预留) ===
+  // === 以下字段已实现。fields 30-31 保持自然 tag 映射 (0x1E, 0x1F);
+  // fields 32+ tag 跳过 0x20-0x26 (Anchor 专用范围), 从 0x27 起连续分配。
+  // 完整映射见 libbitfs-go/metanet/parser.go tag 常量。 ===
 
-  // PRIVATE 模式钱包恢复 (待实现, 见 C3)
-  bytes private_key_hash = 28;       // key_hash 明文副本 (供恢复 aes_key = KDF(ECDH(D_node, P_node), key_hash))
-  uint32 private_file_index = 29;    // file_index 明文副本 (供恢复 D_node 的 HD 路径)
+  // PRIVATE 模式钱包恢复: 不存储明文 key_hash / file_index (设计决策 #10)。
+  // 恢复方案: 元数据加密密钥 HKDF(ECDH.x, SHA256(P_node), "bitfs-metadata-encryption")
+  // 解密 enc_payload → 恢复完整 TLV。配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密。
+  // 原 field 28-29 (private_key_hash, private_file_index) 已废弃。
 
   // 元信息扩展 (待实现)
   map<string, string> metadata = 30; // 自定义键值对 (灵活扩展)
@@ -405,9 +408,9 @@ message BitFSPayload {
 
 - **FREE**: ECDH(D_node=1, P_node) trick → S_k = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) 可公开计算, AES-GCM(content, S_k), P_node 通过 DNSLink 公开
 - **PAID**: aes_key = KDF(ECDH(D_node, P_node).x, key_hash) — 与 PRIVATE 同密钥基础, 买家通过 HTLC/Token 获取 capsule → 还原 aes_key, AES-GCM(content, aes_key); CDN 带宽费另行通过 x402 收取
-- **PRIVATE**: ECDH(D_node, P_node) → 仅 Owner 可解密, TLV 内部加密 (encrypted=true, private_key_hash + private_file_index 明文, enc_payload 加密)
-  - private_key_hash + private_file_index 在明文中供钱包恢复: aes_key = KDF(ECDH(D_node, P_node), key_hash)
-  - 解密后的 enc_payload 包含完整 TLV (mime_type, file_size, timestamp 等)
+- **PRIVATE**: ECDH(D_node, P_node) → 仅 Owner 可解密, TLV 内部加密 (encrypted=true, enc_payload 加密, 不存储明文 key_hash/file_index — 设计决策 #10)
+  - 元数据加密密钥: meta_key = HKDF(ECDH(D_node, P_node).x, SHA256(P_node), "bitfs-metadata-encryption")
+  - 钱包恢复: P_node 始终明文, D_node 从 BIP32 派生 → meta_key → 解密 enc_payload → 恢复完整 TLV
 
 ### 价格继承
 
@@ -503,18 +506,13 @@ ECDH 直接使用 D_node (BIP32 节点密钥), key_hash 移到 KDF 阶段:
 ### 私有数据的隐私保护
 
 - 不设置 DNSLink，不公开 P_node
-- TLV 内部加密: encrypted=true, private_key_hash + private_file_index 明文 (供钱包恢复), enc_payload 加密
-- 链上可见: version + encrypted 标记 + private_key_hash (双哈希) + private_file_index + 加密 blob
+- TLV 内部加密: encrypted=true, enc_payload 加密 (不存储明文 key_hash/file_index — 设计决策 #10)
+- 链上可见: version + encrypted 标记 + 加密 blob (enc_payload)
 - **隐私边界** (公链固有权衡):
   - 数据内容: 不可见 (加密)
   - 路径/文件名/元数据: 不可见 (enc_payload 内)
   - 图结构: **可见** — Metanet 协议要求 P_node 和 TxID_parent 在 OP_RETURN 中明文, 因此父子关系、操作频率、树结构深度等模式仍可被观察
-  - 内容指纹: **可关联** — private_key_hash 是确定性的, 攻击者可通过字典攻击匹配已知内容
-  - **缓解策略**:
-    - 威胁边界: 仅对"已知内容确认"有效 (如验证某用户是否存储了特定已知文件), 无法反推未知内容
-    - key_hash 使用双哈希 (SHA256(SHA256(plaintext))), 增加一次哈希的暴力搜索成本
-    - 对高敏感场景, Owner 可在加密前对 plaintext 添加随机 padding (应用层处理, 协议不强制)
-    - 长远方案: 未来版本可引入 per-file salt 混入 key_hash 计算, 代价是需要额外字段存储 salt
+  - 内容指纹: **不可关联** — 设计决策 #10 移除了明文 key_hash, 消除了字典攻击向量
 
 ---
 
