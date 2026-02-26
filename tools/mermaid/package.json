@@ -1,0 +1,11 @@
+{
+  "name": "@rabbithole/mermaid",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "bun run cli.ts"
+  },
+  "dependencies": {
+    "beautiful-mermaid": "^1.0.2"
+  }
+}

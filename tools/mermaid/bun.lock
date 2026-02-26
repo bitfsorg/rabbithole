@@ -1,0 +1,19 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "@rabbithole/mermaid",
+      "dependencies": {
+        "beautiful-mermaid": "^1.0.2",
+      },
+    },
+  },
+  "packages": {
+    "beautiful-mermaid": ["beautiful-mermaid@1.0.2", "", { "dependencies": { "elkjs": "^0.11.0", "entities": "^7.0.1" } }, "sha512-8f8xVRIuGyaI1kthEnYPqWLAGzdAyD1EuS4mL+zwhSUKVbnbFeKzQT9nXJq7YraU/ZFF4yzpRNdwLUzeEDTC5A=="],
+
+    "elkjs": ["elkjs@0.11.0", "", {}, "sha512-u4J8h9mwEDaYMqo0RYJpqNMFDoMK7f+pu4GjcV+N8jIC7TRdORgzkfSjTJemhqONFfH6fBI3wpysgWbhgVWIXw=="],
+
+    "entities": ["entities@7.0.1", "", {}, "sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA=="],
+  }
+}
