@@ -39,27 +39,17 @@ bitfs/                                  ← THIS DIRECTORY (code implementation)
 │   ├── bget/                            Read-only: download file to local filesystem
 │   ├── bstat/                           Read-only: file metadata (size, hash, owner, access)
 │   └── btree/                           Read-only: recursive directory tree
-├── internal/                          ← Core libraries
-│   ├── method42/                        Method 42 ECDH encryption engine
-│   ├── wallet/                          HD wallet (BIP32/BIP39, Argon2id seed encryption)
-│   ├── tx/                              BSV transaction builder (4 Metanet tx templates)
-│   ├── metanet/                         Metanet DAG parser + Unix filesystem operations
-│   ├── spv/                             SPV light client (Merkle proof, header chain)
-│   ├── storage/                         Content-addressed storage (flat KV, hash-sharded)
-│   ├── paymail/                         Paymail identity + bitfs:// URI resolution
-│   ├── x402/                            x402 payment protocol (invoices, HTLC, HTTP 402)
+├── internal/                          ← Application layer
+│   ├── buyer/                           Purchase state machine
+│   ├── client/                          b-tools HTTP client
 │   ├── daemon/                          Daemon HTTP server (LFCP, WebMCP, content negotiation)
-│   ├── config/                          Configuration management
-│   └── revshare/                        Revenue sharing (placeholder)
+│   └── engine/                          Unified business logic layer
 ├── docs/                              ← Documentation
 │   ├── spec/                            Module specifications (01-method42 to 11-cmd-btools, TASKS.md)
 │   └── plans/                           Design & implementation plans
-└── integration/                       ← Integration test suites
-    ├── filesystem_test.go
-    ├── payment_flow_test.go
-    ├── tx_build_test.go
-    ├── uri_resolve_test.go
-    └── wallet_crypto_test.go
+├── integration/                       ← Integration test suites (276 cases)
+├── e2e/                               ← Docker regtest end-to-end tests
+└── dashboard/                         ← React SPA (embedded in daemon)
 ```
 
 ## Design Documents

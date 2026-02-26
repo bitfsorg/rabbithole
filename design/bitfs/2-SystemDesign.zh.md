@@ -61,7 +61,7 @@ BITFS_HOME=~/.bitfs-testnet bitfs init --network testnet
 ```
 ~/.bitfs/                          # BITFS_HOME (可通过环境变量覆盖)
 ├── wallet.enc                     # Argon2id 加密的 HD seed (salt || nonce || ciphertext)
-├── config.toml                    # 网络配置、默认 vault 等
+├── config                         # 网络配置、默认 vault 等 (key=value 格式)
 ├── vaults/
 │   └── {vault_id}/                # 每个 vault 独立目录
 │       ├── meta.json              # vault 元数据
@@ -72,7 +72,7 @@ BITFS_HOME=~/.bitfs-testnet bitfs init --network testnet
 ├── spv/
 │   ├── headers.db                 # 区块头数据库
 │   └── peers.json                 # P2P 节点列表
-└── store/                         # 内容寻址存储 (本地文件内容)
+└── storage/                       # 内容寻址存储 (本地文件内容)
 ```
 
 > **密钥缓存加密**: `cache/keys/` 中的密钥缓存文件使用 wallet derived_key 加密, 格式: `{nonce(12B) || AES-GCM(derived_key, nonce, key_data)}`。禁止以明文 JSON 存储 AES 对称密钥。
@@ -535,7 +535,7 @@ ECDH 直接使用 D_node (BIP32 节点密钥), key_hash 移到 KDF 阶段:
 
 ```
 ;; 身份: P_node 公钥 (TXT, 唯一)
-_bitfs_pubkey.example.com   TXT  "02a1b2c3d4e5f6..."
+_bitfs.example.com            TXT  "bitfs=02a1b2c3d4e5f6..."
 
 ;; 服务端点: SRV 记录 (支持多个, CDN 负载均衡)
 _bitfs._tcp.example.com     SRV  10 60 443 cdn1.example.com
@@ -543,7 +543,7 @@ _bitfs._tcp.example.com     SRV  10 40 443 cdn2.example.com
 _bitfs._tcp.example.com     SRV  20 100 443 backup.example.com
 ```
 
-**`_bitfs_pubkey`** (TXT): P_node 公钥 (33 bytes 压缩公钥的 hex 编码)。只能有一个。P_node 可以是任意 Metanet 节点 -- 不限于 Vault 根目录, 可以是任何目录甚至文件。
+**`_bitfs`** (TXT): 值格式为 `bitfs=<hex_pubkey>`, 其中 `<hex_pubkey>` 是 P_node 公钥 (33 bytes 压缩公钥的 hex 编码)。只能有一个。P_node 可以是任意 Metanet 节点 -- 不限于 Vault 根目录, 可以是任何目录甚至文件。
 
 **`_bitfs._tcp`** (SRV): 数据服务端点。SRV 记录格式: `priority weight port target`。
 - `priority`: 数字越小优先级越高, 客户端优先连接低 priority 的服务器
@@ -555,7 +555,7 @@ _bitfs._tcp.example.com     SRV  20 100 443 backup.example.com
 ### 双向验证
 
 双向验证增强安全性:
-1. **DNS → Metanet**: `_bitfs_pubkey` TXT 记录指向 P_node
+1. **DNS → Metanet**: `_bitfs` TXT 记录指向 P_node
 2. **Metanet → DNS**: 目录 payload 中的 domain 字段记录绑定的域名
 
 两个方向必须一致。防止 DNS 被篡改后指向恶意节点。
@@ -582,7 +582,7 @@ bitfs publish                        # 查看所有绑定关系
 解析链路:
 ```
 bls bitfs://example.com/docs/
-  → DNS TXT lookup _bitfs_pubkey.example.com → 得到 P_node
+  → DNS TXT lookup _bitfs.example.com → 得到 P_node
   → DNS SRV lookup _bitfs._tcp.example.com → 得到 endpoint(s) (按 priority/weight 排序)
   → 连接最优 endpoint, Method 42 握手验证身份
   → 从 daemon 获取 Metanet 元数据 (SPV: 不查链)
@@ -613,7 +613,7 @@ bitfs://alice@example.com/docs/paper.pdf
 | 格式 | 示例 | 解析方式 |
 |------|------|---------|
 | Paymail | `bitfs://alice@example.com/path` | `@` → Paymail 协议 |
-| DNSLink | `bitfs://example.com/path` | 无 `@`, 非 hex → `_bitfs_pubkey` TXT |
+| DNSLink | `bitfs://example.com/path` | 无 `@`, 非 hex → `_bitfs` TXT |
 | 裸公钥 | `bitfs://02a1b2c3.../path` | 无 `@`, hex 开头 → 直连 |
 
 URI 解析优先级:
@@ -626,7 +626,7 @@ parse(uri):
   elif is_hex_pubkey(authority):
     → 直连: 公钥即 P_node, 需额外提供 endpoint
   else:
-    → DNSLink: TXT _bitfs_pubkey.{domain} + SRV _bitfs._tcp.{domain}
+    → DNSLink: TXT _bitfs.{domain} + SRV _bitfs._tcp.{domain}
 ```
 
 #### Paymail 优势: 一域多用户
@@ -665,8 +665,8 @@ GET https://example.com/.well-known/bsvalias
 Paymail 与 DNSLink 共存, 指向同一服务器:
 ```
 ;; DNSLink (现有, 保留)
-_bitfs_pubkey.example.com   TXT  "02a1b2c3d4e5f6..."
-_bitfs._tcp.example.com     SRV  10 60 443 cdn1.example.com
+_bitfs.example.com            TXT  "bitfs=02a1b2c3d4e5f6..."
+_bitfs._tcp.example.com       SRV  10 60 443 cdn1.example.com
 
 ;; Paymail (新增, 同一 host)
 _bsvalias._tcp.example.com  SRV  10 60 443 cdn1.example.com
@@ -837,7 +837,7 @@ bitfs put --keyword "tag1 tag2" --description "描述" <l> <r>  # 附加元信�
 bitfs mkdir <path>             # 创建目录
 bitfs mv <src> <dst>           # 移动 (新节点 + 旧节点变 SOFT 链接, 重新加密)
 bitfs cp <src> <dst>           # 复制 (独立新节点, 重新加密, 新 key_hash)
-bitfs rm <path>                # 删除: (1) SelfUpdate 父目录移除 ChildEntry, (2) 花费目标节点 UTXO 到 fee 地址
+bitfs rm <path>                # 删除: SelfUpdate 父目录移除 ChildEntry (不花费目标节点 UTXO, 因硬链接可能引用同一 P_node)
 bitfs rm -r <path>             # 递归删除目录 (先递归删除所有子节点)
 bitfs rmdir <path>             # 删除空目录
 bitfs link <target> <name>     # 硬链接 (复用 P_node, 仅添加 ChildEntry)
@@ -1567,7 +1567,7 @@ git pull origin main
 bitfs://domain/path/to/repo
 ```
 
-- `domain` — DNS 域名 (通过 `_bitfs_pubkey` TXT + `_bitfs._tcp` SRV 解析到 daemon)
+- `domain` — DNS 域名 (通过 `_bitfs` TXT + `_bitfs._tcp` SRV 解析到 daemon)
 - `path` — BitFS 文件系统中的目录路径，该目录作为 git 仓库的根
 
 #### 仓库目录结构
@@ -1909,12 +1909,11 @@ daemon:
 
 | 组件 | 选择 | 包 |
 |------|------|---|
-| 语言 | Go 1.21+ | - |
+| 语言 | Go 1.25.6 | - |
 | 区块链 | BSV | `github.com/bsv-blockchain/go-sdk` (BSV Association 官方 Go SDK) |
 | 内容寻址存储 | 内建 (SHA-256 为键) | 无外部依赖, 自实现 |
 | HTTP 服务 | 标准库 net/http | - |
-| CLI | Cobra + Viper | `github.com/spf13/cobra`, `github.com/spf13/viper` |
-| 本地存储 | BadgerDB | `github.com/dgraph-io/badger/v3` |
+| CLI | 标准库 flag | 无外部依赖 |
 | 测试 | testify | `github.com/stretchr/testify` |
 
 ---
@@ -1931,22 +1930,32 @@ bitfs/
 │   ├── btree/main.go
 │   └── bitfs/main.go         # 主命令 (子命令 + shell)
 ├── internal/
-│   ├── metanet/              # Metanet 解析、查询、创建节点
-│   ├── method42/             # Method 42 加密引擎
-│   │   ├── hdwallet.go       # HD 钱包 (BIP39/44 + passphrase)
-│   │   ├── encrypt.go        # 文件加密/解密
-│   │   ├── keycapsule.go     # Key Capsule + HTLC
-│   │   └── handshake.go      # Method 42 ECDH 握手协议
-│   ├── storage/              # 内容寻址存储 (SHA-256 为键, 本地文件系统)
-│   ├── spv/                  # SPV 轻节点 (tx 存储 + Merkle proof + 区块头)
-│   ├── dnslink/              # DNSLink 解析 + 双向验证
-│   ├── x402/                 # x402 支付协议
-│   ├── daemon/               # Daemon 服务
-│   ├── addressing/           # bitfs:// URI 解析
-│   └── shell/                # FTP 风格交互 Shell
+│   ├── buyer/                # 购买状态机
+│   ├── client/               # b-tools HTTP 客户端
+│   ├── daemon/               # Daemon HTTP 服务
+│   └── engine/               # 统一业务逻辑层
+├── integration/              # 集成测试 (276 cases)
+├── e2e/                      # Docker regtest 端到端测试
+├── dashboard/                # React SPA (嵌入 daemon)
 ├── go.mod
 └── go.sum
+
+# 共享核心库 (独立仓库)
+libbitfs-go/                  # github.com/tongxiaofeng/libbitfs-go
+├── method42/                 # Method 42 ECDH 加密引擎
+├── wallet/                   # HD 钱包 (BIP39/44, Argon2id)
+├── tx/                       # BSV 交易构造 (4 模板)
+├── metanet/                  # Metanet DAG + Unix 文件系统
+├── spv/                      # SPV 轻节点 (Merkle proof)
+├── storage/                  # 内容寻址存储
+├── paymail/                  # Paymail + bitfs:// URI 解析
+├── x402/                     # x402 支付协议
+├── network/                  # 区块链服务抽象
+├── config/                   # 配置文件解析
+└── revshare/                 # 收益分成
 ```
+
+> **注**: `bitfs/go.mod` 通过 `replace github.com/tongxiaofeng/libbitfs-go => ../libbitfs-go` 引用共享核心库。
 
 ---
 

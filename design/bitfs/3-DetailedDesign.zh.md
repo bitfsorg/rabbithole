@@ -1582,7 +1582,7 @@ bitfs sales [path]
 bitfs publish <domain> [path]
   绑定域名到指定路径 (默认 /)
   操作:
-    1. 引导用户配置 DNS TXT (_bitfs_pubkey) 和 SRV (_bitfs._tcp) 记录
+    1. 引导用户配置 DNS TXT (_bitfs.{domain}) 和 SRV (_bitfs._tcp) 记录
     2. 更新 Metanet payload 中的 domain 字段
     3. 双向验证: DNS → Metanet + Metanet → DNS
 
@@ -1983,7 +1983,7 @@ Buyer:
   5. 验证通过 → 会话建立
 
 身份保证:
-  - Seller 的 P_seller 必须与 DNSLink _bitfs_pubkey TXT 记录一致
+  - Seller 的 P_seller 必须与 DNSLink _bitfs TXT 记录一致
   - ECDH 保证: 无 D_seller 无法计算正确的 shared_point
   - HMAC verify 保证: 双方确认拥有相同的 session_key
 ```

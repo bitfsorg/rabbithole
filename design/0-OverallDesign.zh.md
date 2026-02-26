@@ -53,19 +53,22 @@
 
 ## 三、界面划分
 
-### 3.1 共享核心库 (libbitfs)
+### 3.1 共享核心库 (libbitfs-go)
 
 两产品共享同一 Go 库，避免重复实现：
 
 ```
-libbitfs/
+libbitfs-go/
 ├── method42/     # Method 42 ECDH 加密 (secp256k1 + AES-256-GCM)
+├── wallet/       # HD 钱包 (BIP39/44, Argon2id 种子加密)
+├── tx/           # BSV 交易构造 (go-sdk)
 ├── metanet/      # Metanet DAG 解析 (inode, dirent, 软/硬链接)
 ├── spv/          # SPV 轻节点 (本地 tx + Merkle proof)
 ├── storage/      # 内容存储抽象 (链下/链上)
-├── paymail/      # Paymail 身份解析
-├── tx/           # BSV 交易构造 (go-sdk)
+├── paymail/      # Paymail 身份解析 + bitfs:// URI
 ├── x402/         # x402 支付协议 + Token 预购
+├── network/      # 区块链服务抽象 (RPC/SPV 客户端)
+├── config/       # 配置文件解析 (key=value)
 └── revshare/     # Revenue Share / ISO 证券化
 ```
 

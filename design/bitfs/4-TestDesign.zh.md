@@ -386,7 +386,7 @@
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
-| T13.1 TXT 记录解析 | `_bitfs_pubkey` TXT → P_node 公钥 | 1 | +2 |
+| T13.1 TXT 记录解析 | `_bitfs` TXT → P_node 公钥 | 1 | +2 |
 | T13.2 SRV 记录 | `_bitfs._tcp` SRV → 端点列表 (priority/weight/port) | 1 | +2 |
 | T13.3 双向验证 | DNS 记录中公钥与链上 P_node 匹配 | 1 | +2 |
 | T13.4 多端点 | 多个 SRV 记录的优先级排序, CDN 场景 | 1 | +1 |

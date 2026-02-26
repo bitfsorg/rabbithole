@@ -29,7 +29,7 @@
 <tr>
 <td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Method 42</strong><br><span style="font-size:9pt; color:#555;">Koblitz 加密引擎</span></td>
 <td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>SPV</strong><br><span style="font-size:9pt; color:#555;">轻节点</span></td>
-<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Rabin</strong><br><span style="font-size:9pt; color:#555;">签名</span></td>
+<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Rabin</strong><br><span style="font-size:9pt; color:#555;">签名 (计划中)</span></td>
 <td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>RevShare / ISO</strong><br><span style="font-size:9pt; color:#555;">收益权证券化</span></td>
 </tr>
 <tr>
@@ -84,7 +84,7 @@
 | 12 | key_hash 双重用途 | key_hash = SHA256(SHA256(plaintext)) 兼做密钥派生和内容承诺, 移除 encrypted_hash | 双重哈希不暴露原始数据, 链上仅存一个哈希 |
 | 13 | 价格模型 | 单价 price_per_kb (sat/KB), 支持目录继承 | 灵活, 总价客户端计算 |
 | 14 | 内容寻址 | 元数据交易与数据交易分离, 链下默认/链上可选 | 元数据/内容解耦, 灵活存储 |
-| 15 | DNS 绑定 | `_bitfs_pubkey` (P_node) + `_bitfs._tcp` SRV (多个, CDN), 双向验证, 任意节点可绑定 | 灵活, 支持 CDN |
+| 15 | DNS 绑定 | `_bitfs` (P_node) + `_bitfs._tcp` SRV (多个, CDN), 双向验证, 任意节点可绑定 | 灵活, 支持 CDN |
 | 16 | 链接类型 | 硬链接(多ChildEntry→同P_node)/SOFT(P_node)/SOFT_REMOTE(domain/path) | Unix 软硬链接 |
 | 17 | Index 管理 | monotonic auto-increment (next_child_index) | 简单优雅 |
 | 18 | cp/mv/link | 三个独立操作 (真复制/真移动/创建链接) | Unix 语义 |
