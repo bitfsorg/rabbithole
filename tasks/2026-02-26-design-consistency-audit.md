@@ -263,16 +263,16 @@ Metanet L1 多次引用 x402 但未链接到 BitFS 设计文档。`revshare/` �
 7. ✅ **C8** HTLC 发起方 → 网站改为 Buyer 创建 HTLC, 3 步流程
 8. ✅ **C9** wallet.db → 白皮书 + 3-DetailedDesign 改为 wallet.enc
 
-### P1 — 近期修复（功能/架构一致性）
+### P1 — 近期修复（功能/架构一致性）— ✅ 全部完成 (2026-02-26)
 
-9. **H1** revenue_share 类型 → 确定一种定义
-10. **H3** rm 交易数 → 改 SystemDesign 为 1 笔
-11. **H4** mv 跨目录 → L3 内部统一为 LINK SOFT
-12. **H7** Exit codes → 改 Spec 匹配代码
-13. **H9** DNS 记录格式 → 统一 _bitfs vs _bitfs_pubkey
-14. **H10** BIP32 路径 → 改网站为完整 BIP44
-15. **H11/H12** 白皮书 KDF → 补 `.x` 和 info 参数
-16. **M5** 修复失败测试 `tx_build_extra_test.go:547`
+9. ✅ **H1** revenue_share 类型 → Metanet 设计统一为 uint32 basis point (匹配 BitFS TLV tag 24)
+10. ✅ **H3** rm 交易数 → SystemDesign 改为 1 笔 (匹配 DetailedDesign)
+11. ✅ **H4** mv 跨目录 → L3 内部统一为 DELETE+moved_to (匹配 Section 4)
+12. ✅ **H7** Exit codes → Spec 改为匹配代码 (3=钱包, 4=网络, 5=权限, 7=冲突)
+13. ✅ **H9** DNS 记录格式 → 统一为 `_bitfs.{domain}` + `bitfs=` 前缀 (paymail/dns.go + 测试)
+14. ✅ **H10** BIP32 路径 → 网站改为完整 BIP44 `m/44'/236'/...`
+15. ✅ **H11/H12** 白皮书 KDF → 补 `.x`、`HKDF`、`info="bitfs-file-encryption"`
+16. ✅ **M5** 测试已正确 (DustLimit == 1，无需修改)
 
 ### P2 — 版本更新时修复（文档更新）
 

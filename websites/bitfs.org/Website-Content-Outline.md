@@ -198,12 +198,13 @@ $ bitfs put --encrypt ./file.pdf
 **可视化：KEY HIERARCHY 密钥树**
 
 ```
-m — master key
- ├─ m/0' — identity
- ├─ m/1' — filesystem root
- │  ├─ m/1'/0 — /home/
- │  ├─ m/1'/1 — /shared/
- ├─ m/2' — payment
+m — master key (BIP44: m/44'/236'/...)
+ ├─ m/44'/236'/0' — vault 0 (filesystem root)
+ │  ├─ m/44'/236'/0'/0/0 — root directory
+ │  ├─ m/44'/236'/0'/0/1 — /home/
+ │  ├─ m/44'/236'/0'/0/2 — /shared/
+ ├─ m/44'/236'/1' — vault 1
+ ├─ m/44'/236'/2' — payment keys
 ```
 
 ---

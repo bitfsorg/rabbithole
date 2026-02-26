@@ -69,7 +69,7 @@ func ResolvePKI(alias, domain string) ([]byte, error)
 // Returns endpoints sorted by priority/weight.
 func ResolveEndpoints(domain string, recordType string) ([]string, error)
 
-// ResolveDNSLinkPubKey resolves _bitfs_pubkey.{domain} TXT record.
+// ResolveDNSLinkPubKey resolves _bitfs.{domain} TXT record with bitfs= prefix.
 // Returns the P_node compressed public key bytes.
 func ResolveDNSLinkPubKey(domain string) ([]byte, error)
 
@@ -108,7 +108,7 @@ Examples:
 ### DNS 记录
 ```
 ;; DNSLink identity
-_bitfs_pubkey.example.com   TXT  "02a1b2c3d4e5f6..."
+_bitfs.example.com          TXT  "bitfs=02a1b2c3d4e5f6..."
 
 ;; Service endpoints
 _bitfs._tcp.example.com     SRV  10 60 443 cdn1.example.com

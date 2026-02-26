@@ -4,7 +4,7 @@
 **Scope**: Full protocol correctness re-audit — 10 libbitfs-go packages + bitfs application layer + new code since last audit
 **Standard**: Internal specs (bitfs/spec/01-11) + external standards (NIST, RFC, BIP)
 **Auditor**: Claude Opus 4.6 (automated protocol review, 5 parallel audit agents)
-**Test Status**: 1372/1377 tests passing (5 pre-existing integration test failures)
+**Test Status**: 1647/1647 tests passing (all previously failing tests fixed)
 
 ---
 
@@ -28,18 +28,13 @@ The re-audit discovered **5 new HIGH**, **25 new MEDIUM**, and **23 new LOW** se
 |-------|-------|--------|--------|
 | libbitfs-go unit tests | 799 | 799 | 0 |
 | bitfs unit tests | 573 | 573 | 0 |
-| bitfs integration tests | 275 | 270 | 5 |
-| **Total** | **1647** | **1642** | **5** |
+| bitfs integration tests | 275 | 275 | 0 |
+| **Total** | **1647** | **1647** | **0** |
 
-**Failing integration tests** (all pre-existing):
-
-| Test | Root Cause |
-|------|-----------|
-| `TestSPVTamperedProof` | SPV TxID validation fires before Merkle check; test expects specific error message |
-| `TestSPVVerifyMetanetTransaction` | Synthetic test tx has TxID/RawTx hash mismatch |
-| `TestBuildCreateChildInsufficientFunds` | DustLimit changed from 546→1; amounts now sufficient |
-| `TestBuildCreateRootInsufficientFundsWithWalletKeys` | Same DustLimit issue |
-| `TestDustLimitConstant` | Asserts DustLimit==546, now 1 |
+All previously failing integration tests have been fixed in libbitfs-go:
+- `TestDustLimitConstant`, `TestBuildCreateChildInsufficientFunds`, `TestBuildCreateRootInsufficientFundsWithWalletKeys` — fixed by `d9db6bb` (DustLimit 546→1)
+- `TestSPVTamperedProof` — fixed by `8039e19` (single-tx block merkle proofs)
+- `TestSPVVerifyMetanetTransaction` — fixed by `b1f37c5` (RawTx integrity check)
 
 ---
 

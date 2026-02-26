@@ -96,7 +96,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 ```
 1. key_hash = SHA256(SHA256(plaintext))                  双重哈希（密钥派生 + 内容承诺）
 2. point = ECDH(D_node, P_node) = D_node × P_node       椭圆曲线 Diffie-Hellman
-3. aes_key = HKDF-SHA256(point.x, key_hash)              KDF 派生 AES-256-GCM 密钥
+3. aes_key = HKDF-SHA256(point.x, key_hash, info="bitfs-file-encryption")   KDF 派生 AES-256-GCM 密钥
 4. ciphertext = AES-GCM(plaintext, aes_key)
 ```
 
@@ -110,8 +110,8 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 
 | 访问类型 | 密钥派生 | 谁能解密 |
 |---------|---------|---------|
-| 私有 | aes_key = KDF(ECDH(D_node, D_node×G), key_hash) | 仅所有者（自加密） |
-| 免费 | aes_key = KDF(P_node, key_hash)（平凡密钥） | 知道 P_node 的任何人 |
+| 私有 | aes_key = HKDF(ECDH(D_node, P_node).x, key_hash, "bitfs-file-encryption") | 仅所有者（自加密） |
+| 免费 | aes_key = HKDF(P_node.x, key_hash, "bitfs-file-encryption")（平凡密钥） | 知道 P_node 的任何人 |
 | 付费 | 标准 Method 42 ECDH capsule 交换 | 买方（HTLC 交换后）|
 
 **平凡密钥技巧**：免费数据使用 P_node 作为 KDF 输入 → aes_key = KDF(P_node, key_hash)。P_node 通过 DNS 公开 → 任何人可派生解密密钥，但磁盘上仍加密 → 统一存储模型。

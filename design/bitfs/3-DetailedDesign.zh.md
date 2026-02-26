@@ -1520,10 +1520,10 @@ bitfs mv <src> <dst>
   移动或重命名
   同目录: 1 笔 (SelfUpdate parent, 修改 ChildEntry.Name)
   跨目录: 4 笔:
-    Tx1: CreateChild (目标新节点)
-    Tx2: SelfUpdate (源节点 → LINK SOFT 重定向)
-    Tx3: SelfUpdate (目标父目录, 添加 ChildEntry)
-    Tx4: SelfUpdate (源父目录, 标记 ChildEntry 为 LINK 类型)
+    Tx1: CreateChild (目标新节点, 新 HD 路径, 新密钥)
+    Tx2: SelfUpdate (目标父目录, 添加 ChildEntry)
+    Tx3: SelfUpdate (源节点 → op=DELETE, link_target=新 P_node 作为 moved_to 指针)
+    Tx4: SelfUpdate (源父目录, 移除 ChildEntry)
 
 bitfs cp <src> <dst>
   复制 (真复制: 解密源 → 重新加密 → 创建新节点)

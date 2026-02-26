@@ -190,15 +190,12 @@ else:
 
 **分成模式**: Metanet Node 与 Owner 分享 x402 收入。
 
-Owner 在 Metanet payload 中设置 `revenue_share` 字段:
+Owner 在 Metanet payload 中设置 `revenue_share` 字段 (TLV tag 24, uint32):
 
-```
-revenue_share: {
-    node_percent: 70,
-    owner_percent: 30,
-    min_price_per_kb: 1
-}
-```
+- 值为 0-10000 的 basis point，表示 Owner 从 x402 收入中获得的分成比例
+- 例如 `revenue_share = 3000` 表示 Owner 获得 30%，Metanet Node 获得 70%
+
+Metanet Node 在服务内容时读取此字段，自动按比例分配 x402 收入。`min_price_per_kb` 等策略参数由 Metanet daemon 配置管理，不写入链上 TLV。
 
 **两种合作模式**:
 

@@ -57,7 +57,7 @@ func TestResolveURI_Paymail(t *testing.T) {
 func TestResolveURI_DNSLink(t *testing.T) {
 	dns := &mockDNS{
 		txtRecords: map[string][]string{
-			"_bitfs_pubkey.example.com": {testPubKeyHex},
+			"_bitfs.example.com": {"bitfs=" + testPubKeyHex},
 		},
 		srvRecords: map[string][]*net.SRV{
 			"bitfs.example.com": {{Target: "cdn.example.com.", Port: 443, Priority: 1, Weight: 100}},
@@ -75,7 +75,7 @@ func TestResolveURI_DNSLink(t *testing.T) {
 func TestResolveURI_DNSLink_WithHostOverride(t *testing.T) {
 	dns := &mockDNS{
 		txtRecords: map[string][]string{
-			"_bitfs_pubkey.example.com": {testPubKeyHex},
+			"_bitfs.example.com": {"bitfs=" + testPubKeyHex},
 		},
 	}
 

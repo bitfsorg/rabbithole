@@ -210,7 +210,7 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 |------|------|------|
 | `put` (新建) | 分配新 HD index, op=CREATE | 新节点, 更新父目录 ChildEntry |
 | `put` (更新) | 复用 P_node, op=UPDATE | 同 P_node 新 TxID (Metanet 自动版本控制) |
-| `rm` | 2 笔交易: (1) SelfUpdate 父目录移除 ChildEntry, (2) 花费目标节点 UTXO 到 fee 地址 | 删除目录需先确保目录为空, 或使用 `rm -r` 递归删除 |
+| `rm` | 1 笔交易: SelfUpdate 父目录移除 ChildEntry (不发 DELETE 交易, 因硬链接可能引用同一 P_node) | 删除目录需先确保目录为空, 或使用 `rm -r` 递归删除 |
 | `mkdir` | 分配新 HD index, type=DIR | 新目录节点 |
 | `mv` (同目录) | SelfUpdate 父目录修改 ChildEntry.Name (1 笔交易) | 仅改名, 不改变节点身份/密钥 |
 | `mv` (跨目录) | DELETE 旧节点 + CreateChild 新节点 (4 笔交易) | 新 HD 路径, 新 P_node, 重新加密, 旧节点记录 moved_to 指针 |
