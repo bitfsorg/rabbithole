@@ -14,6 +14,7 @@ bitfs/bcat
 bitfs/bget
 bitfs/bstat
 bitfs/btree
+bitfs/bmget
 metanet/metanet
 
 # Git worktrees
@@ -29,3 +30,16 @@ bitfs-app/.dart_tool/
 # BitFS Extension build artifacts
 bitfs-extension/node_modules/
 bitfs-extension/dist/
+
+# Independent git repos (subprojects)
+bitfs-app/
+bitfs-extension/
+git-remote-bitfs/
+libbitfs-go/
+
+# Reference PDFs (large binary files)
+references/*.pdf
+
+# Dashboard build output
+bitfs/dashboard/dist/
+bitfs/dashboard/node_modules/
