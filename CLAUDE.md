@@ -21,7 +21,7 @@
 RabbitHole/
 ├── design/            ← 设计文档 (md 源文件 + HTML→PDF)
 ├── whitepaper/        ← 白皮书 (md 大纲 → LaTeX → PDF)
-├── website/           ← 官网 (bitfs.org + metanet.org)
+├── websites/          ← 官网 (bitfs.org + metanet.org)
 ├── slides/            ← 演示文稿 (HTML5)
 ├── references/        ← 研究论文 (6 篇 PDF)
 ├── vi/                ← 视觉识别系统
@@ -150,7 +150,7 @@ libbitfs-go 的 TypeScript 镜像，目标: 浏览器 + Node.js 环境。ESM 优
 **管线**: `*-Outline.md`（大纲）→ `.tex`（LaTeX）→ tectonic (XeTeX) → `.pdf`
 **字体**: Songti SC（中文衬线）、Times New Roman（英文正文）、Menlo（代码）
 
-### website/ — 官网
+### websites/ — 官网
 
 两个单页官网，纯 HTML+CSS+JS（无框架），中英文双语：
 - **bitfs.org/** — 暗色植物系风格（深炭灰底 + 铜金强调色 `#c9956b`），9 个 section
@@ -190,7 +190,7 @@ BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 vi/ 一致）。
 |------|--------|----------|------|
 | design/ | `.zh.md` | pandoc + HTML 模板 + weasyprint | 内部设计 PDF |
 | whitepaper/ | `*-Outline.md` | 大纲 → `.tex` → tectonic (XeTeX) | 学术论文 PDF |
-| website/ | `Website-Content-Outline.md` | 大纲 → `index.html` + `index.zh.html` | 单页官网 |
+| websites/ | `Website-Content-Outline.md` | 大纲 → `index.html` + `index.zh.html` | 单页官网 |
 | slides/ | `Slides-Outline.md` | 大纲 → `*-presentation.html` | HTML 幻灯片 |
 
 **关键原则**：修改大纲/源文件，然后重新生成输出物。不要直接编辑生成的文件。
@@ -214,7 +214,7 @@ BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 vi/ 一致）。
 ## 许可证
 
 - 源代码: OpenBSV License
-- website/, whitepaper/, design/: 单独许可
+- websites/, whitepaper/, design/: 单独许可
 
 ## 技术栈
 - Go 1.25.6 + `github.com/bsv-blockchain/go-sdk` v1.2.18 (唯一 BSV 依赖)

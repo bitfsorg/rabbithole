@@ -54,7 +54,7 @@
   - [x] BuildDataTransaction 使用 OP_DROP 嵌入内容
   - [x] BuildOPReturn/ParseOPReturn 往返正确
   - [x] MetaFlag (0x6d657461) 被正确放置
-  - [x] 所有 P2PKH 输出执行粉尘限额（546 聪）
+  - [x] 所有 P2PKH 输出执行粉尘限额（1 聪）
   - [x] 手续费估算产生合理的值
   - [x] UTXO 追踪正确跟随刷新链
   - [x] 资金不足错误信息清晰

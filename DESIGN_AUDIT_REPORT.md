@@ -118,7 +118,7 @@ BSV 已移除 dust limit，项目代码和详细设计已更新为 1 sat，但�
 
 ### C5. Metanet 网站：Staking 必需 vs 设计/白皮书：无需 Staking
 
-**网站大纲** (`website/metanet.org/Website-Content-Outline.md`):
+**网站大纲** (`websites/metanet.org/Website-Content-Outline.md`):
 - line 140: `"Handles node economics and staking"` / `"处理节点经济与质押"`
 - line 160: `"Stake MNT tokens, run the daemon, start earning."`
 - line 180: `"Node operators stake MNT to join the network. Stake size signals commitment..."`
@@ -142,7 +142,7 @@ BSV 已移除 dust limit，项目代码和详细设计已更新为 1 sat，但�
 
 ### C6. 检索费货币：网站说 MNT，设计/白皮书说 BSV
 
-**网站** (`website/metanet.org/Website-Content-Outline.md:181`):
+**网站** (`websites/metanet.org/Website-Content-Outline.md:181`):
 ```
 Micro-fees paid in MNT for each content retrieval.
 ```
@@ -187,7 +187,7 @@ Layer 3: CDN Layer           ← 其他文档中不存在此层
 
 ### C8. HTLC 发起方：网站说 Seller，白皮书/设计说 Buyer
 
-**网站** (`website/bitfs.org/Website-Content-Outline.md:151`):
+**网站** (`websites/bitfs.org/Website-Content-Outline.md:151`):
 ```
 | 1 | Seller publishes HTLC with file hash |
 ```
@@ -372,7 +372,7 @@ L4 测试 T9.5.2 与 Section 9-B 一致（SOFT 链接方案）。
 
 ### H10. 网站 BIP32 路径简化错误
 
-**网站** (`website/bitfs.org/Website-Content-Outline.md:202-207`):
+**网站** (`websites/bitfs.org/Website-Content-Outline.md:202-207`):
 ```
 m/0' -- identity
 m/1' -- filesystem root

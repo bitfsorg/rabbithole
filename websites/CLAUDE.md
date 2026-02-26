@@ -5,7 +5,7 @@ BitFS 和 Metanet 两个产品的单页官网。
 ## 文件结构
 
 ```
-website/
+websites/
 ├── bitfs.org/
 │   ├── Website-Content-Outline.md   ← 内容大纲 (源文件)
 │   ├── index.html                   ← 英文官网
