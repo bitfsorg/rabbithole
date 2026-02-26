@@ -112,7 +112,7 @@ The BitFS architecture separates concerns into distinct layers:
 |  | Metanet  | | Content  | | DNS /   | | x402 / Commerce  |  |
 |  | Engine   | | Store    | | Paymail | | (HTLC, Token)    |  |
 |  +----------+ +----------+ +---------+ +------------------+  |
-|  | Method 42| | SPV      | | Rabin   | | Revenue Share /  |  |
+|  | Method 42| | SPV      | | Config  | | Revenue Share /  |  |
 |  | Crypto   | | Client   | | Sigs    | | ISO              |  |
 |  +----------+ +----------+ +---------+ +------------------+  |
 +---------------------------------------------------------------+
@@ -151,9 +151,9 @@ parent directory & parent field in payload ($P_{\text{node}}$ of parent) \\
 \end{tabular}
 \end{table}
 
-A filename exists only in the child entry list of the parent directory, not in the node itself, exactly as in Unix, where an inode contains no name. Three node types are defined. A \textsc{file} node holds a content hash, MIME type, and file size. A \textsc{dir} node holds a children list and a counter for the next available child index. A \textsc{link} node holds a target reference in one of three forms: \textsc{hard} (pointing to a specific transaction for a fixed version), \textsc{soft} (pointing to a $P_{\text{node}}$, always resolving to the latest version), or \textsc{soft\_remote} (pointing to a domain and path for cross-user references resolved via DNS).
+A filename exists only in the child entry list of the parent directory, not in the node itself, exactly as in Unix, where an inode contains no name. Three node types are defined. A \textsc{file} node holds a content hash, MIME type, and file size. A \textsc{dir} node holds a children list and a counter for the next available child index. A \textsc{link} node holds a target reference in one of two forms: \textsc{soft} (pointing to a $P_{\text{node}}$, always resolving to the latest version) or \textsc{soft\_remote} (pointing to a domain and path for cross-user references resolved via DNS).
 
-Hard links behave as true Unix hard links: multiple directory entries in possibly different directories reference the same $P_{\text{node}}$, sharing the underlying file data. Soft links introduce an indirection layer, always resolving to the latest version of the target. Remote soft links extend this across trust boundaries, referencing a domain and path that resolve through DNS, enabling cross-user file references without requiring both parties to share a Metanet tree.
+Hard links are implemented implicitly: multiple directory entries in possibly different directories reference the same $P_{\text{node}}$. This is not a \textsc{link} node type but a property of directory entries---two entries sharing a public key share the underlying file data. Soft links introduce an indirection layer, always resolving to the latest version of the target. Remote soft links extend this across trust boundaries, referencing a domain and path that resolve through DNS, enabling cross-user file references without requiring both parties to share a Metanet tree.
 
 Version control is intrinsic to this model. The same $P_{\text{node}}$ may appear in multiple transactions, each representing a version of the file or directory. The transaction with the greatest block height (or latest topological order within a block) is the current version. All previous versions remain accessible and immutable on-chain, providing a complete audit trail without any additional versioning mechanism. This property also enables BitFS to serve as a git remote: a custom git remote helper translates push and fetch operations into Metanet transactions, storing encrypted packfiles as BitFS file nodes. The same access control and commerce features available for ordinary content apply equally to code repositories.
 
@@ -186,7 +186,7 @@ The encryption key for each file is derived as follows:
 \begin{enumerate}
 \item $\text{shared\_point} = \text{ECDH}(D_{\text{node}},\, P_{\text{recipient}}) = D_{\text{node}} \times P_{\text{recipient}}$
 \item $\text{key\_hash} = \text{SHA256}(\text{SHA256}(\text{plaintext}))$
-\item $\text{aes\_key} = \text{HKDF-SHA256}(\text{ikm}=\text{shared\_point}.x,\; \text{salt}=\text{key\_hash})$
+\item $\text{aes\_key} = \text{HKDF-SHA256}(\text{ikm}=\text{shared\_point}.x,\; \text{salt}=\text{key\_hash},\; \text{info}=\texttt{"bitfs-file-encryption"})$
 \item $\text{ciphertext} = \text{AES-256-GCM}(\text{plaintext},\; \text{aes\_key})$
 \end{enumerate}
 
@@ -236,7 +236,7 @@ ELSE IF timeout_expired AND Sig(buyer)               ->  buyer refunds
 
 The atomic swap guarantees that the seller receives payment if and only if the buyer receives the key capsule. When the seller reveals the capsule (as the HTLC preimage) to claim payment, the buyer reads the capsule from the blockchain and uses it to derive the decryption key for the file. Subsequent access requires only the cached key and the encrypted content; no further interaction with the seller is needed.
 
-For directory-level purchases, BIP32 key derivation provides a natural solution. Because ECDH is algebraically compatible with the non-hardened derivation of BIP32, a single capsule for a parent directory can unlock all non-hardened child nodes:
+For directory-level purchases (planned), BIP32 key derivation provides a natural solution. Because ECDH is algebraically compatible with the non-hardened derivation of BIP32, a single capsule for a parent directory can unlock all non-hardened child nodes:
 
 \[
 S_{\text{child}} = S_{\text{parent}} + \text{offset} \times P_{\text{buyer}}
@@ -246,7 +246,7 @@ where \emph{offset} is derived from the extended public key (xpub) of the parent
 
 This mechanism also provides a natural access control boundary. Nodes created with hardened BIP32 derivation cannot be derived from the capsule of the parent and require separate purchase. Content owners can therefore offer a directory for sale while excluding premium items that must be purchased individually. Consider a magazine publisher who sells a monthly subscription as a directory purchase. Regular issues are created with non-hardened derivation and are automatically accessible to subscribers. Special editions use hardened derivation and require a separate HTLC. The access policy is encoded in the key derivation structure itself, not in application-level logic.
 
-For high-volume purchasers, a hash chain token system provides batch efficiency. A buyer pre-purchases $N$ access tokens through a single on-chain setup, then redeems them one at a time for individual file keys. Each token in the chain validates against the previous one ($T_i$ satisfies $H(T_i) = T_{i-1}$), providing a cryptographic guarantee of the integrity of the chain without requiring $N$ separate HTLC transactions. The single-file HTLC, directory-tree xpub purchase, and hash chain token system coexist as three commerce modes suited to different access patterns: occasional purchases, bulk directory access, and high-frequency subscriptions respectively.
+For high-volume purchasers, a hash chain token system (planned) will provide batch efficiency. A buyer pre-purchases $N$ access tokens through a single on-chain setup, then redeems them one at a time for individual file keys. Each token in the chain validates against the previous one ($T_i$ satisfies $H(T_i) = T_{i-1}$), providing a cryptographic guarantee of the integrity of the chain without requiring $N$ separate HTLC transactions. The single-file HTLC, directory-tree xpub purchase, and hash chain token system coexist as three commerce modes suited to different access patterns: occasional purchases, bulk directory access, and high-frequency subscriptions respectively.
 
 %% ============================================================
 \section{SPV Operation}
@@ -264,9 +264,9 @@ This peer-to-peer verification model has a useful property: the data itself carr
 %% ============================================================
 \section{Agent-First Interface}
 
-BitFS treats AI agents as first-class users. The daemon implements HTTP content negotiation to serve both humans and agents from the same endpoints. When a request arrives with \texttt{Accept: text/html}, the daemon returns an HTML page with embedded WebMCP tool declarations that browser-based agents can discover through \texttt{navigator.modelContext}. When the accept header is \texttt{text/markdown}, the response is a self-describing usage guide with CLI command templates. JSON responses provide structured metadata for programmatic consumption.
+BitFS treats AI agents as first-class users. The daemon implements HTTP content negotiation to serve both humans and agents from the same endpoints. When a request arrives with \texttt{Accept: text/html}, the daemon returns an HTML page with embedded WebMCP tool declarations (planned) that browser-based agents will discover through \texttt{navigator.modelContext}. When the accept header is \texttt{text/markdown}, the response is a self-describing usage guide with CLI command templates. JSON responses provide structured metadata for programmatic consumption.
 
-For paid content, the HTTP~402 response includes payment metadata headers (price, file size, invoice ID) alongside a format-appropriate body. A human sees a paywall. A browser-based agent discovers WebMCP tool declarations and can invoke payment autonomously. A CLI agent receives a concrete command template and executes it.
+For paid content, the HTTP~402 response includes payment metadata headers (price, price-per-KB, file size, invoice ID, expiry) alongside a format-appropriate body. A human sees a paywall. A browser-based agent discovers WebMCP tool declarations and can invoke payment autonomously. A CLI agent receives a concrete command template and executes it.
 
 The 402 status code, traditionally a dead end for automated clients, becomes a programmable payment API when the client has a wallet. An agent encountering a 402 response can read the price, verify it against a budget policy, construct an HTLC transaction, broadcast it, receive the key capsule, decrypt the content, and proceed---all without human involvement. The same protocol flow that presents a paywall to a browser becomes a transparent micropayment for an agent.
 
@@ -279,7 +279,7 @@ All tools produce JSON output with the \texttt{-{}-json} flag, making them compo
 
 BitFS provides three addressing modes that coexist and resolve through a unified URI scheme.
 
-\textbf{DNS binding} associates any Metanet node with a domain name through two DNS records: a TXT record at \texttt{\_bitfs\_pubkey} containing the public key of the node, and one or more SRV records at \texttt{\_bitfs.\_tcp} specifying service endpoints with priority and weight for load balancing. Bidirectional verification ensures consistency: the DNS record points to $P_{\text{node}}$, and the domain field of the Metanet payload records the bound domain. Both must agree.
+\textbf{DNS binding} associates any Metanet node with a domain name through two DNS records: a TXT record at \texttt{\_bitfs} containing the public key of the node in the format \texttt{bitfs=<hex pubkey>}, and one or more SRV records at \texttt{\_bitfs.\_tcp} specifying service endpoints with priority and weight for load balancing. Bidirectional verification ensures consistency: the DNS record points to $P_{\text{node}}$, and the domain field of the Metanet payload records the bound domain. Both must agree.
 
 \textbf{Paymail integration}~\cite{paymail} adds email-style addressing. The URI \texttt{bitfs://alice@example.com/docs/paper.pdf} routes through the Paymail protocol to resolve the alias ``alice'' at the domain ``example.com'' to the root public key of a specific vault. This enables multiple users under a single domain, a capability that DNS binding alone cannot provide, since the TXT record of a domain can point to only one $P_{\text{node}}$. The BitFS daemon simultaneously serves as a Paymail server, exposing PKI, public profile, and key verification capabilities.
 
@@ -296,7 +296,9 @@ bitfs://02a1b2c3.../docs/paper.pdf         Direct key (hex pubkey)
 The Paymail layer bridges human-readable identity and the cryptographic identities used on-chain. It enables scenarios such as displaying \texttt{bob@handcash.io} as a buyer identity in sales records rather than a 33-byte public key, looking up the public key of a collaborator by email-style address for Method~42 handshakes, and using different Paymail aliases to route to different vaults under the same domain. Paymail operates purely at the discovery layer. The on-chain protocol uses only raw public keys; Paymail is never embedded in blockchain transactions or Metanet payloads.
 
 %% ============================================================
-\section{Revenue Rights}
+\section{Revenue Rights\textnormal{ \emph{(Planned)}}}
+
+\emph{Note: This section describes a planned feature. The \texttt{revshare} package exists in libbitfs-go but is not yet implemented.}\par\medskip
 
 BitFS enables content creators to tokenize the revenue rights of their files. Revenue rights are represented as a dual-layer on-chain structure: Share UTXOs serve as bearer instruments proving ownership of a fraction of the future earnings of a file, while a Registry UTXO acts as a stateful covenant maintaining the canonical list of shareholders and their proportions.
 
@@ -309,11 +311,11 @@ This system transforms digital content from a product sold for a one-time fee in
 %% ============================================================
 \section{The Metanet Network}
 
-BitFS defines the file system protocol: how files are organized, encrypted, addressed, and traded. Content distribution---the question of how encrypted bytes travel from storage to the requesting client---is handled by the Metanet network, a decentralized CDN described in its own whitepaper~\cite{metanet_multi}.
+BitFS defines the file system protocol: how files are organized, encrypted, addressed, and traded. Content distribution---the question of how encrypted bytes travel from storage to the requesting client---is designed to be handled by the Metanet network, a decentralized CDN described in its own whitepaper~\cite{metanet_multi}. Integration between the two systems is under active development.
 
 The Metanet network is a BSV-homomorphic sidechain that uses the same transaction format and script engine as BSV, with its own genesis block, native token (MNT), and merged mining with SHA256 proof-of-work. Metanet Nodes on the network earn revenue by serving content to users, collecting x402 retrieval fees in BSV. This creates a positive feedback loop: popular content generates more retrieval fees, attracting more nodes to cache it, which in turn improves availability and reduces latency.
 
-For content owners, integration is simple. Running \texttt{bitfs put -{}-store metanet} publishes a file to the decentralized CDN\@. Metanet Nodes that cache the content share x402 revenue with the owner according to a configurable split. Cold or unpopular data can be preserved through explicit storage contracts where the owner pays nodes in MNT tokens. In both cases, the storage proof mechanism reuses Method~42: each copy held by a node is re-encrypted with a provider-specific ECDH key, making copies cryptographically unique and verifiable through simple Merkle challenges rather than expensive zero-knowledge proofs.
+For content owners, integration is simple. A planned \texttt{-{}-store metanet} flag for \texttt{bitfs put} will publish files to the decentralized CDN\@. Metanet Nodes that cache the content share x402 revenue with the owner according to a configurable split. Cold or unpopular data can be preserved through explicit storage contracts where the owner pays nodes in MNT tokens. In both cases, the storage proof mechanism reuses Method~42: each copy held by a node is re-encrypted with a provider-specific ECDH key, making copies cryptographically unique and verifiable through simple Merkle challenges rather than expensive zero-knowledge proofs.
 
 Ordinary users interact only with BSV\@. The MNT token economy operates between content owners and Metanet Nodes, invisible to end users and agents who simply request files and pay x402 fees in BSV\@.
 
@@ -334,7 +336,7 @@ Future extensions include group signatures for multi-user write access (using BB
 \bibitem{method42}
 C.\,S.\,Wright,
 ``An Immutable File and Data Store,''
-nChain, 2025.
+nChain, 2019.
 Method~42: Deterministic key derivation for per-file encryption using ECDSA/secp256k1.
 
 \bibitem{metanet}
@@ -357,7 +359,7 @@ Section~8: Simplified Payment Verification.
 \bibitem{metanet_multi}
 GB2608179A,
 ``Multi-level Blockchain,''
-UK Intellectual Property Office, 2025.
+UK Intellectual Property Office, 2021.
 Embedding secondary data chains on a core blockchain.
 
 \bibitem{paymail}

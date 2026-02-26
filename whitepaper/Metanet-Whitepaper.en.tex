@@ -15,6 +15,9 @@
 \usepackage{tabularx}
 \usepackage{longtable}
 
+% Colors (needed by hyperref color expressions)
+\usepackage{xcolor}
+
 % Hyperlinks
 \usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black]{hyperref}
 
@@ -103,7 +106,7 @@ The Metanet Network handles where files are stored and how they reach the users 
 
 A content owner publishes a file using BitFS, which records file metadata (ownership, encryption parameters, pricing) on the BSV blockchain. The Metanet Network then distributes the encrypted file content across a network of nodes that serve it to requesters in exchange for micropayments. The owner need not run any infrastructure: once a file is published and its metadata is on-chain, the Metanet Network can deliver it.
 
-This separation matters. BitFS is a protocol that any server can implement. A user can run a BitFS daemon on their own machine and serve files directly, without ever touching the Metanet Network. The Metanet Network is for users who want decentralized, always-available content delivery without maintaining their own servers. The two systems share core Go libraries but produce independent binaries: \texttt{bitfs} for the file system protocol and \texttt{metanet} for node operation.
+This separation matters. BitFS is a protocol that any server can implement. A user can run a BitFS daemon on their own machine and serve files directly, without ever touching the Metanet Network. The Metanet Network is for users who want decentralized, always-available content delivery without maintaining their own servers. The two systems share design principles and cryptographic primitives but produce independent binaries: \texttt{bitfs} for the file system protocol and \texttt{metanet} for node operation. BitFS uses the shared core library libbitfs-go; Metanet currently has an independent implementation, with plans to integrate the shared library in the future.
 
 % -----------------------------------------------------------------------
 \section{3. Three-Layer Architecture}
@@ -204,7 +207,7 @@ Not all data is popular. A personal backup, a regulatory archive, or a rarely ac
 
 An archive contract is a Bitcoin Script transaction on the Metanet Chain. The owner locks MNT tokens into a series of UTXOs, one per proof period. In each period, the Metanet Node must submit a valid storage proof to claim that period's payment. If the node fails to submit a proof before the deadline, the owner can reclaim the locked tokens.
 
-The storage proof mechanism is built on the same ECDH primitive that BitFS uses for file encryption. When an owner distributes data to a Metanet Node under an archive contract, the data is re-encrypted with a key derived from the ECDH shared secret between the key of the owner and the key of the node. This means every node holds a cryptographically unique copy of the data. The copy held by Node~A is encrypted with a different key than the copy held by Node~B. They cannot copy each other's data to satisfy storage proofs.
+The storage proof mechanism is built on the same ECDH primitive that BitFS uses for file encryption. When an owner distributes data to a Metanet Node under an archive contract, the data is re-encrypted with a key derived from the ECDH shared secret between the key of the owner and the key of the node. This means every node holds a cryptographically unique copy of the data. The copy held by Node~A is encrypted with a different key than the copy held by Node~B. They cannot copy each other's data to satisfy storage proofs.\footnote{The current Metanet implementation uses HMAC-SHA256 to simulate ECDH shared secret derivation (\texttt{shared\_secret = HMAC-SHA256(owner\_priv, node\_pub)}), as Metanet is independent of the BSV SDK. The security properties are equivalent to ECDH's symmetric key derivation but do not provide forward secrecy. The production version will migrate to real secp256k1 ECDH.}
 
 Verification uses a Merkle challenge-response protocol. Each proof period has a deterministic challenge derived from the transaction ID of the contract: \texttt{challenge = SHA256(contract\_txid || period\_number)}. This determines which data chunk the node must present. The node responds with the chunk data and its Merkle proof, which anyone can verify against the Merkle root recorded in the contract. Since the transaction ID of the contract is unpredictable before the contract is created, the node cannot know which chunks will be challenged and must therefore retain all of them.
 
@@ -223,7 +226,7 @@ Replica uniqueness & zk-SNARK (PoRep) & ECDH re-encryption \\
 Ongoing verification & zk-SNARK (PoSt) & Merkle challenge-response \\
 Computation cost & GPU-intensive, hours per sector & Millisecond-scale ECDH + AES \\
 Replica management & Protocol-enforced minimum & Owner-determined (sign N contracts) \\
-Retrieval incentive & Weak (no direct reward) & Strong (x402 revenue) \\
+Retrieval incentive & Indirect (retrieval market exists but is secondary) & Strong (x402 as primary incentive) \\
 Token usage & Storage + retrieval + collateral & CDN hosting + mining only (users pay BSV) \\
 \bottomrule
 \end{tabularx}
@@ -347,11 +350,11 @@ The design of the system is deliberately conservative in its technical choices. 
 
 \item nChain, ``The Metanet Technical Summary v1.0,'' 2020. Blockchain-based directed acyclic graph for organizing data relationships.
 
-\item C.~S.~Wright, ``An Immutable File and Data Store,'' nChain, 2025. Method~42: Deterministic key derivation for per-file encryption using ECDSA/secp256k1.
+\item C.~S.~Wright, ``An Immutable File and Data Store,'' nChain, 2019. Method~42: Deterministic key derivation for per-file encryption using ECDSA/secp256k1.
 
 \item S.~Nakamoto, ``Bitcoin: A Peer-to-Peer Electronic Cash System,'' 2008.
 
-\item GB2608179A, ``Multi-level Blockchain,'' UK Intellectual Property Office, 2025. Embedding secondary data chains on a core blockchain.
+\item GB2608179A, ``Multi-level Blockchain,'' UK Intellectual Property Office, 2021. Embedding secondary data chains on a core blockchain.
 
 \item P.~Wuille, ``BIP32: Hierarchical Deterministic Wallets,'' Bitcoin Improvement Proposals, 2012.
 

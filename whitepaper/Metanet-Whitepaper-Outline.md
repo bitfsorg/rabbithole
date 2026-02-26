@@ -63,7 +63,7 @@
 **独立性**：
 - BitFS 是协议 → 任何服务器都可实现 → 用户可自建 Daemon 直接服务文件
 - Metanet 网络面向不想维护服务器的用户 → 去中心化、高可用分发
-- 共享核心 Go 库，独立二进制：`bitfs`（文件系统协议）+ `metanet`（节点运营）
+- 两个独立二进制共享设计理念和密码学原语：`bitfs`（文件系统协议）+ `metanet`（节点运营）。BitFS 使用共享核心库 libbitfs-go；Metanet 目前独立实现，计划未来整合共享库
 
 ---
 
@@ -143,6 +143,8 @@ Layer 3: Metanet Chain
 2. 存档合约费（MNT）— 内容所有者确保数据可用性
 3. 挖矿奖励（MNT）— 出块奖励
 
+**运营商视角**：节点运营商需管理 BSV/MNT 兑换和双资产余额。未来版本将提供自动化兑换工具以降低运营负担。
+
 **MNT 价值逻辑**：
 - 内容所有者购买 MNT 支付存档合约
 - MNT 需求 = CDN 托管服务需求的函数
@@ -160,6 +162,8 @@ Layer 3: Metanet Chain
     ↑                              ↓
 更多用户 ← 更好的可用性 ← 网络中更多副本
 ```
+
+**冷启动策略**：初始阶段，内容所有者通过自托管 Daemon（Layer 2）直接服务文件。随着 Metanet 节点上线并发现有利可图的内容，它们主动拉取缓存，网络逐步从 Layer 2 自然过渡到 Layer 3。存档合约为初始冷内容提供明确的缓存保障。
 
 **四个显著属性**：
 1. 热数据无需存储合约 → 节点自愿缓存因为有利可图
@@ -193,7 +197,8 @@ Layer 3: Metanet Chain
 - 节点未按时提交 → 所有者可回收锁定代币
 
 **ECDH 存储证明**：
-- 向节点分发数据时，用 ECDH(所有者密钥, 节点密钥) 派生的密钥重新加密
+- 向节点分发数据时，用 Method 42 ECDH 密钥派生（详见 BitFS 白皮书 §4）：ECDH(所有者密钥, 节点密钥) 派生的密钥重新加密
+- 注：当前实现使用 HMAC-SHA256 模拟 ECDH 共享密钥派生（`shared_secret = HMAC-SHA256(owner_priv, node_pub)`），因 Metanet 独立于 go-sdk。安全属性等效于 ECDH 的对称密钥派生，但不提供 ECDH 的前向保密性。生产版本将迁移至真实 secp256k1 ECDH
 - 每个节点持有密码学唯一副本 → 不能互相复制数据满足证明
 - Merkle 挑战-响应：challenge = SHA256(contract_txid || period_number) → 确定被挑战的数据块 → 节点返回块数据 + Merkle 证明 → 对照合约中记录的 Merkle 根验证
 - 合约 txid 创建前不可预测 → 节点必须保留所有数据块
@@ -211,8 +216,10 @@ Layer 3: Metanet Chain
 | 持续验证 | zk-SNARK (PoSt) | Merkle 挑战-响应 |
 | 计算成本 | GPU 密集，每扇区数小时 | 毫秒级 ECDH + AES |
 | 副本管理 | 协议强制最低数 | 所有者决定（签 N 个合约）|
-| 检索激励 | 弱（无直接奖励） | 强（x402 收入）|
+| 检索激励 | 间接（检索市场存在但非主要激励） | 强（x402 为主要激励）|
 | 代币用途 | 存储+检索+质押 | CDN 托管+挖矿（用户付 BSV）|
+
+**安全模型差异**：ECDH 重加密证明与 zk-SNARK 的关键区别在于：ECDH 证明是验证者特定的（verifier-specific），验证者必须持有私钥才能构造挑战；zk-SNARK 证明可公开验证。Metanet 选择 ECDH 因为验证者（合约签订者）已知，且计算效率高出数个数量级。
 
 ---
 
@@ -260,7 +267,7 @@ Layer 3: Metanet Chain
 - 递增序列号
 - 双方交换旧状态撤销密钥
 - 广播过期状态 → 对方可在窗口期内提交惩罚交易 → 没收全部通道余额
-- OP_CHECKSEQUENCEVERIFY 时间锁保障
+- OP_CHECKSEQUENCEVERIFY 时间锁保障（脚本生成部分实现中）
 
 **支持的用例**：
 - 按秒计费的流媒体
@@ -337,8 +344,8 @@ metanet mine          启用/配置合并挖矿
 
 [1] BitFS Project, "BitFS: A Peer-to-Peer Encrypted File System on Blockchain," 2025.
 [2] nChain, "The Metanet Technical Summary v1.0," 2020. (Metanet DAG)
-[3] C. S. Wright, "An Immutable File and Data Store," nChain, 2025. (Method 42)
+[3] C. S. Wright, "An Immutable File and Data Store," nChain, 2019. (Method 42)
 [4] S. Nakamoto, "Bitcoin: A Peer-to-Peer Electronic Cash System," 2008.
-[5] GB2608179A, "Multi-level Blockchain," UKIPO, 2025. (多层区块链)
+[5] GB2608179A, "Multi-level Blockchain," UKIPO, 2021. (多层区块链)
 [6] P. Wuille, "BIP32: Hierarchical Deterministic Wallets," 2012.
 [7] Protocol Labs, "Filecoin: A Decentralized Storage Network," 2017.

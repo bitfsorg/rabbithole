@@ -18,6 +18,9 @@
 \usepackage{tabularx}
 \usepackage{longtable}
 
+% Colors (needed by hyperref color expressions)
+\usepackage{xcolor}
+
 % Hyperlinks
 \usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black]{hyperref}
 
@@ -106,7 +109,7 @@ Metanet 网络负责文件存储在哪里以及如何到达请求它们的用户
 
 内容所有者使用 BitFS 发布文件，将文件元数据（所有权、加密参数、定价）记录在 BSV 区块链上。然后 Metanet 网络将加密的文件内容分发到节点网络中，节点通过微支付向请求者提供服务。所有者无需运行任何基础设施：一旦文件发布且元数据上链，Metanet 网络就能分发它。
 
-这种分离很重要。BitFS 是任何服务器都可以实现的协议。用户可以在自己的机器上运行 BitFS daemon，直接提供文件服务，完全不需要接触 Metanet 网络。Metanet 网络面向那些希望获得去中心化、永远可用的内容分发服务而又不想维护自己服务器的用户。两个系统共享核心 Go 库，但生成独立的二进制文件：\texttt{bitfs} 用于文件系统协议，\texttt{metanet} 用于节点运营。
+这种分离很重要。BitFS 是任何服务器都可以实现的协议。用户可以在自己的机器上运行 BitFS daemon，直接提供文件服务，完全不需要接触 Metanet 网络。Metanet 网络面向那些希望获得去中心化、永远可用的内容分发服务而又不想维护自己服务器的用户。两个系统共享设计理念和密码学原语，生成独立的二进制文件：\texttt{bitfs} 用于文件系统协议，\texttt{metanet} 用于节点运营。BitFS 使用共享核心库 libbitfs-go；Metanet 目前独立实现，计划未来整合共享库。
 
 % -----------------------------------------------------------------------
 \section{3. 三层架构}
@@ -207,7 +210,7 @@ Metanet 节点通过三种渠道之一获取缓存数据。内容所有者可以
 
 存档合约是 Metanet Chain 上的 Bitcoin Script 交易。所有者将 MNT 代币锁定到一系列 UTXO 中，每个证明期一个。在每个期间，Metanet 节点必须提交有效的存储证明来领取该期的付款。如果节点未能在截止日期前提交证明，所有者可以取回锁定的代币。
 
-存储证明机制建立在 BitFS 用于文件加密的相同 ECDH 原语之上。当所有者在存档合约下向 Metanet 节点分发数据时，数据使用所有者密钥与节点密钥之间的 ECDH 共享秘密派生的密钥进行重新加密。这意味着每个节点持有的是密码学上唯一的数据副本。节点~A 持有的副本使用与节点~B 不同的密钥加密。它们无法互相复制对方的数据来满足存储证明。
+存储证明机制建立在 BitFS 用于文件加密的相同 ECDH 原语之上。当所有者在存档合约下向 Metanet 节点分发数据时，数据使用所有者密钥与节点密钥之间的 ECDH 共享秘密派生的密钥进行重新加密。这意味着每个节点持有的是密码学上唯一的数据副本。节点~A 持有的副本使用与节点~B 不同的密钥加密。它们无法互相复制对方的数据来满足存储证明。\footnote{当前 Metanet 实现使用 HMAC-SHA256 模拟 ECDH 共享密钥派生（\texttt{shared\_secret = HMAC-SHA256(owner\_priv, node\_pub)}），因 Metanet 独立于 BSV SDK。安全属性等效于 ECDH 的对称密钥派生，但不提供前向保密性。生产版本将迁移至真实 secp256k1 ECDH。}
 
 验证使用 Merkle 挑战-响应协议。每个证明期有一个从合约交易 ID 确定性派生的挑战：\texttt{challenge = SHA256(contract\_txid || period\_number)}。这决定了节点必须呈现哪个数据块。节点以块数据及其 Merkle 证明作为响应，任何人都可以根据合约中记录的 Merkle 根进行验证。由于合约的交易 ID 在合约创建前是不可预测的，节点无法预知哪些块会被挑战，因此必须保留所有块。
 
@@ -226,7 +229,7 @@ Metanet 节点通过三种渠道之一获取缓存数据。内容所有者可以
 持续验证 & zk-SNARK (PoSt) & Merkle 挑战-响应 \\
 计算成本 & GPU 密集，每扇区数小时 & 毫秒级 ECDH + AES \\
 副本管理 & 协议强制最少副本 & 所有者决定（签 N 份合约） \\
-检索激励 & 弱（无直接奖励） & 强（x402 直接收入） \\
+检索激励 & 间接（检索市场存在但非主要激励） & 强（x402 为主要激励） \\
 代币用途 & 存储 + 检索 + 质押 & 仅 CDN 托管 + 挖矿（用户用 BSV） \\
 \bottomrule
 \end{tabularx}
@@ -347,11 +350,11 @@ Metanet 网络弥补了去中心化存储生态系统中的一个空白，将经
 
 \item nChain, ``The Metanet Technical Summary v1.0,'' 2020. 基于区块链的有向无环图，用于组织数据关系.
 
-\item C.~S.~Wright, ``An Immutable File and Data Store,'' nChain, 2025. Method~42: 使用 ECDSA/secp256k1 的确定性密钥派生实现逐文件加密.
+\item C.~S.~Wright, ``An Immutable File and Data Store,'' nChain, 2019. Method~42: 使用 ECDSA/secp256k1 的确定性密钥派生实现逐文件加密.
 
 \item S.~Nakamoto, ``Bitcoin: A Peer-to-Peer Electronic Cash System,'' 2008.
 
-\item GB2608179A, ``Multi-level Blockchain,'' UK Intellectual Property Office, 2025. 在核心区块链上嵌入二级数据链.
+\item GB2608179A, ``Multi-level Blockchain,'' UK Intellectual Property Office, 2021. 在核心区块链上嵌入二级数据链.
 
 \item P.~Wuille, ``BIP32: Hierarchical Deterministic Wallets,'' Bitcoin Improvement Proposals, 2012.
 

@@ -62,8 +62,8 @@
 - 三种节点类型：FILE / DIR / LINK
   - FILE：key_hash, MIME, size
   - DIR：children 列表 + next_child_index
-  - LINK：link_target (HARD=TxID, SOFT=P_node, SOFT_REMOTE=domain/path)
-- 硬链接 → 固定版本；软链接 → 最新版本；远程软链接 → DNS 跨越信任边界
+  - LINK：link_target (SOFT=P_node 指向最新版本, SOFT_REMOTE=domain/path 跨信任边界)
+- 硬链接 → 多个目录条目指向同一 P_node（隐式机制，非 LinkType 枚举值）；软链接 → 最新版本；远程软链接 → DNS 跨越信任边界
 - 版本控制内在：同一 P_node 多笔交易，区块高度最大者为当前版本
 
 ---
@@ -203,7 +203,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 ## 9. DNS 解析与发布
 
 **两种 DNS 记录**：
-- `_bitfs_pubkey.example.com TXT "02a1b2c3..."` — P_node 身份
+- `_bitfs.example.com TXT "bitfs=02a1b2c3..."` — P_node 身份
 - `_bitfs._tcp.example.com SRV 10 60 443 cdn1.example.com` — 服务端点
 
 **双向验证**：DNS TXT → P_node，Metanet 载荷 domain 字段 → 域名。两者必须一致。
@@ -230,12 +230,12 @@ bitfs://example.com/docs/readme.txt
 
 | Accept 头 | 响应 |
 |-----------|------|
-| text/html | HTML + WebMCP 工具声明 |
+| text/html | HTML + WebMCP 工具声明（计划中） |
 | text/markdown | CLI 使用指南 |
 | application/json | 结构化元数据 |
 
 **付费内容 HTTP 402**：
-- 响应头：X-Price, X-Price-Per-KB, X-File-Size, X-Invoice-Id
+- 响应头：X-Price, X-Price-Per-KB, X-File-Size, X-Invoice-Id, X-Expiry
 - 人类看到付费墙
 - 浏览器 AI Agent 发现 WebMCP → 自主支付
 - CLI Agent 收到命令模板 `bget --buy bitfs://...` → 执行
@@ -288,8 +288,8 @@ bitfs://example.com/docs/readme.txt
 
 ## 参考文献
 
-[1] C. S. Wright, "An Immutable File and Data Store," nChain, 2025. (Method 42)
+[1] C. S. Wright, "An Immutable File and Data Store," nChain, 2019. (Method 42)
 [2] nChain, "The Metanet Technical Summary v1.0," 2020. (Metanet DAG)
 [3] P. Wuille, "BIP32: Hierarchical Deterministic Wallets," 2012.
 [4] S. Nakamoto, "Bitcoin: A Peer-to-Peer Electronic Cash System," 2008. (SPV, Section 8)
-[5] GB2608179A, "Multi-level Blockchain," UKIPO, 2025. (多层区块链)
+[5] GB2608179A, "Multi-level Blockchain," UKIPO, 2021. (多层区块链)
