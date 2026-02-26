@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"text/template"
 )
@@ -163,12 +164,20 @@ type metaChildResponse struct {
 }
 
 // containsPathTraversal returns true if the path contains ".." segments
-// that could allow directory traversal attacks.
+// that could allow directory traversal attacks. It iteratively URL-decodes
+// (up to 3 rounds) to catch percent-encoded and double-encoded sequences.
 func containsPathTraversal(path string) bool {
-	for _, segment := range strings.Split(path, "/") {
-		if segment == ".." {
-			return true
+	for i := 0; i < 3; i++ {
+		for _, segment := range strings.Split(path, "/") {
+			if segment == ".." {
+				return true
+			}
 		}
+		decoded, err := url.PathUnescape(path)
+		if err != nil || decoded == path {
+			break
+		}
+		path = decoded
 	}
 	return false
 }
