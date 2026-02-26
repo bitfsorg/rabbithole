@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // RemoveOpts holds options for the Remove operation.
@@ -83,22 +84,22 @@ func (e *Engine) Remove(opts *RemoveOpts) (*Result, error) {
 		}
 	}()
 
-	mtx, err := buildUnsignedSelfUpdateTx(kp, parentTxID, payload, nodeUTXO, feeUTXO, changeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("engine: build self-update tx: %w", err)
-	}
+	batch := tx.NewMutationBatch()
+	batch.AddSelfUpdate(kp.PublicKey, parentTxID, payload, nodeUTXO, kp.PrivateKey)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
 
-	txHex, err := signSelfUpdateTx(mtx, nodeUTXO, feeUTXO)
+	txHex, result, err := buildAndSignBatch(batch)
 	if err != nil {
-		return nil, fmt.Errorf("engine: sign self-update tx: %w", err)
+		return nil, fmt.Errorf("engine: batch remove tx: %w", err)
 	}
 
 	success = true
-	txIDHex := hex.EncodeToString(mtx.TxID)
+	txIDHex := hex.EncodeToString(result.TxID)
 
 	// Update local state.
 	nodeState.TxID = txIDHex
-	e.TrackNewUTXOs(mtx, nodeState.PubKeyHex, changePubHex)
+	e.TrackBatchUTXOs(result, []string{nodeState.PubKeyHex}, changePubHex)
 
 	// --- Update parent directory to remove child entry ---
 	parentDir := path.Dir(opts.Path)

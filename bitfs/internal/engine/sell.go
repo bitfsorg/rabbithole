@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // SellOpts holds options for the Sell operation.
@@ -92,23 +93,23 @@ func (e *Engine) Sell(opts *SellOpts) (*Result, error) {
 		}
 	}()
 
-	mtx, err := buildUnsignedSelfUpdateTx(kp, parentTxID, payload, nodeUTXO, feeUTXO, changeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("engine: build self-update tx: %w", err)
-	}
+	batch := tx.NewMutationBatch()
+	batch.AddSelfUpdate(kp.PublicKey, parentTxID, payload, nodeUTXO, kp.PrivateKey)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
 
-	txHex, err := signSelfUpdateTx(mtx, nodeUTXO, feeUTXO)
+	txHex, result, err := buildAndSignBatch(batch)
 	if err != nil {
-		return nil, fmt.Errorf("engine: sign self-update tx: %w", err)
+		return nil, fmt.Errorf("engine: batch sell tx: %w", err)
 	}
 
 	success = true
-	txIDHex := hex.EncodeToString(mtx.TxID)
+	txIDHex := hex.EncodeToString(result.TxID)
 
 	nodeState.TxID = txIDHex
 	nodeState.Access = "paid"
 	nodeState.PricePerKB = opts.PricePerKB
-	e.TrackNewUTXOs(mtx, nodeState.PubKeyHex, changePubHex)
+	e.TrackBatchUTXOs(result, []string{nodeState.PubKeyHex}, changePubHex)
 
 	return &Result{
 		TxHex:   txHex,
