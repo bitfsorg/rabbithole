@@ -19,8 +19,8 @@ Core concepts:
 **Implementation in progress.** Foundation packages (chain, mining, contract) are implemented with tests. Remaining: proof, payment, overlay, CLI.
 
 - Design docs: Complete (4-layer design at `../design/metanet/`)
-- Module specs: Complete at `spec/` (7 modules)
-- Task breakdown: `spec/TASKS.md` (8 tasks, 4 phases, ~128 tests)
+- Module specs: Complete at `docs/spec/` (7 modules)
+- Task breakdown: `docs/spec/TASKS.md` (8 tasks, 4 phases, ~128 tests)
 - Implementation: Phase 1 (chain, mining) and Phase 2 partial (contract) complete
 
 ## Project Structure
@@ -30,15 +30,16 @@ metanet/
 ├── CLAUDE.md
 ├── LICENSE                    ← Open BSV License v5
 ├── go.mod                     ← module github.com/tongxiaofeng/metanet
-├── spec/                      ← Module specifications
-│   ├── TASKS.md               ← Implementation task breakdown
-│   ├── chain.md               ← internal/chain spec
-│   ├── mining.md              ← internal/mining spec
-│   ├── contract.md            ← internal/contract spec
-│   ├── proof.md               ← internal/proof spec
-│   ├── payment.md             ← internal/payment spec
-│   ├── overlay.md             ← internal/overlay spec
-│   └── cmd-metanet.md         ← cmd/metanet spec
+├── docs/                      ← Documentation
+│   └── spec/                  ← Module specifications
+│       ├── TASKS.md           ← Implementation task breakdown
+│       ├── chain.md           ← internal/chain spec
+│       ├── mining.md          ← internal/mining spec
+│       ├── contract.md        ← internal/contract spec
+│       ├── proof.md           ← internal/proof spec
+│       ├── payment.md         ← internal/payment spec
+│       ├── overlay.md         ← internal/overlay spec
+│       └── cmd-metanet.md     ← cmd/metanet spec
 ├── internal/
 │   ├── chain/                 ← Metanet Chain core (params, block, token, genesis)
 │   ├── mining/                ← Merged mining (AuxPoW, difficulty, BSV anchoring)

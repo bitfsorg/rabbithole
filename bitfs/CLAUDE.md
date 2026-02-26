@@ -51,9 +51,9 @@ bitfs/                                  ← THIS DIRECTORY (code implementation)
 │   ├── daemon/                          Daemon HTTP server (LFCP, WebMCP, content negotiation)
 │   ├── config/                          Configuration management
 │   └── revshare/                        Revenue sharing (placeholder)
-├── spec/                              ← Module specifications (Chinese)
-│   ├── 01-method42.md ... 11-cmd-btools.md
-│   └── TASKS.md                         Implementation task breakdown (~938 test cases)
+├── docs/                              ← Documentation
+│   ├── spec/                            Module specifications (01-method42 to 11-cmd-btools, TASKS.md)
+│   └── plans/                           Design & implementation plans
 └── integration/                       ← Integration test suites
     ├── filesystem_test.go
     ├── payment_flow_test.go

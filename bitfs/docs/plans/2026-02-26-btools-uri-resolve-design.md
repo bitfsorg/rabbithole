@@ -120,7 +120,7 @@ Always HTTPS. The `--host` override allows `http://` for local development.
 - `bitfs/cmd/bget/main.go` — wire up ResolveURI
 - `bitfs/cmd/bstat/main.go` — wire up ResolveURI
 - `bitfs/cmd/btree/main.go` — wire up ResolveURI
-- `bitfs/spec/11-cmd-btools.md` — update spec to reflect new --host behavior
+- `bitfs/docs/spec/11-cmd-btools.md` — update spec to reflect new --host behavior
 
 **Out of scope:**
 - Caching resolved endpoints (future)

@@ -333,7 +333,7 @@ git commit -m "docs: update design docs for cross-dir mv DELETE+CreateChild sema
 ### Task 6: Update spec and run full test suite
 
 **Files:**
-- Modify: `bitfs/spec/10-cmd-bitfs.md:21` (mv description)
+- Modify: `bitfs/docs/spec/10-cmd-bitfs.md:21` (mv description)
 
 **Step 1: Update spec description**
 
@@ -358,6 +358,6 @@ Expected: all 276 integration tests pass
 **Step 4: Commit**
 
 ```bash
-git add bitfs/spec/10-cmd-bitfs.md
+git add bitfs/docs/spec/10-cmd-bitfs.md
 git commit -m "spec: update mv command spec for cross-dir DELETE+CreateChild behavior"
 ```

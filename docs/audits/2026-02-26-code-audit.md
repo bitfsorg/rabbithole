@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-26 (Re-Audit)
 **Scope**: Full protocol correctness re-audit — 10 libbitfs-go packages + bitfs application layer + new code since last audit
-**Standard**: Internal specs (bitfs/spec/01-11) + external standards (NIST, RFC, BIP)
+**Standard**: Internal specs (bitfs/docs/spec/01-11) + external standards (NIST, RFC, BIP)
 **Auditor**: Claude Opus 4.6 (automated protocol review, 5 parallel audit agents)
 **Test Status**: 1647/1647 tests passing (all previously failing tests fixed)
 

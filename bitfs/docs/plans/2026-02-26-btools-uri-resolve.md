@@ -578,7 +578,7 @@ git commit -m "refactor(btree): use client.ResolveURI for endpoint resolution"
 
 **Files:**
 - Modify: `bitfs/internal/client/client.go:1-5` (package doc comment)
-- Modify: `bitfs/spec/11-cmd-btools.md`
+- Modify: `bitfs/docs/spec/11-cmd-btools.md`
 
 **Step 1: Update client package doc**
 
@@ -617,7 +617,7 @@ Expected: all tests pass (no changes to integration test code)
 **Step 5: Commit**
 
 ```bash
-git add bitfs/internal/client/client.go bitfs/spec/11-cmd-btools.md
+git add bitfs/internal/client/client.go bitfs/docs/spec/11-cmd-btools.md
 git commit -m "docs: update client pkg doc and spec for URI endpoint resolution"
 ```
 

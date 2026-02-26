@@ -64,7 +64,7 @@ For non-interactive (CLI/agent) mode: `--force` flag to skip prompt.
 - `bitfs/internal/engine/move_test.go` — rewrite cross-directory tests
 - `design/bitfs/2-SystemDesign.zh.md` line 215 — update mv description
 - `design/bitfs/3-DetailedDesign.zh.md` lines 801-839 — update cross-dir mv flow
-- `bitfs/spec/10-cmd-bitfs.md` — update mv behavior spec
+- `bitfs/docs/spec/10-cmd-bitfs.md` — update mv behavior spec
 
 **Out of scope:**
 - Same-directory rename (unchanged)

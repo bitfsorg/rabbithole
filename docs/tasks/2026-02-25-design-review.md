@@ -37,7 +37,7 @@
 - `design/bitfs/2-SystemDesign.zh.md` 第 215 行（mv 操作说明）
 - `design/bitfs/3-DetailedDesign.zh.md`（mv 详细流程）
 - `bitfs/internal/engine/` 和 `bitfs/cmd/bitfs/cmd_shell.go`（mv 实现）
-- `bitfs/spec/10-cmd-bitfs.md`（mv spec）
+- `bitfs/docs/spec/10-cmd-bitfs.md`（mv spec）
 **优先级**: P2
 
 ### 1.4 [TODO] 大目录区块链膨胀
