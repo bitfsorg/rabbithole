@@ -10,15 +10,9 @@
 
 ## Executive Summary
 
-This is a **re-audit** of the BitFS codebase. It confirms that the core cryptographic engine remains sound, while identifying significant new issues missed by the first audit. Of the 12 key findings from the first audit, **only 1 has been fixed** (H-2: payment replay prevention), 2 are partially addressed, and 9 remain unfixed.
+This is a **re-audit** of the BitFS codebase. It confirms that the core cryptographic engine remains sound, while identifying significant new issues missed by the first audit. The re-audit discovered **5 new HIGH**, **25 new MEDIUM**, and **23 new LOW** severity findings.
 
-The re-audit discovered **5 new HIGH**, **25 new MEDIUM**, and **23 new LOW** severity findings. The most impactful new findings are:
-
-- **Payment race condition** (TOCTOU) allows concurrent HTLC submissions to the same invoice — both receive the capsule (double-delivery)
-- **Path traversal in `mget`** via malicious child names from untrusted Metanet DAG state
-- **Unbounded `io.ReadAll`** in content resolver and b-tools client — OOM from malicious endpoints
-- **Pre-signed HTLC transaction not validated** against expected UTXO — malicious seller can redirect buyer signature
-- **Merkle tree traversal OOM** from malicious RPC node with crafted `totalTxs`
+**Fix progress**: Of 23 previous findings, **7 fixed** (C-1, H-1–H-4, M-7, M-8), 1 partial (M-12), 1 changed (L-9), 14 unfixed. Of 53 new findings, all 5 HIGH and 10 MEDIUM fixed, 1 MEDIUM by-design, 14 MEDIUM + 23 LOW remain open. **Total: ~69 open findings** (down from ~89 at re-audit time).
 
 ---
 
@@ -66,7 +60,7 @@ All previously failing integration tests have been fixed in libbitfs-go:
 | L-1 | LOW | **UNFIXED** | Paid access mode mapped to `AccessFree` in cat/copy/move |
 | L-9 | LOW | **CHANGED** | DustLimit corrected to 1 sat; practical impact now negligible |
 
-**Summary: 7 fixed, 0 partial, 14 unfixed, 1 changed** out of 22 previous findings + **10 fixed, 1 by-design, 14 unfixed** out of 25 new findings.
+**Summary: 7 fixed, 1 partial, 13 unfixed, 1 changed** out of 23 previous findings + **10 fixed, 1 by-design, 14 unfixed** out of 25 new findings.
 
 ---
 
@@ -416,51 +410,44 @@ All previously failing integration tests have been fixed in libbitfs-go:
 
 | Severity | First Audit | Unfixed | New Findings | **Total Open** |
 |----------|-------------|---------|--------------|----------------|
-| CRITICAL | 1 | 1 | 0 | **1** |
-| HIGH | 4 | 3 | 5 | **8** |
-| MEDIUM | 16 | 14 | 25 | **39** |
+| CRITICAL | 1 | 0 | 0 | **0** |
+| HIGH | 4 | 0 | 5 | **0** |
+| MEDIUM | 16 | 14 | 25 | **28** |
 | LOW | 20 | ~18 | 23 | **~41** |
-| **Total** | **41** | **36** | **53** | **~89** |
+| **Total** | **41** | **~32** | **53** | **~69** |
 
 ---
 
 ## Recommended Fix Priority
 
-### Immediate (Before Any Production Use)
+### Immediate (Before Any Production Use) — ALL DONE
 
-| Priority | ID | Impact | Effort |
-|----------|----|--------|--------|
-| 1 | C-1 | SPV breaks on single-tx blocks | 2-line fix |
-| 2 | H-NEW-1 | Payment double-delivery | Lock refactor |
-| 3 | H-NEW-2 | Arbitrary file write via mget | Input validation |
-| 4 | H-1 | SPV security model bypassed | New function + integration |
-| 5 | H-NEW-4 | Buyer signs unintended UTXO | UTXO reference check |
-| 6 | H-NEW-3 | Client OOM from malicious endpoint | `io.LimitReader` |
-| 7 | H-NEW-5 | Stack overflow from malicious RPC | Depth/size guards |
-| 8 | H-3 | Daemon DoS via slowloris | Server timeout config |
-| 9 | H-4 | Paymail OOM | `io.LimitReader` |
+All CRITICAL and HIGH findings have been fixed:
+- C-1, H-1, H-2, H-3, H-4 (previous findings)
+- H-NEW-1, H-NEW-2, H-NEW-3, H-NEW-4, H-NEW-5 (new findings)
 
 ### Short-Term (Next Sprint)
 
 | Priority | IDs | Theme |
 |----------|-----|-------|
-| 10 | M-NEW-2, M-NEW-22 | UTXO lock safety + key lookup |
-| 11 | M-NEW-4, L-NEW-9 | Store consistency on move failure |
-| 12 | M-NEW-5, M-NEW-24 | Access control on data/metadata endpoints |
-| 13 | M-NEW-6, M-NEW-7 | Client-side input validation |
-| 14 | M-NEW-8, M-NEW-9 | Mput/crossDirMove safety |
-| 15 | M-1, M-3 | Integer overflow guards |
-| 16 | M-12, M-13 | Bounded maps + cleanup goroutines |
-| 17 | M-15 | Atomic writes in FileStore |
-| 18 | L-1 | Paid access mode mapping |
+| 1 | M-NEW-2, M-NEW-22 | UTXO lock safety + key lookup |
+| 2 | M-NEW-4, L-NEW-9 | Store consistency on move failure |
+| 3 | M-NEW-9 | crossDirMove safety for directories |
+| 4 | M-1, M-3 | Integer overflow guards |
+| 5 | M-12, M-13 | Bounded maps + cleanup goroutines |
+| 6 | M-15 | Atomic writes in FileStore |
+| 7 | M-NEW-25 | Capsule persistence |
+| 8 | L-1 | Paid access mode mapping |
+
+Previously in this section, now fixed: M-NEW-5 (by-design), M-NEW-6, M-NEW-7, M-NEW-8, M-NEW-24.
 
 ### Long-Term (Technical Debt)
 
 | IDs | Theme |
 |-----|-------|
-| M-NEW-10 thru M-NEW-20 | Wallet bounds, HTLC robustness, BoltStore consistency |
-| L-NEW-14 thru L-NEW-23 | Key material safety, path validation, state persistence |
-| All unfixed M-4 thru M-16 | Spec compliance, HTTPS enforcement, RPC validation |
+| M-NEW-3, M-NEW-10, M-NEW-12, M-NEW-15 thru M-NEW-20, M-NEW-23 | Wallet bounds, HTLC robustness, validation, persistence |
+| L-NEW-1 thru L-NEW-23 | Key material safety, path validation, state persistence |
+| M-4 thru M-6, M-9 thru M-11, M-14, M-16 | Spec compliance, RPC validation, config permissions |
 
 ---
 
@@ -475,21 +462,21 @@ All previously failing integration tests have been fixed in libbitfs-go:
 
 ### Weaknesses (updated)
 
-1. **Concurrency safety gaps**: Payment flow (H-NEW-1, M-NEW-1), UTXO allocation (M-NEW-2), session management (L-NEW-8) all have race conditions. The daemon serves concurrent HTTP requests but the engine was designed for single-threaded CLI use.
-2. **Trust boundary validation**: Content from untrusted sources (Metanet DAG, RPC nodes, HTTP endpoints) is insufficiently validated. Path traversal (H-NEW-2), unbounded reads (H-NEW-3), Merkle OOM (H-NEW-5).
-3. **State persistence**: All critical state (invoices, payments, sessions, TxID replay set) is in-memory only. Any crash loses payment records.
-4. **SPV security remains broken**: No PoW validation (H-1) + single-tx rejection (C-1) = SPV provides no real security.
-5. **Unfixed findings accumulation**: 36 of 41 original findings still open. Velocity of new code (shell commands, mget/mput, cross-dir move) outpaces security remediation.
+1. **Concurrency safety gaps**: UTXO allocation (M-NEW-2), session management (L-NEW-8) still have race conditions. Payment flow (H-NEW-1, M-NEW-1) now fixed. The daemon serves concurrent HTTP requests but the engine was designed for single-threaded CLI use.
+2. **Trust boundary validation**: Significant progress — path traversal (H-NEW-2), unbounded reads (H-NEW-3), Merkle OOM (H-NEW-5) all fixed. Remaining gaps: RPC status codes (M-9, M-10), negative amounts (M-NEW-18), control chars in child names (L-NEW-16).
+3. **State persistence**: All critical state (invoices, payments, sessions, TxID replay set) is in-memory only. Any crash loses payment records (M-NEW-25).
+4. **SPV security fixed**: PoW validation (H-1) and single-tx block proofs (C-1) both fixed. Remaining SPV gaps: header chain continuity (M-11), duplicate header handling (L-NEW-17).
+5. **MEDIUM findings backlog**: ~28 MEDIUM findings still open across first audit and re-audit. Short-term batch fixes reducing this count.
 
 ### Trust Boundaries (updated)
 
 | Boundary | Trust Level | Key Gaps |
 |----------|-------------|----------|
-| RPC node | Trusted (should be Untrusted) | No PoW validation, Merkle OOM, negative amounts |
-| Metanet DAG content | Untrusted | Path traversal in child names, control chars |
-| HTTP endpoints | Untrusted | No body size limits (3 locations), no access control on data endpoint |
-| Local state files | Trusted (fragile) | No WalletState validation, no integrity checks |
-| Concurrent HTTP clients | Untrusted | Payment TOCTOU, session races, unbounded maps |
+| RPC node | Partially validated | ~~No PoW validation~~, ~~Merkle OOM~~, negative amounts (M-NEW-18), RPC status/ID (M-9, M-10) |
+| Metanet DAG content | Untrusted | ~~Path traversal~~ fixed, control chars (L-NEW-16) |
+| HTTP endpoints | Partially validated | ~~Body size limits~~ fixed (H-NEW-3, M-NEW-6), ~~access control~~ fixed (M-NEW-24) |
+| Local state files | Trusted (fragile) | No WalletState validation (M-NEW-12), no integrity checks |
+| Concurrent HTTP clients | Partially validated | ~~Payment TOCTOU~~ fixed, session races (L-NEW-8), unbounded maps (M-13) |
 
 ---
 

@@ -5,6 +5,7 @@
 **标准**: 以代码实现为权威基准
 **审查员**: Claude Opus 4.6 (5 个并行审查 Agent)
 **方法**: Agent 1 审查 BitFS §1-5, Agent 2 审查 BitFS §6-10, Agent 3 审查 BitFS §11-13 + References, Agent 4 审查 Metanet §1-6, Agent 5 审查 Metanet §7-12 + Academic Rigor
+**修复状态**: 全部 22 项已修复 (2026-02-26)
 
 ---
 
@@ -41,7 +42,7 @@ All claims verified accurate. 产品定位、设计哲学、Unix 类比在代码
 
 ### §2 System Architecture
 
-> **WP-03 [HIGH]** Rabin 签名模块在架构图中被引用但不存在
+> **WP-03 [HIGH] [FIXED]** Rabin 签名模块在架构图中被引用但不存在
 >
 > 白皮书架构图包含 "Rabin Sigs" 模块。libbitfs-go 实际有 10 个包（method42, wallet, tx, metanet, spv, storage, network, config, paymail, x402），无任何名为 "rabin" 的包或文件。
 >
@@ -51,7 +52,7 @@ All claims verified accurate. 产品定位、设计哲学、Unix 类比在代码
 
 ### §3 Metanet DAG & File System
 
-> **WP-01 [CRITICAL]** LinkType 枚举不匹配：白皮书 3 种 vs 代码 2 种
+> **WP-01 [CRITICAL] [FIXED]** LinkType 枚举不匹配：白皮书 3 种 vs 代码 2 种
 >
 > 白皮书描述 3 种链接类型：HARD、SOFT、SOFT_REMOTE。代码中 LinkType 枚举只有 2 个值：
 > ```go
@@ -64,7 +65,7 @@ All claims verified accurate. 产品定位、设计哲学、Unix 类比在代码
 > - **影响**: 第三方按白皮书实现时会为 HARD 分配一个 LinkType 值，导致 TLV 格式不兼容
 > - **修复**: 白皮书应明确说明硬链接是隐式机制（多个目录条目指向同一节点公钥），不是 LinkType 枚举值
 
-> **WP-02 [LOW]** 硬链接表述混淆
+> **WP-02 [LOW] [FIXED]** 硬链接表述混淆
 >
 > 白皮书在介绍三种 LinkType 值的上下文中引入硬链接概念，暗示它是枚举的一部分。应将硬链接单独解释为目录条目级别的机制，与 LinkType 枚举明确区分。
 >
@@ -76,7 +77,7 @@ All claims verified accurate. BIP44 路径 `m/44'/236'/account'/chain/index`、�
 
 ### §5 Method 42 Encryption
 
-> **WP-04 [MEDIUM]** HKDF info 参数被省略
+> **WP-04 [MEDIUM] [FIXED]** HKDF info 参数被省略
 >
 > 白皮书公式（line 189）:
 > ```
@@ -99,13 +100,13 @@ All claims verified accurate. SHA256 content-addressed storage、hash-sharded �
 
 ### §7 Commerce Mode
 
-> **WP-08 [UNIMPLEMENTED]** Hash Chain Token 批量购买系统
+> **WP-08 [UNIMPLEMENTED] [FIXED]** Hash Chain Token 批量购买系统
 >
 > §7 描述了基于哈希链的 token 系统用于批量文件购买，但代码中无任何实现。libbitfs-go 和 bitfs 中均未找到 hash chain token 相关代码。
 >
 > - **影响**: 白皮书以已完成的口吻描述尚未开发的功能
 
-> **WP-09 [UNIMPLEMENTED]** 目录级 xpub 购买公式
+> **WP-09 [UNIMPLEMENTED] [FIXED]** 目录级 xpub 购买公式
 >
 > 白皮书描述的公式 `S_child = S_parent + offset * P_buyer` 用于目录级别的 BIP32 访问控制，但无代码实现。
 >
@@ -117,7 +118,7 @@ All claims verified accurate. 三种访问模式（Private/Free/Paid）在 metho
 
 ### §9 HTTP 402 Protocol
 
-> **WP-06 [INACCURATE]** HTTP 402 头字段不完整
+> **WP-06 [INACCURATE] [FIXED]** HTTP 402 头字段不完整
 >
 > 白皮书描述 3 个 HTTP 头（price, file size, invoice ID）。代码实现了 5 个：
 > ```go
@@ -132,7 +133,7 @@ All claims verified accurate. 三种访问模式（Private/Free/Paid）在 metho
 >
 > - **影响**: 不完整但不冲突——白皮书描述是代码实现的子集
 
-> **WP-07 [UNIMPLEMENTED]** WebMCP 工具声明
+> **WP-07 [UNIMPLEMENTED] [FIXED]** WebMCP 工具声明
 >
 > 白皮书声称 daemon 提供包含 WebMCP/navigator.modelContext 的 HTML 页面用于 AI Agent 交互，但代码中无任何 WebMCP 相关实现。
 >
@@ -140,7 +141,7 @@ All claims verified accurate. 三种访问模式（Private/Free/Paid）在 metho
 
 ### §10 Discovery & DNS
 
-> **WP-05 [INACCURATE]** DNS TXT 记录格式不匹配
+> **WP-05 [INACCURATE] [FIXED]** DNS TXT 记录格式不匹配
 >
 > | 来源 | 记录名 | 值格式 |
 > |------|--------|--------|
@@ -152,7 +153,7 @@ All claims verified accurate. 三种访问模式（Private/Free/Paid）在 metho
 
 ### §11 Revenue Rights
 
-> **WP-10 [UNIMPLEMENTED]** 收益权系统（Share UTXOs、Registry UTXO、ISO Pool）
+> **WP-10 [UNIMPLEMENTED] [FIXED]** 收益权系统（Share UTXOs、Registry UTXO、ISO Pool）
 >
 > 白皮书 §11 完整描述了收益分成系统。代码中 `libbitfs-go/revshare/` 目录存在但为空，整节描述的功能均未实现。
 >
@@ -161,13 +162,13 @@ All claims verified accurate. 三种访问模式（Private/Free/Paid）在 metho
 
 ### §12 Metanet Integration
 
-> **WP-11 [INACCURATE/OVERSTATED]** `bitfs put --store metanet` 标志
+> **WP-11 [INACCURATE/OVERSTATED] [FIXED]** `bitfs put --store metanet` 标志
 >
 > 白皮书 §12（line 316）将 `--store metanet` 描述为现有功能。`cmd_put.go` 无 `--store` 标志。
 >
 > - **影响**: 用户尝试使用此标志会得到错误
 
-> **WP-15 [PARTIALLY ACCURATE]** Metanet 基础设施状态
+> **WP-15 [PARTIALLY ACCURATE] [FIXED]** Metanet 基础设施状态
 >
 > Metanet 核心组件（chain, mining, token, proofs）已实现，但 BitFS 与 Metanet 的集成层（`--store metanet`）缺失。白皮书将两者描述为已集成的系统。
 
@@ -179,13 +180,13 @@ All claims verified accurate. 三种访问模式（Private/Free/Paid）在 metho
 
 ### References
 
-> **WP-13 [INACCURATE]** Method 42 引用年份错误
+> **WP-13 [INACCURATE] [FIXED]** Method 42 引用年份错误
 >
 > 白皮书将 Method 42 论文标注为 2025 年。实际发表于 2019 年（references/CLAUDE.md 确认）。
 >
 > - **影响**: 学术引用不准确
 
-> **WP-14 [INACCURATE]** 专利 GB2608179A 年份错误
+> **WP-14 [INACCURATE] [FIXED]** 专利 GB2608179A 年份错误
 >
 > 白皮书标注为 2025 年，实际专利申请于 2021-2022 年。
 >
@@ -201,7 +202,7 @@ All claims verified accurate.
 
 ### §2 Architecture
 
-> **WP-12 [HIGH/UNIMPLEMENTED]** 共享 Go 核心库声明不实
+> **WP-12 [HIGH/UNIMPLEMENTED] [FIXED]** 共享 Go 核心库声明不实
 >
 > 白皮书声称 "two systems share core Go libraries"（两系统共享核心 Go 库），但 `metanet/go.mod` 中无任何 `libbitfs-go` 导入。目前只有 `bitfs/go.mod` 通过 `replace => ../libbitfs-go` 引用核心库。
 >
@@ -225,7 +226,7 @@ All claims verified accurate.
 
 ### §7 Storage Proofs
 
-> **WP-17 [MEDIUM]** ECDH 实现使用 HMAC 模拟而非真实 secp256k1 ECDH
+> **WP-17 [MEDIUM] [FIXED]** ECDH 实现使用 HMAC 模拟而非真实 secp256k1 ECDH
 >
 > 白皮书描述 "ECDH" 用于存储证明的加密层。代码实际使用 HMAC 模拟：
 > ```go
@@ -243,7 +244,7 @@ All claims verified accurate.
 
 ### §9 Script Generation
 
-> **WP-18 [LOW/UNIMPLEMENTED]** OP_CHECKSEQUENCEVERIFY 脚本生成未最终完成
+> **WP-18 [LOW/UNIMPLEMENTED] [FIXED]** OP_CHECKSEQUENCEVERIFY 脚本生成未最终完成
 >
 > `metanet/internal/payment/funding.go` 中 CSV 脚本生成标记为 TODO 或部分实现。
 >
@@ -287,7 +288,7 @@ BitFS 白皮书写 546 sat，代码已更新为 1 sat（BSV 已移除 dust limit
 
 ### 4.1 论证逻辑
 
-> **ACAD-1 [LOGIC-FLAW]** 正反馈循环的冷启动问题
+> **ACAD-1 [LOGIC-FLAW] [FIXED]** 正反馈循环的冷启动问题
 >
 > Metanet 白皮书描述了一个正反馈循环：更多内容 -> 更多节点 -> 更好的服务 -> 更多内容。但未描述冷启动机制——当网络初始阶段内容和节点都稀少时，如何启动这个循环。
 >
@@ -295,7 +296,7 @@ BitFS 白皮书写 546 sat，代码已更新为 1 sat（BSV 已移除 dust limit
 
 ### 4.2 对比表公正性
 
-> **ACAD-6 [STRAW-MAN]** Filecoin 检索市场描述过时
+> **ACAD-6 [STRAW-MAN] [FIXED]** Filecoin 检索市场描述过时
 >
 > 白皮书将 Filecoin 的检索市场定性为 "afterthought"（事后补充）。此评价在 Filecoin 早期（2020-2022）可以成立，但 Filecoin 在 2023-2025 年间对检索市场做了大量改进（如 Saturn CDN、Lassie retrieval client）。
 >
@@ -304,7 +305,7 @@ BitFS 白皮书写 546 sat，代码已更新为 1 sat（BSV 已移除 dust limit
 
 ### 4.3 参考文献准确性
 
-> **ACAD-4 [INCONSISTENT-CITATIONS]** 同一协议被不同引用
+> **ACAD-4 [INCONSISTENT-CITATIONS] [NO-CHANGE]** 同一协议被不同引用
 >
 > BitFS 白皮书引用 "Metanet Technical Summary v1.0"（文献综述形式），Metanet 白皮书引用 "GB2608179A" 专利号（正式专利形式）。两者指向同一 Metanet 协议。
 >
@@ -314,19 +315,19 @@ BitFS 白皮书写 546 sat，代码已更新为 1 sat（BSV 已移除 dust limit
 
 ### 4.4 缺失说明
 
-> **ACAD-2 [MISSING-CAVEAT]** 双币系统复杂性被低估
+> **ACAD-2 [MISSING-CAVEAT] [FIXED]** 双币系统复杂性被低估
 >
 > Metanet 白皮书声称 "用户完全隔离于双币复杂性"。实际上节点运营商需要管理 BSV 与 MNT 之间的兑换，钱包需要同时处理两种资产。白皮书未充分说明这一运营负担。
 >
 > - **建议**: 补充节点运营商视角的双币管理说明，或描述自动化兑换机制
 
-> **ACAD-3 [MISSING-CAVEAT]** ECDH vs zk-SNARK 安全模型差异未充分说明
+> **ACAD-3 [MISSING-CAVEAT] [FIXED]** ECDH vs zk-SNARK 安全模型差异未充分说明
 >
 > 存储证明章节选择 ECDH 而非 zk-SNARK，但未充分论述两者的安全模型差异：ECDH 证明不可转让（verifier-specific），zk-SNARK 证明可公开验证。这一权衡对去中心化验证有重要影响。
 >
 > - **建议**: 补充一段讨论，说明选择 ECDH 的设计取舍及其对验证者模型的约束
 
-> **ACAD-5 [MISSING-CROSS-REFERENCE]** Metanet 白皮书未命名 Method 42
+> **ACAD-5 [MISSING-CROSS-REFERENCE] [FIXED]** Metanet 白皮书未命名 Method 42
 >
 > Metanet 白皮书使用了与 BitFS Method 42 相同的 ECDH 密钥派生原语，但未使用 "Method 42" 名称，也未交叉引用 BitFS 白皮书。
 >
