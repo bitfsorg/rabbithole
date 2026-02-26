@@ -38,7 +38,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if fs.NArg() < 1 {
-		fmt.Fprintf(stderr, "Usage: btree [--json] [-d|--depth N] [--host URL] [--timeout DURATION] <bitfs-uri>\n")
+		fmt.Fprintf(stderr, `Usage: btree [--json] [-d|--depth N] [--host URL] [--timeout DURATION] <bitfs-uri>
+
+Examples:
+  btree bitfs://example.com/                  (domain)
+  btree bitfs://alice@example.com/            (paymail)
+  btree bitfs://02abc...66chars.../           (pubkey, requires --host)
+`)
 		return 6
 	}
 
