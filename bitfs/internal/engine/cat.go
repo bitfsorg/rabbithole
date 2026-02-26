@@ -11,8 +11,7 @@ import (
 
 // CatOpts holds options for the Cat (view file) operation.
 type CatOpts struct {
-	VaultIndex uint32
-	Path       string
+	Path string
 }
 
 // FileInfo describes a file's metadata returned by Cat/Get.
@@ -60,6 +59,8 @@ func (e *Engine) Cat(opts *CatOpts) (io.Reader, *FileInfo, error) {
 	switch node.Access {
 	case "private":
 		accessMode = method42.AccessPrivate
+	case "paid":
+		return nil, nil, fmt.Errorf("engine: %q has paid access; use daemon buyer workflow to purchase content", opts.Path)
 	default:
 		accessMode = method42.AccessFree
 	}

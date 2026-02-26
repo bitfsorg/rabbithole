@@ -155,6 +155,8 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	switch srcNodeState.Access {
 	case "private":
 		srcAccess = method42.AccessPrivate
+	case "paid":
+		return nil, fmt.Errorf("engine: %q has paid access; use daemon buyer workflow to purchase content", opts.SrcPath)
 	default:
 		srcAccess = method42.AccessFree
 	}

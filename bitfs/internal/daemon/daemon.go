@@ -394,19 +394,18 @@ func (d *Daemon) CreateSession(buyerPub, sellerPub []byte, sharedX, nonceB, nonc
 }
 
 // GetSession retrieves a session by ID.
+// Uses a single write lock to avoid TOCTOU race between expiry check and delete.
 func (d *Daemon) GetSession(id string) (*Session, error) {
-	d.sessionsMu.RLock()
-	session, ok := d.sessions[id]
-	d.sessionsMu.RUnlock()
+	d.sessionsMu.Lock()
+	defer d.sessionsMu.Unlock()
 
+	session, ok := d.sessions[id]
 	if !ok {
 		return nil, ErrSessionNotFound
 	}
 
-	if session.IsExpired() {
-		d.sessionsMu.Lock()
+	if time.Now().After(session.ExpiresAt) {
 		delete(d.sessions, id)
-		d.sessionsMu.Unlock()
 		return nil, ErrSessionExpired
 	}
 

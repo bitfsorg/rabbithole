@@ -36,7 +36,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	buy := fs.Bool("buy", false, "attempt to purchase paid content")
 	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before outputting")
-	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
+	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 bytes)")
 	utxoFlag := fs.String("utxo", "", "manual UTXO for purchase (txid:vout:amount)")
 	jsonOut := fs.Bool("json", false, "JSON output")
 	host := fs.String("host", "", "daemon URL override")

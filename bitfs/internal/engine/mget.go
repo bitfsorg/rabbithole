@@ -55,7 +55,11 @@ func (e *Engine) mgetRecurse(vaultIdx uint32, dir *NodeState, localDir string, r
 
 		childNode := e.State.GetNode(child.PubKey)
 		if childNode == nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("node %s not found for %s", child.PubKey[:8], child.Name))
+			pubPrefix := child.PubKey
+			if len(pubPrefix) > 8 {
+				pubPrefix = pubPrefix[:8]
+			}
+			result.Errors = append(result.Errors, fmt.Sprintf("node %s not found for %s", pubPrefix, child.Name))
 			continue
 		}
 

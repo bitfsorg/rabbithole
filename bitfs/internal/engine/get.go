@@ -19,8 +19,7 @@ type GetOpts struct {
 // Get downloads a file from the vault to the local filesystem.
 func (e *Engine) Get(opts *GetOpts) (*Result, error) {
 	reader, info, err := e.Cat(&CatOpts{
-		VaultIndex: opts.VaultIndex,
-		Path:       opts.RemotePath,
+		Path: opts.RemotePath,
 	})
 	if err != nil {
 		return nil, err
@@ -42,11 +41,19 @@ func (e *Engine) Get(opts *GetOpts) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("engine: create local file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+
+	var retErr error
+	defer func() {
+		_ = f.Close()
+		if retErr != nil {
+			_ = os.Remove(localPath)
+		}
+	}()
 
 	n, err := io.Copy(f, reader)
 	if err != nil {
-		return nil, fmt.Errorf("engine: write local file: %w", err)
+		retErr = fmt.Errorf("engine: write local file: %w", err)
+		return nil, retErr
 	}
 
 	return &Result{

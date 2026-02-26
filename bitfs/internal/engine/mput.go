@@ -24,6 +24,14 @@ type MputResult struct {
 
 // Mput recursively uploads a local directory to the vault.
 func (e *Engine) Mput(opts *MputOpts) (*MputResult, error) {
+	// Validate remote directory path.
+	if opts.RemoteDir == "" {
+		return nil, fmt.Errorf("mput: remote directory path cannot be empty")
+	}
+	if strings.Contains(opts.RemoteDir, "..") {
+		return nil, fmt.Errorf("mput: remote directory path must not contain '..' components")
+	}
+
 	// Verify local directory exists.
 	info, err := os.Stat(opts.LocalDir)
 	if err != nil {

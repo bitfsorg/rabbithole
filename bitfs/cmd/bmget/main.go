@@ -37,7 +37,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	jsonOut := fs.Bool("json", false, "JSON output")
 	buyFlag := fs.Bool("buy", false, "attempt to purchase paid content")
-	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
+	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 bytes)")
 	utxoStr := fs.String("utxo", "", "buyer UTXO for purchases (txid:vout:amount)")
 	concurrency := fs.Int("concurrency", 4, "max concurrent downloads")
 	failFast := fs.Bool("fail-fast", false, "stop on first error")

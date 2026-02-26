@@ -294,7 +294,7 @@ func TestPaid_WithBuy_InvalidWalletKey(t *testing.T) {
 		wantMsg   string
 	}{
 		{"not hex", "zzzz", "invalid wallet key"},
-		{"wrong length", "aabbcc", "32 or 33 bytes"},
+		{"wrong length", "aabbcc", "expected 32 bytes"},
 	}
 
 	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"

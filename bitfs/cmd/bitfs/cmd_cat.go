@@ -47,15 +47,14 @@ func runCat(args []string) int {
 	}
 	defer func() { _ = eng.Close() }()
 
-	vaultIdx, err := eng.ResolveVaultIndex(*vault)
-	if err != nil {
+	// Vault resolution kept for CLI flag compatibility; Cat resolves by path.
+	if _, err := eng.ResolveVaultIndex(*vault); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
 	reader, info, err := eng.Cat(&engine.CatOpts{
-		VaultIndex: vaultIdx,
-		Path:       remotePath,
+		Path: remotePath,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

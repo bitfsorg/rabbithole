@@ -14,8 +14,8 @@ import (
 
 // shellCommandsList is the full list of shell command names.
 var shellCommandsList = []string{
-	"ls", "cd", "lcd", "pwd", "mkdir", "put", "rm", "mv", "cp",
-	"link", "sell", "encrypt", "help", "quit", "exit",
+	"ls", "cd", "lcd", "pwd", "cat", "get", "mget", "mput", "mkdir", "put", "rm", "mv", "cp",
+	"link", "sell", "encrypt", "publish", "unpublish", "help", "quit", "exit",
 }
 
 func TestCompleteCommandNames_EmptyInput(t *testing.T) {

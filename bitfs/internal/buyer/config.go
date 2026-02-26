@@ -121,19 +121,14 @@ func readBuyerConf(path string) (keyHex, network string, err error) {
 	return keyHex, network, scanner.Err()
 }
 
-// parsePrivateKey parses a hex-encoded private key (32 or 33 bytes).
+// parsePrivateKey parses a hex-encoded private key (exactly 32 bytes).
 func parsePrivateKey(hexStr string) (*ec.PrivateKey, error) {
 	keyBytes, err := hex.DecodeString(hexStr)
 	if err != nil {
 		return nil, fmt.Errorf("invalid hex: %w", err)
 	}
-	switch len(keyBytes) {
-	case 32:
-		// raw 32-byte scalar
-	case 33:
-		keyBytes = keyBytes[1:] // strip prefix byte
-	default:
-		return nil, fmt.Errorf("key must be 32 or 33 bytes, got %d", len(keyBytes))
+	if len(keyBytes) != 32 {
+		return nil, fmt.Errorf("invalid private key: expected 32 bytes, got %d", len(keyBytes))
 	}
 	privKey, _ := ec.PrivateKeyFromBytes(keyBytes)
 	if privKey == nil {

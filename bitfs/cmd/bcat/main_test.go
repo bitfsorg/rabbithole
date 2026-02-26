@@ -300,7 +300,7 @@ func TestPaid_WithBuy_InvalidWalletKey(t *testing.T) {
 		wantMsg   string
 	}{
 		{"not hex", "zzzz", "invalid hex"},
-		{"wrong length", "aabbcc", "must be 32 or 33 bytes"},
+		{"wrong length", "aabbcc", "expected 32 bytes"},
 	}
 
 	for _, tt := range tests {

@@ -12,8 +12,7 @@ func TestCat_Success(t *testing.T) {
 	eng, originalPlaintext := setupCopyTestEngine(t)
 
 	reader, info, err := eng.Cat(&CatOpts{
-		VaultIndex: 0,
-		Path:       "/test.txt",
+		Path: "/test.txt",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, reader)
@@ -30,7 +29,7 @@ func TestCat_Success(t *testing.T) {
 func TestCat_NotFound(t *testing.T) {
 	eng := initTestEngine(t)
 
-	_, _, err := eng.Cat(&CatOpts{VaultIndex: 0, Path: "/nonexistent"})
+	_, _, err := eng.Cat(&CatOpts{Path: "/nonexistent"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
@@ -43,7 +42,7 @@ func TestCat_IsDirectory(t *testing.T) {
 	_, err := eng.Mkdir(&MkdirOpts{VaultIndex: 0, Path: "/"})
 	require.NoError(t, err)
 
-	_, _, err = eng.Cat(&CatOpts{VaultIndex: 0, Path: "/"})
+	_, _, err = eng.Cat(&CatOpts{Path: "/"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a file")
 }
@@ -52,8 +51,7 @@ func TestCat_PrivateFile(t *testing.T) {
 	eng := setupPrivateFileEngine(t)
 
 	reader, info, err := eng.Cat(&CatOpts{
-		VaultIndex: 0,
-		Path:       "/secret.txt",
+		Path: "/secret.txt",
 	})
 	require.NoError(t, err)
 

@@ -18,6 +18,11 @@ func (e *Engine) Unpublish(opts *UnpublishOpts) (*Result, error) {
 		return nil, fmt.Errorf("engine: no publish binding for %q", opts.Domain)
 	}
 
+	// Persist state immediately so the removal survives process restart.
+	if err := e.State.Save(); err != nil {
+		return nil, fmt.Errorf("engine: persist state after unpublish: %w", err)
+	}
+
 	msg := fmt.Sprintf("Removed publish binding for %s.\n\nRemember to also remove the DNS TXT record:\n  _bitfs.%s  TXT  (delete this record)",
 		opts.Domain, opts.Domain)
 

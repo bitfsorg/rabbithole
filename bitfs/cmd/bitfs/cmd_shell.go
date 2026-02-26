@@ -146,6 +146,17 @@ func runShell(args []string) int {
 					target = cwd + "/" + target
 				}
 				target = cleanPath(target)
+				if target != "/" {
+					node := eng.State.FindNodeByPath(target)
+					if node == nil {
+						fmt.Fprintf(os.Stderr, "cd: %s: no such directory\n", target)
+						continue
+					}
+					if node.Type != "dir" {
+						fmt.Fprintf(os.Stderr, "cd: %s: not a directory\n", target)
+						continue
+					}
+				}
 				cwd = target
 			}
 			completer.cwd = cwd
@@ -315,8 +326,7 @@ func runShell(args []string) int {
 			remotePath := resolvePath(cwd, cmdArgs[0])
 			force := len(cmdArgs) > 1 && cmdArgs[1] == "--force"
 			reader, info, catErr := eng.Cat(&engine.CatOpts{
-				VaultIndex: vaultIdx,
-				Path:       remotePath,
+				Path: remotePath,
 			})
 			switch {
 			case catErr != nil:
