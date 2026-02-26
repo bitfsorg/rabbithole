@@ -21,7 +21,6 @@ import (
 	"github.com/tongxiaofeng/bitfs/internal/buyer"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
-	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 func main() {
@@ -35,6 +34,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	buy := fs.Bool("buy", false, "attempt to purchase paid content")
 	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before outputting")
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
+	utxoFlag := fs.String("utxo", "", "manual UTXO for purchase (txid:vout:amount)")
 	jsonOut := fs.Bool("json", false, "JSON output")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
@@ -104,7 +104,7 @@ Examples:
 		}
 		return outputContent(c, meta, stdout, stderr)
 	case "paid":
-		return handlePaid(c, meta, *buy, *walletKey, *jsonOut, stdout, stderr)
+		return handlePaid(c, meta, *buy, *walletKey, *utxoFlag, *jsonOut, stdout, stderr)
 	case "private":
 		if *jsonOut {
 			return handleErrorJSON(fmt.Errorf("private content"), stdout)
@@ -178,7 +178,7 @@ func outputContent(c *client.Client, meta *client.MetaResponse, stdout, stderr i
 }
 
 // handlePaid handles paid content access (with or without --buy).
-func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey string, jsonOut bool, stdout, stderr io.Writer) int {
+func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, utxoFlag string, jsonOut bool, stdout, stderr io.Writer) int {
 	if !buy {
 		if jsonOut {
 			return outputPaymentRequiredJSON(meta, stdout, stderr)
@@ -188,152 +188,125 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 5
 	}
 
-	// Validate wallet key is provided.
-	if walletKey == "" {
-		fmt.Fprintf(stderr, "bcat: --wallet-key is required for purchases\n")
-		return 6
-	}
-
-	// Parse the hex-encoded private key.
-	keyBytes, err := hex.DecodeString(walletKey)
-	if err != nil {
-		fmt.Fprintf(stderr, "bcat: invalid wallet key hex: %v\n", err)
-		return 6
-	}
-
-	// Accept 32-byte raw scalar or 33-byte compressed key (strip prefix).
-	switch len(keyBytes) {
-	case 32:
-		// raw scalar, use as-is
-	case 33:
-		// compressed pubkey format: strip the 02/03 prefix
-		keyBytes = keyBytes[1:]
-	default:
-		fmt.Fprintf(stderr, "bcat: wallet key must be 32 or 33 bytes, got %d\n", len(keyBytes))
-		return 6
-	}
-
-	privKey, _ := ec.PrivateKeyFromBytes(keyBytes)
-	if privKey == nil {
-		fmt.Fprintf(stderr, "bcat: failed to parse wallet key\n")
-		return 6
-	}
-
-	// Validate that meta has a TxID for the purchase invoice.
-	if meta.TxID == "" {
-		fmt.Fprintf(stderr, "bcat: paid content has no invoice txid\n")
-		return 5
-	}
-
-	// Step 1: Get buy info (capsule_hash, price, payment_addr).
-	// Pass buyer's pubkey so the server computes the buyer-specific capsule.
-	buyerPubHex := hex.EncodeToString(privKey.PubKey().Compressed())
-	buyInfo, err := c.GetBuyInfo(meta.TxID, buyerPubHex)
-	if err != nil {
-		fmt.Fprintf(stderr, "bcat: get buy info: %v\n", err)
-		return handleError(err, stderr)
-	}
-
-	// Decode capsule hash from hex.
-	capsuleHash, err := hex.DecodeString(buyInfo.CapsuleHash)
-	if err != nil {
-		fmt.Fprintf(stderr, "bcat: invalid capsule hash hex: %v\n", err)
-		return 5
-	}
-
-	// Decode payment address (hex-encoded 20-byte pubkey hash).
-	sellerAddr, err := hex.DecodeString(buyInfo.PaymentAddr)
-	if err != nil {
-		fmt.Fprintf(stderr, "bcat: invalid payment address hex: %v\n", err)
-		return 5
-	}
-
-	// Decode seller pubkey (hex-encoded 33-byte compressed public key).
-	sellerPubKey, err := hex.DecodeString(buyInfo.SellerPubKey)
-	if err != nil {
-		fmt.Fprintf(stderr, "bcat: invalid seller pubkey hex: %v\n", err)
-		return 5
-	}
-
-	// Step 2: Build HTLC transaction.
-	htlcRaw, err := x402.BuildHTLC(&x402.HTLCParams{
-		BuyerPubKey:  privKey.PubKey().Compressed(),
-		SellerPubKey: sellerPubKey,
-		SellerAddr:   sellerAddr,
-		CapsuleHash:  capsuleHash,
-		Amount:       buyInfo.Price,
-		Timeout:      x402.DefaultHTLCTimeout,
+	cfg, err := buyer.LoadConfig(buyer.LoadConfigOpts{
+		WalletKeyFlag: walletKey,
+		UTXOFlag:      utxoFlag,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "bcat: build HTLC: %v\n", err)
+		if jsonOut {
+			return handleErrorJSON(err, stdout)
+		}
+		fmt.Fprintf(stderr, "bcat: %v\n", err)
+		return 6
+	}
+
+	result, err := buyer.Buy(&buyer.BuyParams{
+		Client: c,
+		TxID:   meta.TxID,
+		Config: cfg,
+	})
+	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("purchase failed: %w", err), stdout)
+		}
+		fmt.Fprintf(stderr, "bcat: purchase failed: %v\n", err)
 		return 5
 	}
 
-	// Step 3: Submit HTLC to get the capsule.
-	capsuleResp, err := c.SubmitHTLC(meta.TxID, htlcRaw)
-	if err != nil {
-		fmt.Fprintf(stderr, "bcat: submit HTLC: %v\n", err)
-		return handleError(err, stderr)
-	}
+	// Decrypt with capsule and output.
+	return outputPaidContent(c, meta, result, cfg.PrivKey, jsonOut, stdout, stderr)
+}
 
-	// Decode capsule from hex.
-	capsule, err := hex.DecodeString(capsuleResp.Capsule)
-	if err != nil {
-		fmt.Fprintf(stderr, "bcat: invalid capsule hex: %v\n", err)
-		return 5
-	}
-
-	// Step 4: Fetch encrypted content.
+// outputPaidContent fetches encrypted data, decrypts with the purchase capsule,
+// and writes plaintext to stdout.
+func outputPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *buyer.BuyResult, privKey *ec.PrivateKey, jsonOut bool, stdout, stderr io.Writer) int {
 	if meta.KeyHash == "" {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("no content hash available"), stdout)
+		}
 		fmt.Fprintf(stderr, "bcat: no content hash available\n")
 		return 1
 	}
 
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(err, stdout)
+		}
 		return handleError(err, stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
 	ciphertext, err := io.ReadAll(reader)
 	if err != nil {
-		fmt.Fprintf(stderr, "bcat: read content: %v\n", err)
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("read error: %w", err), stdout)
+		}
+		fmt.Fprintf(stderr, "bcat: read: %v\n", err)
 		return 4
 	}
 
-	// Decode keyHash from hex.
 	keyHashBytes, err := hex.DecodeString(meta.KeyHash)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("invalid key hash: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bcat: invalid key hash hex: %v\n", err)
 		return 5
 	}
 
-	// Decode the node's public key for capsule decryption.
 	nodePubBytes, err := hex.DecodeString(meta.PNode)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("invalid pnode: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bcat: invalid pnode hex: %v\n", err)
 		return 5
 	}
 	nodePub, err := ec.PublicKeyFromBytes(nodePubBytes)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("invalid pnode key: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bcat: invalid pnode key: %v\n", err)
 		return 5
 	}
 
-	// Step 5: Decrypt with capsule.
-	result, err := method42.DecryptWithCapsule(ciphertext, capsule, keyHashBytes, privKey, nodePub)
+	decResult, err := method42.DecryptWithCapsule(ciphertext, buyResult.Capsule, keyHashBytes, privKey, nodePub)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("decrypt: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bcat: decrypt: %v\n", err)
 		return 5
 	}
 
-	// Step 6: Output decrypted content to stdout.
-	if _, err := stdout.Write(result.Plaintext); err != nil {
+	if jsonOut {
+		return outputPaidContentJSON(meta, decResult.Plaintext, buyResult, stdout, stderr)
+	}
+
+	if _, err := stdout.Write(decResult.Plaintext); err != nil {
 		fmt.Fprintf(stderr, "bcat: write error: %v\n", err)
 		return 1
 	}
-
 	return 0
+}
+
+// outputPaidContentJSON outputs decrypted paid content as a JSON response.
+func outputPaidContentJSON(meta *client.MetaResponse, plaintext []byte, buyResult *buyer.BuyResult, stdout, stderr io.Writer) int {
+	resp := &buyer.CatResponse{Meta: meta}
+	if strings.HasPrefix(meta.MimeType, "text/") || meta.MimeType == "application/json" {
+		s := string(plaintext)
+		resp.Content = &s
+	} else {
+		s := base64.StdEncoding.EncodeToString(plaintext)
+		resp.ContentBase64 = &s
+	}
+	resp.Payment = &buyer.PaymentResult{
+		CostSatoshis: buyResult.CostSatoshis,
+		HTLCTxID:     buyResult.HTLCTxID,
+	}
+	return writeJSON(resp, stdout, stderr)
 }
 
 // outputContentJSON fetches, decrypts, and outputs content as JSON.

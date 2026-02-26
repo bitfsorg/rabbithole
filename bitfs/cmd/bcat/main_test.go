@@ -274,7 +274,7 @@ func TestPaid_WithBuy_MissingWalletKey(t *testing.T) {
 	code := run([]string{"--buy", "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
 	assert.Equal(t, 6, code, "--buy without --wallet-key should exit 6")
-	assert.Contains(t, stderr.String(), "--wallet-key is required")
+	assert.Contains(t, stderr.String(), "no wallet key configured")
 	assert.Empty(t, stdout.String())
 }
 
@@ -299,8 +299,8 @@ func TestPaid_WithBuy_InvalidWalletKey(t *testing.T) {
 		walletKey string
 		wantMsg   string
 	}{
-		{"not hex", "zzzz", "invalid wallet key hex"},
-		{"wrong length", "aabbcc", "wallet key must be 32 or 33 bytes"},
+		{"not hex", "zzzz", "invalid hex"},
+		{"wrong length", "aabbcc", "must be 32 or 33 bytes"},
 	}
 
 	for _, tt := range tests {
@@ -341,7 +341,7 @@ func TestPaid_WithBuy_MissingTxID(t *testing.T) {
 	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
 	assert.Equal(t, 5, code, "missing txid should exit 5")
-	assert.Contains(t, stderr.String(), "no invoice txid")
+	assert.Contains(t, stderr.String(), "transaction ID is required")
 	assert.Empty(t, stdout.String())
 }
 
@@ -368,6 +368,10 @@ func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
 	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
 	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
 	sellerPubKeyHex := nodePubHex
+
+	// Build a mock UTXO for the buyer (txid:vout:amount).
+	utxoTxID := strings.Repeat("ff", 32) // 64 hex chars
+	utxoFlag := utxoTxID + ":0:100000"
 
 	srv := newFullMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -403,10 +407,10 @@ func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
 	defer srv.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", utxoFlag, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
-	assert.Equal(t, 4, code, "submit HTLC failure should exit 4 (server error)")
-	assert.Contains(t, stderr.String(), "server error")
+	assert.Equal(t, 5, code, "submit HTLC failure should exit 5 (purchase failed)")
+	assert.Contains(t, stderr.String(), "purchase failed")
 	assert.Empty(t, stdout.String())
 }
 
@@ -434,6 +438,10 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
 	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
 	sellerPubKeyHex := nodePubHex
+
+	// Build a mock UTXO for the buyer (txid:vout:amount).
+	utxoTxID := strings.Repeat("ff", 32) // 64 hex chars
+	utxoFlag := utxoTxID + ":0:100000"
 
 	srv := newFullMockDaemon(t,
 		func(w http.ResponseWriter, r *http.Request) {
@@ -474,7 +482,7 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 	defer srv.Close()
 
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--host", srv.URL, makeURI("/premium.txt")}, &stdout, &stderr)
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", utxoFlag, "--host", srv.URL, makeURI("/premium.txt")}, &stdout, &stderr)
 
 	assert.Equal(t, 0, code, "successful purchase should exit 0; stderr: %s", stderr.String())
 	assert.Empty(t, stderr.String())
@@ -1077,4 +1085,32 @@ func TestJSON_NotFoundError(t *testing.T) {
 	code := run([]string{"--json", "--host", srv.URL, makeURI("/nonexistent")}, &stdout, &stderr)
 
 	assert.Equal(t, 2, code, "not found should exit 2")
+}
+
+// ---------------------------------------------------------------------------
+// --buy flag parsing / buyer.LoadConfig integration
+// ---------------------------------------------------------------------------
+
+func TestRun_BuyFlagParsing(t *testing.T) {
+	// Verify that --buy without a wallet key triggers a config error
+	// mentioning wallet configuration.
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      "02" + strings.Repeat("ab", 32),
+				Type:       "file",
+				Path:       "/file",
+				Access:     "paid",
+				PricePerKB: 100,
+				FileSize:   1024,
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--buy", "--host", srv.URL, "bitfs://02" + strings.Repeat("ab", 32) + "/file"}, &stdout, &stderr)
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr.String(), "wallet")
 }
