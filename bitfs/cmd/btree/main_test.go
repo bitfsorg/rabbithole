@@ -582,24 +582,33 @@ func TestSummaryLine_CorrectCounts(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Paymail / DNSLink not supported
+// Paymail / DNSLink resolution errors
 // ---------------------------------------------------------------------------
 
-func TestPaymailNotSupported(t *testing.T) {
+func TestPaymailResolveFails(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"bitfs://alice@example.com/docs"}, &stdout, &stderr)
 
-	assert.Equal(t, 6, code, "paymail should exit 6")
-	assert.Contains(t, stderr.String(), "paymail/dnslink resolution not yet supported")
+	assert.Equal(t, 6, code, "paymail resolve failure should exit 6")
+	assert.Contains(t, stderr.String(), "btree:")
 	assert.Empty(t, stdout.String())
 }
 
-func TestDNSLinkNotSupported(t *testing.T) {
+func TestDNSLinkResolveFails(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"bitfs://example.com/docs"}, &stdout, &stderr)
 
-	assert.Equal(t, 6, code, "dnslink should exit 6")
-	assert.Contains(t, stderr.String(), "paymail/dnslink resolution not yet supported")
+	assert.Equal(t, 6, code, "dnslink resolve failure should exit 6")
+	assert.Contains(t, stderr.String(), "btree:")
+}
+
+func TestPubKeyNoHost_RequiresHostFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{makeURI("/docs")}, &stdout, &stderr)
+
+	assert.Equal(t, 6, code)
+	assert.Contains(t, stderr.String(), "--host")
+	assert.Empty(t, stdout.String())
 }
 
 // ---------------------------------------------------------------------------
@@ -644,7 +653,7 @@ func TestUnknownFlag(t *testing.T) {
 
 func TestInvalidTimeout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	code := run([]string{"--timeout", "notaduration", makeURI("/")}, &stdout, &stderr)
+	code := run([]string{"--host", "http://localhost:8080", "--timeout", "notaduration", makeURI("/")}, &stdout, &stderr)
 
 	assert.Equal(t, 6, code)
 	assert.Contains(t, stderr.String(), "invalid timeout")
