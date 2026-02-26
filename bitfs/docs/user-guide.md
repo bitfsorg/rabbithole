@@ -188,14 +188,21 @@ On success the command prints the transaction ID and raw transaction hex.
 ## 5. Reading Content with b-tools
 
 BitFS ships five read-only utilities that mirror familiar Unix commands. They
-connect to a running BitFS daemon (default: `http://localhost:8080`) and
-accept `bitfs://` URIs.
+connect to a running BitFS daemon and accept `bitfs://` URIs.
 
-The URI format uses the hex-encoded public key (pnode) as the authority:
+### URI formats
 
-```
-bitfs://<hex-pubkey>/<path>
-```
+BitFS URIs support three authority formats. Domain-based URIs are the
+recommended form for human use:
+
+| Format | Example | Resolution |
+|--------|---------|------------|
+| **Domain** | `bitfs://example.com/path` | DNS TXT `_bitfs.example.com` → pubkey |
+| **Paymail** | `bitfs://alice@example.com/path` | Paymail PKI → pubkey |
+| **Pubkey** | `bitfs://02abc.../path` | Direct 66-char hex pubkey (requires `--host`) |
+
+Domain and paymail URIs resolve the daemon endpoint automatically via DNS.
+Bare pubkey URIs require `--host` to specify which daemon to connect to.
 
 All b-tools share these common flags:
 
@@ -209,7 +216,7 @@ All b-tools share these common flags:
 Like `ls`. Lists children of a directory node.
 
 ```bash
-bls bitfs://02abc123.../docs/
+bls bitfs://example.com/docs/
 ```
 
 Options:
@@ -222,14 +229,20 @@ Options:
 Examples:
 
 ```bash
-# Simple listing
-bls bitfs://02abc123.../
+# Domain-based URI (recommended)
+bls bitfs://example.com/
+
+# Paymail URI
+bls bitfs://alice@example.com/docs/
 
 # Detailed listing
-bls -l bitfs://02abc123.../docs/
+bls -l bitfs://example.com/docs/
 
 # Machine-readable JSON
-bls --json bitfs://02abc123.../docs/
+bls --json bitfs://example.com/docs/
+
+# Bare pubkey (requires --host)
+bls --host http://localhost:8080 bitfs://02abc123.../docs/
 ```
 
 ### bstat -- show file metadata
@@ -237,7 +250,7 @@ bls --json bitfs://02abc123.../docs/
 Like `stat`. Displays detailed metadata for a single file or directory.
 
 ```bash
-bstat bitfs://02abc123.../docs/README.md
+bstat bitfs://example.com/docs/README.md
 ```
 
 Output fields include: path, type, owner (pnode), access mode, MIME type,
@@ -255,7 +268,7 @@ Options:
 Like `cat`. Fetches file content and writes it to standard output.
 
 ```bash
-bcat bitfs://02abc123.../docs/README.md
+bcat bitfs://example.com/docs/README.md
 ```
 
 For free content, `bcat` streams the data directly. For paid content, see
@@ -275,13 +288,13 @@ Options:
 Like `wget`. Downloads a file and saves it locally.
 
 ```bash
-bget bitfs://02abc123.../docs/report.pdf
+bget bitfs://example.com/docs/report.pdf
 ```
 
 The output filename is derived from the URI path. Override it with `-o`:
 
 ```bash
-bget -o my-report.pdf bitfs://02abc123.../docs/report.pdf
+bget -o my-report.pdf bitfs://example.com/docs/report.pdf
 ```
 
 Options:
@@ -297,7 +310,7 @@ Options:
 Like `tree`. Displays a visual tree of directories and files.
 
 ```bash
-btree bitfs://02abc123.../
+btree bitfs://example.com/
 ```
 
 Example output:
@@ -364,14 +377,14 @@ The purchase flow is fully automated:
 ### Buy and print to stdout
 
 ```bash
-bcat --buy --wallet-key <hex-private-key> bitfs://02abc123.../docs/premium-report.pdf
+bcat --buy --wallet-key <hex-private-key> bitfs://example.com/docs/premium-report.pdf
 ```
 
 ### Buy and download to disk
 
 ```bash
-bget --buy --wallet-key <hex-private-key> bitfs://02abc123.../docs/premium-report.pdf
-bget --buy --wallet-key <hex-private-key> -o report.pdf bitfs://02abc123.../docs/premium-report.pdf
+bget --buy --wallet-key <hex-private-key> bitfs://example.com/docs/premium-report.pdf
+bget --buy --wallet-key <hex-private-key> -o report.pdf bitfs://example.com/docs/premium-report.pdf
 ```
 
 The `--wallet-key` accepts a 32-byte raw scalar or 33-byte compressed private
@@ -429,6 +442,26 @@ To unpublish from example.com, remove the following DNS TXT record:
   _bitfs.example.com  TXT  (delete this record)
 
 After DNS propagation, the domain will no longer resolve to your BitFS vault.
+```
+
+### Complete publish-to-access example
+
+Once a domain is published and DNS propagated, anyone can access your content
+using human-readable URIs:
+
+```bash
+# Owner: upload content and publish domain
+bitfs put ./report.pdf /docs/report.pdf
+bitfs publish example.com
+
+# Add the DNS TXT record as instructed, then verify:
+bitfs publish    # shows "verified" status
+
+# Visitor: access via domain URI (no --host needed)
+bls bitfs://example.com/docs/
+bcat bitfs://example.com/docs/report.pdf
+bget bitfs://example.com/docs/report.pdf
+btree bitfs://example.com/
 ```
 
 ---
@@ -642,9 +675,9 @@ bitfs put ./index.html /mysite/index.html
 # 4. Start the daemon
 bitfs daemon start &
 
-# 5. Browse your files
-bls bitfs://<your-root-pubkey>/mysite/
-bcat bitfs://<your-root-pubkey>/mysite/index.html
+# 5. Browse your files (after publishing a domain)
+bls bitfs://example.com/mysite/
+bcat bitfs://example.com/mysite/index.html
 
 # 6. Sell premium content
 bitfs put ./ebook.pdf /mysite/ebook.pdf

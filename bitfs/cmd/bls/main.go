@@ -41,7 +41,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if fs.NArg() < 1 {
-		fmt.Fprintf(stderr, "Usage: bls [--json] [--long|-l] [--host URL] [--timeout DURATION] <bitfs-uri>\n")
+		fmt.Fprintf(stderr, `Usage: bls [--json] [--long|-l] [--host URL] [--timeout DURATION] <bitfs-uri>
+
+Examples:
+  bls bitfs://example.com/docs/                (domain)
+  bls bitfs://alice@example.com/docs/          (paymail)
+  bls bitfs://02abc...66chars.../docs/         (pubkey, requires --host)
+`)
 		return 6
 	}
 

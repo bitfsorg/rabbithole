@@ -41,7 +41,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if fs.NArg() < 1 {
-		fmt.Fprintf(stderr, "Usage: bstat [--json] [--versions] [--host URL] [--timeout DURATION] <bitfs-uri>\n")
+		fmt.Fprintf(stderr, `Usage: bstat [--json] [--versions] [--host URL] [--timeout DURATION] <bitfs-uri>
+
+Examples:
+  bstat bitfs://example.com/docs/readme.txt          (domain)
+  bstat bitfs://alice@example.com/docs/readme.txt    (paymail)
+  bstat bitfs://02abc...66chars.../docs/readme.txt   (pubkey, requires --host)
+`)
 		return 6
 	}
 

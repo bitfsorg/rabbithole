@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/tongxiaofeng/bitfs/internal/engine"
@@ -12,11 +13,19 @@ import (
 // shellCompleter implements readline.AutoCompleter for the BitFS shell.
 // It provides context-aware completion: command names for the first token,
 // remote paths for filesystem commands, local paths for lcd/put.
+// cacheTTL is how long a directory lookup is cached for tab completion.
+const cacheTTL = 500 * time.Millisecond
+
 type shellCompleter struct {
 	commands []string
 	state    *engine.LocalState
 	cwd      string // remote working directory (mutable, updated by shell loop)
 	localCwd string // local working directory (mutable, updated by shell loop)
+
+	// Per-directory cache to avoid O(n) FindNodeByPath on every keypress.
+	cacheDir    string            // cached directory path
+	cacheNode   *engine.NodeState // cached node
+	cacheExpiry time.Time         // TTL expiry
 }
 
 // Do implements the readline.AutoCompleter interface.
@@ -138,7 +147,17 @@ func (sc *shellCompleter) completeRemotePath(partial string) []string {
 		}
 	}
 
-	node := sc.state.FindNodeByPath(lookupDir)
+	// Use cached node if the directory matches and TTL hasn't expired.
+	var node *engine.NodeState
+	now := time.Now()
+	if lookupDir == sc.cacheDir && now.Before(sc.cacheExpiry) {
+		node = sc.cacheNode
+	} else {
+		node = sc.state.FindNodeByPath(lookupDir)
+		sc.cacheDir = lookupDir
+		sc.cacheNode = node
+		sc.cacheExpiry = now.Add(cacheTTL)
+	}
 	if node == nil || node.Type != "dir" {
 		return nil
 	}

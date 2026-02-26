@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -265,4 +266,92 @@ func TestFormatCandidates_FileSuffix(t *testing.T) {
 	// File completions get a trailing space.
 	assert.Equal(t, "eadme.md ", string(result[0]))
 	assert.Equal(t, 1, length)
+}
+
+func TestCompleteRemotePath_CacheHit(t *testing.T) {
+	// Set up initial state with one child.
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "alpha", Type: "file"},
+		},
+	})
+
+	sc := &shellCompleter{state: state, cwd: "/"}
+
+	// First call populates the cache.
+	c1 := sc.completeRemotePath("")
+	assert.Equal(t, []string{"alpha"}, c1)
+
+	// Mutate the underlying state — add a second child.
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "alpha", Type: "file"},
+			{Name: "beta", Type: "file"},
+		},
+	})
+
+	// Second call within TTL should still return cached (old) result.
+	c2 := sc.completeRemotePath("")
+	assert.Equal(t, []string{"alpha"}, c2, "expected cached result within TTL")
+}
+
+func TestCompleteRemotePath_CacheExpiry(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "alpha", Type: "file"},
+		},
+	})
+
+	sc := &shellCompleter{state: state, cwd: "/"}
+
+	// First call populates the cache.
+	c1 := sc.completeRemotePath("")
+	assert.Equal(t, []string{"alpha"}, c1)
+
+	// Mutate state.
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "alpha", Type: "file"},
+			{Name: "beta", Type: "file"},
+		},
+	})
+
+	// Expire the cache manually.
+	sc.cacheExpiry = time.Now().Add(-1 * time.Second)
+
+	// Third call should see the fresh data.
+	c3 := sc.completeRemotePath("")
+	assert.Equal(t, []string{"alpha", "beta"}, c3, "expected fresh result after cache expiry")
+}
+
+func TestCompleteRemotePath_CacheDifferentDir(t *testing.T) {
+	state := engine.NewLocalState("")
+	state.SetNode("aaa", &engine.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "docs", Type: "dir"},
+		},
+	})
+	state.SetNode("bbb", &engine.NodeState{
+		Path: "/docs", Type: "dir",
+		Children: []*engine.ChildState{
+			{Name: "readme.md", Type: "file"},
+		},
+	})
+
+	sc := &shellCompleter{state: state, cwd: "/"}
+
+	// Populate cache for "/".
+	c1 := sc.completeRemotePath("")
+	assert.Equal(t, []string{"docs/"}, c1)
+
+	// Query a different directory — cache should miss.
+	c2 := sc.completeRemotePath("docs/")
+	assert.Equal(t, []string{"docs/readme.md"}, c2)
 }
