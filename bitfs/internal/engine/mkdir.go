@@ -162,6 +162,10 @@ func (e *Engine) Mkdir(opts *MkdirOpts) (*Result, error) {
 // the tx UTXO (with private key) and the underlying UTXOState for rollback.
 // If the transaction build/sign fails, the caller should set utxoState.Spent = false
 // to release the UTXO back to the pool.
+//
+// NOTE: This function is not safe for concurrent use. The Engine assumes a
+// single-writer model — concurrent callers must be serialized externally
+// (e.g., the daemon HTTP server serializes write operations through a mutex).
 func (e *Engine) getNodeUTXOWithState(pubKeyHex string) (*txUTXO, *UTXOState, error) {
 	utxoState := e.State.GetNodeUTXO(pubKeyHex)
 	if utxoState == nil {

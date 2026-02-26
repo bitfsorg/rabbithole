@@ -93,6 +93,12 @@ func (e *Engine) Move(opts *MoveOpts) (*Result, error) {
 // succeed are the state changes applied (Phase 2). This ensures that if any
 // build fails, local state remains consistent.
 func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*Result, error) {
+	// Cross-directory move only supports files.
+	// Directory moves would require recursive re-keying of all descendants.
+	if srcNodeState.Type == "dir" {
+		return nil, fmt.Errorf("engine: cross-directory move of directories is not supported")
+	}
+
 	srcDir := path.Dir(opts.SrcPath)
 	dstDir := path.Dir(opts.DstPath)
 	srcName := path.Base(opts.SrcPath)
@@ -171,11 +177,6 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	encResult, err := method42.Encrypt(decResult.Plaintext, childKP.PrivateKey, childKP.PublicKey, srcAccess)
 	if err != nil {
 		return nil, fmt.Errorf("engine: encrypt copy: %w", err)
-	}
-
-	// 9. Store new encrypted content.
-	if err := e.Store.Put(encResult.KeyHash, encResult.Ciphertext); err != nil {
-		return nil, fmt.Errorf("engine: store copy: %w", err)
 	}
 
 	// --- Phase 1: Build all 4 TXs without mutating state ---
@@ -364,6 +365,11 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	srcParent.Children = origSrcChildren // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: update source parent: %w", err)
+	}
+
+	// Store new encrypted content (deferred until all TXs built successfully).
+	if err := e.Store.Put(encResult.KeyHash, encResult.Ciphertext); err != nil {
+		return nil, fmt.Errorf("engine: store copy: %w", err)
 	}
 
 	// --- Phase 2: All 4 builds succeeded — apply state ---
