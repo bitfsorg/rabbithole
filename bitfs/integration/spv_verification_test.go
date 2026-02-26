@@ -331,7 +331,7 @@ func TestSPVTamperedProof(t *testing.T) {
 
 	storedTx := &spv.StoredTx{
 		TxID:  tx0,
-		RawTx: []byte("raw-tx-data"),
+		RawTx: nil, // nil to skip RawTx hash check; this test targets Merkle proof tampering
 		Proof: &spv.MerkleProof{
 			TxID:      tx0,
 			Index:     0,

@@ -462,7 +462,7 @@ func TestBuildCreateChildInsufficientFunds(t *testing.T) {
 		Payload:       payload,
 		ParentUTXO:    &tx.UTXO{TxID: fakeTxID, Vout: 1, Amount: tx.DustLimit, PrivateKey: rootKey.PrivateKey},
 		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       &tx.UTXO{TxID: bytes.Repeat([]byte{0x02}, 32), Vout: 0, Amount: 10}, // way too small
+		FeeUTXO:       &tx.UTXO{TxID: bytes.Repeat([]byte{0x02}, 32), Vout: 0, Amount: 0}, // zero fee = insufficient
 		ParentPubKey:  rootKey.PublicKey,
 		FeeRate:       1,
 	})
@@ -544,7 +544,7 @@ func TestFeeEstimationFeeRateScaling(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDustLimitConstant(t *testing.T) {
-	assert.Equal(t, uint64(546), tx.DustLimit)
+	assert.Equal(t, uint64(1), tx.DustLimit)
 }
 
 // ---------------------------------------------------------------------------
@@ -801,7 +801,7 @@ func TestHeaderChainValid(t *testing.T) {
 			prevBlock,                          // prevBlock
 			bytes.Repeat([]byte{byte(i)}, 32),  // merkleRoot
 			uint32(1700000000+i*600),           // timestamp
-			0x1d00ffff,                         // bits
+			0x2100ffff,                         // bits — easy PoW target for synthetic headers
 			uint32(i*1000),                     // nonce
 			uint32(100+i),                      // height
 		)
@@ -826,7 +826,7 @@ func TestHeaderChainBrokenLink(t *testing.T) {
 			prevBlock,
 			bytes.Repeat([]byte{byte(0x10 + i)}, 32),
 			uint32(1700000000+i*600),
-			0x1d00ffff,
+			0x2100ffff, // easy PoW target for synthetic headers
 			uint32(i*1000),
 			uint32(100+i),
 		)
@@ -848,7 +848,7 @@ func TestHeaderChainBrokenLink(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHeaderChainSingleHeader(t *testing.T) {
-	h := makeBlockHeader(1, bytes.Repeat([]byte{0x00}, 32), bytes.Repeat([]byte{0xab}, 32), 1700000000, 0x1d00ffff, 0, 100)
+	h := makeBlockHeader(1, bytes.Repeat([]byte{0x00}, 32), bytes.Repeat([]byte{0xab}, 32), 1700000000, 0x2100ffff, 0, 100)
 	err := spv.VerifyHeaderChain([]*spv.BlockHeader{h})
 	assert.NoError(t, err, "single header should pass verification")
 }

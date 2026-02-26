@@ -323,7 +323,7 @@ func TestBuildCreateRootInsufficientFundsWithWalletKeys(t *testing.T) {
 	_, err = tx.BuildCreateRoot(&tx.CreateRootParams{
 		NodePubKey: rootKey.PublicKey,
 		Payload:    payload,
-		FeeUTXO:    &tx.UTXO{TxID: bytes.Repeat([]byte{0x01}, 32), Amount: 100}, // too little
+		FeeUTXO:    &tx.UTXO{TxID: bytes.Repeat([]byte{0x01}, 32), Amount: 1}, // too little (need DustLimit + fee = 2)
 		FeeRate:    1,
 	})
 	assert.ErrorIs(t, err, tx.ErrInsufficientFunds)
@@ -652,12 +652,14 @@ func TestSPVVerifyMetanetTransaction(t *testing.T) {
 	require.NotNil(t, merkleRoot)
 
 	// 2. Create a mock block header with the known merkle root
+	// Bits=0x2100ffff sets a very easy PoW target (target[0:2]=0xFFFF) so
+	// any synthetic header hash passes VerifyPoW.
 	header := &spv.BlockHeader{
 		Version:    1,
 		PrevBlock:  bytes.Repeat([]byte{0x00}, 32),
 		MerkleRoot: merkleRoot,
 		Timestamp:  1700000000,
-		Bits:       0x1d00ffff,
+		Bits:       0x2100ffff,
 		Nonce:      12345,
 		Height:     100,
 	}
@@ -697,7 +699,7 @@ func TestSPVVerifyMetanetTransaction(t *testing.T) {
 	// 5. Create a StoredTx with valid merkle proof
 	storedTx := &spv.StoredTx{
 		TxID:        txHashes[0],
-		RawTx:       []byte("mock-raw-tx-data"),
+		RawTx:       nil, // nil to skip RawTx hash check; synthetic TxID won't match arbitrary bytes
 		Proof:       merkleProof,
 		BlockHeight: 100,
 	}
@@ -751,7 +753,7 @@ func TestSPVVerifyMetanetTransaction(t *testing.T) {
 		PrevBlock:  header.Hash, // chain to previous
 		MerkleRoot: bytes.Repeat([]byte{0xab}, 32),
 		Timestamp:  1700000600,
-		Bits:       0x1d00ffff,
+		Bits:       0x2100ffff, // easy PoW target for synthetic headers
 		Nonce:      67890,
 		Height:     101,
 	}
