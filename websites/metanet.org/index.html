@@ -1409,8 +1409,8 @@ img {
       <div class="arch-layer reveal reveal-delay-1">
         <div class="arch-layer-num">02</div>
         <div class="arch-layer-content">
-          <div class="arch-layer-name">Metanet Chain</div>
-          <div class="arch-layer-desc">BSV-homomorphic sidechain &mdash; identical tx format, Bitcoin Script, MNT Token. Handles node economics and staking.</div>
+          <div class="arch-layer-name">Daemon Layer</div>
+          <div class="arch-layer-desc">LFCP content serving, x402 payment handling, and Metanet metadata. The bridge between blockchain and CDN.</div>
         </div>
       </div>
 
@@ -1424,8 +1424,8 @@ img {
       <div class="arch-layer reveal reveal-delay-2">
         <div class="arch-layer-num">03</div>
         <div class="arch-layer-content">
-          <div class="arch-layer-name">CDN Layer</div>
-          <div class="arch-layer-desc">Self-organizing content delivery through market incentives. Nodes cache, serve, and earn autonomously.</div>
+          <div class="arch-layer-name">Metanet Chain</div>
+          <div class="arch-layer-desc">BSV-homomorphic sidechain &mdash; identical tx format, Bitcoin Script, MNT Token. Handles node economics and CDN incentives.</div>
         </div>
       </div>
     </div>
@@ -1454,7 +1454,7 @@ img {
       </div>
       <div class="feature-card reveal reveal-delay-1">
         <div class="feature-card-title">Low Barrier to Entry</div>
-        <div class="feature-card-text">Stake MNT tokens, run the daemon, start earning. No specialized hardware required. A standard server is all you need.</div>
+        <div class="feature-card-text">Run the daemon, start earning. No specialized hardware required, no minimum stake. A standard server is all you need.</div>
       </div>
       <div class="feature-card reveal reveal-delay-2">
         <div class="feature-card-title">Revenue Sharing</div>
@@ -1486,13 +1486,13 @@ img {
     <div class="token-grid">
       <div class="token-card reveal">
         <div class="token-card-icon">&#9651;</div>
-        <div class="token-card-title">Staking</div>
-        <div class="token-card-text">Node operators stake MNT to join the network. Stake size signals commitment and determines content allocation priority.</div>
+        <div class="token-card-title">Mining</div>
+        <div class="token-card-text">Node operators mine MNT through merged mining with BSV. No minimum stake, no slashing. Organic growth like Bitcoin.</div>
       </div>
       <div class="token-card reveal reveal-delay-1">
         <div class="token-card-icon">&#9881;</div>
         <div class="token-card-title">Retrieval Fees</div>
-        <div class="token-card-text">Micro-fees paid in MNT for each content retrieval. Prices set by market forces between competing node operators.</div>
+        <div class="token-card-text">Micro-fees paid in BSV for each content retrieval via x402 protocol. Prices set by market forces between competing node operators.</div>
       </div>
       <div class="token-card reveal reveal-delay-2">
         <div class="token-card-icon">&#9850;</div>
@@ -1525,7 +1525,7 @@ img {
         <span class="cli-titlebar-text">metanet &mdash; terminal</span>
       </div>
       <pre class="cli-code"><span class="comment"># Start a Metanet node</span>
-<span class="prompt">$</span> <span class="cmd">metanet node start</span> <span class="flag">--stake</span> <span class="value">1000</span>
+<span class="prompt">$</span> <span class="cmd">metanet node start</span>
 
 <span class="comment"># Check node earnings</span>
 <span class="prompt">$</span> <span class="cmd">metanet earnings</span> <span class="flag">--period</span> <span class="value">7d</span>

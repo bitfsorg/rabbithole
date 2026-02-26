@@ -74,9 +74,7 @@ type Node struct {
     Description     string
     Metadata        map[string]string
     Encrypted       bool
-    PrivateKeyHash  []byte
-    EncPayload      []byte
-    PrivateFileIdx  uint32
+    EncPayload      []byte  // PRIVATE mode: nonce(12B) || AES-256-GCM(full TLV) || tag(16B)
     OnChain         bool
     ContentTxIDs    [][]byte
     Compression     int32

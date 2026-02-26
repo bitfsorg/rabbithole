@@ -1409,8 +1409,8 @@ img {
       <div class="arch-layer reveal reveal-delay-1">
         <div class="arch-layer-num">02</div>
         <div class="arch-layer-content">
-          <div class="arch-layer-name">Metanet Chain</div>
-          <div class="arch-layer-desc">BSV 同构侧链 &mdash; 相同的交易格式、Bitcoin Script、MNT Token。处理节点经济与质押。</div>
+          <div class="arch-layer-name">Daemon 层</div>
+          <div class="arch-layer-desc">LFCP 内容服务、x402 支付处理与 Metanet 元数据。区块链与 CDN 之间的桥梁层。</div>
         </div>
       </div>
 
@@ -1424,8 +1424,8 @@ img {
       <div class="arch-layer reveal reveal-delay-2">
         <div class="arch-layer-num">03</div>
         <div class="arch-layer-content">
-          <div class="arch-layer-name">CDN 层</div>
-          <div class="arch-layer-desc">通过市场激励实现自组织内容分发。节点自主缓存、分发并赚取收益。</div>
+          <div class="arch-layer-name">Metanet Chain</div>
+          <div class="arch-layer-desc">BSV 同构侧链 &mdash; 相同的交易格式、Bitcoin Script、MNT Token。处理节点经济与 CDN 激励。</div>
         </div>
       </div>
     </div>
@@ -1454,7 +1454,7 @@ img {
       </div>
       <div class="feature-card reveal reveal-delay-1">
         <div class="feature-card-title">低门槛入场</div>
-        <div class="feature-card-text">质押 MNT 代币，运行守护进程，即刻开始赚取收益。无需专用硬件，一台标准服务器即可。</div>
+        <div class="feature-card-text">运行守护进程，即刻开始赚取收益。无需专用硬件，无最低质押要求，一台标准服务器即可。</div>
       </div>
       <div class="feature-card reveal reveal-delay-2">
         <div class="feature-card-title">收益分成</div>
@@ -1486,13 +1486,13 @@ img {
     <div class="token-grid">
       <div class="token-card reveal">
         <div class="token-card-icon">&#9651;</div>
-        <div class="token-card-title">质押</div>
-        <div class="token-card-text">节点运营者质押 MNT 加入网络。质押规模代表承诺程度，并决定内容分配优先级。</div>
+        <div class="token-card-title">挖矿</div>
+        <div class="token-card-text">节点运营者通过与 BSV 合并挖矿获取 MNT。无最低质押，无罚没机制，如比特币般有机增长。</div>
       </div>
       <div class="token-card reveal reveal-delay-1">
         <div class="token-card-icon">&#9881;</div>
         <div class="token-card-title">检索费用</div>
-        <div class="token-card-text">每次内容检索支付 MNT 微费用。价格由竞争中的节点运营者通过市场力量决定。</div>
+        <div class="token-card-text">每次内容检索通过 x402 协议支付 BSV 微费用。价格由竞争中的节点运营者通过市场力量决定。</div>
       </div>
       <div class="token-card reveal reveal-delay-2">
         <div class="token-card-icon">&#9850;</div>
@@ -1525,7 +1525,7 @@ img {
         <span class="cli-titlebar-text">metanet &mdash; terminal</span>
       </div>
       <pre class="cli-code"><span class="comment"># Start a Metanet node</span>
-<span class="prompt">$</span> <span class="cmd">metanet node start</span> <span class="flag">--stake</span> <span class="value">1000</span>
+<span class="prompt">$</span> <span class="cmd">metanet node start</span>
 
 <span class="comment"># Check node earnings</span>
 <span class="prompt">$</span> <span class="cmd">metanet earnings</span> <span class="flag">--period</span> <span class="value">7d</span>
