@@ -1,5 +1,7 @@
 # BitFS 概念设计
 
+> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · **概念设计** (本文档) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+>
 > 本文档为 BitFS 设计文档体系的第一层：项目愿景、核心概念、架构概览。
 > Metanet Chain (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
 >
@@ -19,7 +21,7 @@
 <td colspan="2" style="width:35%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>b* 工具 (只读)</strong><br>bls, bcat, bget, bstat, btree</td>
 <td colspan="2" style="width:65%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>bitfs 命令 (读写)</strong><br>put, mkdir, rm, mv, cp, link, sell, encrypt, decrypt<br>vault, wallet, publish, daemon, shell</td>
 </tr>
-<tr><th colspan="4" style="text-align:center; background:#e8e8e8; padding:0.5em; border:1px solid #999;">共享核心库 (libbitfs)</th></tr>
+<tr><th colspan="4" style="text-align:center; background:#e8e8e8; padding:0.5em; border:1px solid #999;">共享核心库 (libbitfs-go)</th></tr>
 <tr>
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Metanet 解析器</strong><br><span style="font-size:9pt; color:#555;">inode/dirent/链接</span></td>
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Storage</strong><br><span style="font-size:9pt; color:#555;">内容存储 (链下/链上)</span></td>
@@ -49,7 +51,7 @@
 4. **统一加密**: Koblitz (secp256k1) 加密密钥 + AES-256-GCM 加密内容, 与 Bitcoin 同密码体系
 5. **SPV 模式**: 所有交易信息 + Merkle proof 本地保存，不检索区块链
 6. **Method 42**: 所有加密操作遵循 Paper 1 的方法, ECDH 直接用 D_node (BIP32 密钥), key_hash 移到 KDF 阶段, 保留 BIP32 代数关系
-7. **Unix 文件系统**: Metanet 节点模型遵循 Unix 文件系统设计 (inode, 目录项, 软/硬链接)
+7. **Unix 文件系统**: Metanet 节点模型遵循 Unix 文件系统设计 (inode, 目录项, 软链接)
 8. **Agent-first**: Daemon (LFCP) 同时服务人类和 Agent; WebMCP (浏览器) + Content Negotiation (CLI); 402 付费墙对 Agent 是可编程支付接口
 9. **BSV Association 官方库**: 使用 `github.com/bsv-blockchain/go-sdk` 作为唯一 BSV 依赖
 10. **元数据与内容分离**: Metanet 交易只存元数据, 内容独立存储 (链下默认, 链上可选)
@@ -75,7 +77,7 @@
 | 3 | 数据验证 | SPV (本地 tx + Merkle proof, 不查链) | 点对点, 不依赖索引服务 |
 | 4 | 编码格式 | TLV | 紧凑、自定义 Tag-Length-Value 编码 |
 | 5 | P_node 来源 | BIP32 HD 树状派生 (镜像文件系统层次) | 稳定身份 + 确定性恢复 |
-| 6 | 文件系统模型 | Unix (inode=P_node, dirent=ChildEntry, 软/硬链接) | 成熟模型, 语义清晰 |
+| 6 | 文件系统模型 | Unix (inode=P_node, dirent=ChildEntry, 软链接) | 成熟模型, 语义清晰 |
 | 7 | 多目录树 | Vault (BIP32 account 层级分离), 费用链 account 0 | 同一种子多棵独立树 |
 | 8 | UTXO 管理 | 自持续链 (Output 2 必须刷新 P_parent), 无需预充值 | 简单, 自举 |
 | 9 | 买卖机制 | HTLC 原子交换 + Token 批量预购 | HTLC 单次购买, Token 批量高效 |
@@ -85,7 +87,7 @@
 | 13 | 价格模型 | 单价 price_per_kb (sat/KB), 支持目录继承 | 灵活, 总价客户端计算 |
 | 14 | 内容寻址 | 元数据交易与数据交易分离, 链下默认/链上可选 | 元数据/内容解耦, 灵活存储 |
 | 15 | DNS 绑定 | `_bitfs` (P_node) + `_bitfs._tcp` SRV (多个, CDN), 双向验证, 任意节点可绑定 | 灵活, 支持 CDN |
-| 16 | 链接类型 | 硬链接(多ChildEntry→同P_node)/SOFT(P_node)/SOFT_REMOTE(domain/path) | Unix 软硬链接 |
+| 16 | 链接类型 | SOFT(P_node)/SOFT_REMOTE(domain/path), 不支持硬链接 (设计决策 #8) | 严格树结构 |
 | 17 | Index 管理 | monotonic auto-increment (next_child_index) | 简单优雅 |
 | 18 | cp/mv/link | 三个独立操作 (真复制/真移动/创建链接) | Unix 语义 |
 | 19 | Shell 风格 | FTP (lcd/lpwd/get/mget/put/mput/!) | 链上文件系统的自然交互方式 |

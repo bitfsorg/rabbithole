@@ -1,14 +1,10 @@
 # BitFS 详细设计
 
+> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · **详细设计** (本文档) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+>
 > 本文档为 BitFS 设计文档体系的第三层：算法、数据结构、协议细节。
->
-> **文档体系**: ([总体设计](../0-OverallDesign.zh.md))
-> 1. [概念设计](1-ConceptDesign.zh.md) — 项目愿景、核心概念、架构概览
-> 2. [系统设计](2-SystemDesign.zh.md) — 模块划分、接口定义、数据流
-> 3. **详细设计** (本文档) — 算法、数据结构、协议细节
-> 4. [测试用例](4-TestDesign.zh.md) — 测试用例设计
->
 > 每个 B 节对应系统设计中同编号章节的详细展开。
+> 交易结构的权威参考见 [交易规范](5-TransactionSpec.zh.md)。
 
 **B 节与系统设计章节对应关系**:
 
@@ -143,10 +139,9 @@ HD Seed (BIP39 助记词 + 可选 passphrase)
 | **mv 同目录** | 不改变 index (仅改名) |
 | **mv 跨目录** | 目标节点获得新 index (来自目标目录的 next_child_index) |
 | **cp** | 目标节点获得新 index + 新 HD 路径 |
-| **硬链接** | 消耗 next_child_index 但不创建新 HD 密钥 (ChildEntry 复用已有 P_node) |
 | **软链接** | 消耗 next_child_index 并创建新 HD 密钥 (LINK 节点是新节点) |
 
-> **硬链接与 next_child_index 的多父目录语义**: `next_child_index` 是每个目录节点各自维护的独立计数器, 不是全局的。当文件 F 被硬链接到目录 B 时, 消耗的是目录 B 的 `next_child_index` (分配给新 ChildEntry 的 index), 而目录 A (F 的原始父目录) 的 `next_child_index` 不受影响。同一个 P_node 可出现在多个目录的 ChildEntry 中, 各自拥有不同的 index 值 (来自各自父目录的计数器)。这与 Unix inode 语义一致: index 标识"目录项在父目录中的位置", 而非文件本身的全局编号。
+> **设计决策 #8** (交易规范): 不支持硬链接。Metanet DAG 是严格树结构, 每个节点恰好有一个父节点, 不支持多父节点。跨目录引用统一使用软链接。
 
 #### HD 路径构建
 
@@ -642,7 +637,7 @@ UTXO 产生: 1 content UTXO (locked to P_node)
 
 ### 14 种文件系统操作的交易组合
 
-> **多笔交易操作的中断恢复**: 部分操作 (如 `put`, `mkdir`, `mv` 跨目录) 需要 2-4 笔交易协同完成。若中途中断 (进程崩溃、网络断开), 已广播的交易不可撤销。恢复策略:
+> **多笔交易操作的中断恢复**: 部分操作 (如 `put`, `mkdir`, `mv` 跨目录) 需要 2 笔交易协同完成。若中途中断 (进程崩溃、网络断开), 已广播的交易不可撤销。恢复策略:
 > - **Tx 1 已广播, Tx 2+ 未广播**: 新 Metanet 节点已创建但父目录 ChildEntry 未更新 → 节点成为"孤立节点" (链上存在但目录树不可见)。Daemon 重启后检测到未完成的交易组, 自动补发剩余交易。
 > - **检测机制**: 每个多笔交易操作在 daemon.db 中记录 `pending_tx_group` (操作类型、已广播 TxID 列表、待广播交易原始数据)。操作全部完成后删除该记录。Daemon 启动时扫描 `pending_tx_group` 表, 对未完成的操作自动续发。
 > - **幂等性保证**: 每笔交易引用特定 UTXO 作为 Input, 若 UTXO 已被花费 (重复广播) 则交易自然失败, 不会产生副作用。
@@ -753,8 +748,8 @@ HD 密钥: 与 put 相同的路径派生方式
     Output 0: OP_RETURN { type=DIR, op=UPDATE,
               children=[移除目标 ChildEntry 后的列表] }
 
-注: 不发 DELETE 交易! 因硬链接可能从其他目录引用同一 P_node。
-    next_child_index 不减少 (已删除的 index 不复用)。
+注: 仅更新父目录 ChildEntry, 不花费目标节点 UTXO。
+    next_child_index 不减少 (已删除的 index 不复用, 详见交易规范 §5.4)。
 ```
 
 #### 5. rmdir (删除空目录)
@@ -777,7 +772,7 @@ HD 密钥: 与 put 相同的路径派生方式
     Input 1:  fee UTXO[1]
     Output 0: OP_RETURN { type=DIR, op=DELETE, index=原index, parent=P_parent }
 
-注: 与 rm 不同, rmdir 显式创建 DELETE 交易, 因目录不存在硬链接歧义。
+注: rmdir 需要 2 笔交易 (父目录更新 + 目标目录标记 DELETE), 而 rm 仅需 1 笔 (父目录更新)。
 ```
 
 #### 6. mv (同目录重命名)
@@ -803,42 +798,29 @@ HD 密钥: 与 put 相同的路径派生方式
 ```
 前置条件:
   - srcParent.PNode != dstParent.PNode
-  - 4 个 fee UTXO
+  - 2 个 fee UTXO
 
-交易组合 (4 笔):
+交易组合 (2 笔, 详见交易规范 §5.1):
 
-  Tx 1: BuildCreateChild (目标新节点)
-    Input 0:  P_dstParent UTXO (Sig D_dstParent)
+  Tx 1: BuildSelfUpdate (源父目录)
+    Input 0:  P_srcParent UTXO (Sig D_srcParent)
     Input 1:  fee UTXO[0]
-    Output 0: OP_RETURN { 克隆源 payload, op=CREATE,
-              index=dst_next_child_index, parent=P_dstParent,
-              key_hash=新密钥哈希 }
-    Output 1: P2PKH → P_dst_new (1 sat)
-    Output 2: P2PKH → P_dstParent (1 sat, refresh)
-    Output 3: Change
+    Output 0: OP_RETURN { type=DIR, op=UPDATE,
+              children=[...移除 srcName ChildEntry...] }
+    Output 1: P2PKH → P_srcParent (1 sat, refresh)
+    Output 2: Change
 
-  Tx 2: BuildSelfUpdate (目标父目录更新)
-    Input 0:  P_dstParent UTXO (来自 Tx1 Output 2)
+  Tx 2: BuildSelfUpdate (目标父目录)
+    Input 0:  P_dstParent UTXO (Sig D_dstParent)
     Input 1:  fee UTXO[1]
     Output 0: OP_RETURN { type=DIR, op=UPDATE,
-              children=[...,新 ChildEntry(pubkey=P_dst_new)],
+              children=[..., 原 ChildEntry(pubkey=P_src, index=dst_next_child_index, name=dstName)],
               next_child_index=old+1 }
+    Output 1: P2PKH → P_dstParent (1 sat, refresh)
+    Output 2: Change
 
-  Tx 3: BuildSelfUpdate (源节点 DELETE + moved_to)
-    Input 0:  P_src UTXO (Sig D_src)
-    Input 1:  fee UTXO[2]
-    Output 0: OP_RETURN { type=FILE, op=DELETE,
-              link_target=P_dst_new(33B) }
-
-  Tx 4: BuildSelfUpdate (源父目录更新)
-    Input 0:  P_srcParent UTXO (Sig D_srcParent)
-    Input 1:  fee UTXO[3]
-    Output 0: OP_RETURN { type=DIR, op=UPDATE,
-              children=[...移除 srcName...] }
-
-HD 密钥: 目标节点获得新 HD 路径 (dstParent path + dst_index)
-加密: 内容用新密钥重新加密, 旧 capsule 失效
-注: 源节点标记 DELETE, 其 link_target 字段记录新位置 (moved_to 指针)
+P_node 不变, 无需重新加密, 无需创建新节点。
+目标目录分配新 index, 但 ChildEntry 存储实际 PubKey, BIP32 密钥不变。
 ```
 
 #### 8. cp (复制)
@@ -865,27 +847,9 @@ HD 密钥: 目标节点获得新 HD 路径 (dstParent path + dst_index)
     保留源文件的 mime_type, keywords, description, metadata。
 ```
 
-#### 9. link (硬链接)
+#### 9. link -s (本地软链接)
 
-```
-前置条件:
-  - 目标为 FILE 类型 (禁止目录硬链接)
-  - 链接名不冲突
-  - 1 个 fee UTXO
-
-交易组合 (1 笔):
-
-  Tx 1: BuildSelfUpdate (父目录更新)
-    Output 0: OP_RETURN { type=DIR, op=UPDATE,
-              children=[...,新 ChildEntry(index=next_child_index,
-                name=链接名, type=FILE, pubkey=目标P_node)],
-              next_child_index=old+1 }
-
-注: ChildEntry.Pubkey 复用目标节点的 P_node (真正的 Unix 硬链接语义)。
-    消耗 next_child_index 但不派生新 HD 密钥 (无新节点创建)。
-```
-
-#### 10. link -s (本地软链接)
+> **设计决策 #8** (交易规范): 不支持硬链接 (`bitfs link` 无 `-s`)。Metanet DAG 是严格树, 不支持多父节点。
 
 ```
 前置条件:
@@ -1193,7 +1157,7 @@ OP_CHECKLOCKTIMEVERIFY (CLTV):
   - 用途: 时间锁 (基于区块高度, 而非真实时间)
 
 在 BitFS 中的应用:
-  - cltv_height 字段 (TLV field 35)
+  - cltv_height 字段 (TLV tag 0x17)
   - 值为 0: 无时间限制 (默认)
   - 值 > 0: 内容在该区块高度之前不可访问
 ```
@@ -1509,7 +1473,7 @@ bitfs mkdir <path>
 bitfs rm <path>
   删除文件 (仅移除父目录的 ChildEntry)
   交易: 1 笔 (SelfUpdate parent)
-  注: 不发 DELETE 交易, 因硬链接可能引用同一 P_node
+  注: 仅更新父目录 ChildEntry, 不花费目标节点 UTXO
 
 bitfs rmdir <path>
   删除空目录
@@ -1519,23 +1483,15 @@ bitfs rmdir <path>
 bitfs mv <src> <dst>
   移动或重命名
   同目录: 1 笔 (SelfUpdate parent, 修改 ChildEntry.Name)
-  跨目录: 4 笔:
-    Tx1: CreateChild (目标新节点, 新 HD 路径, 新密钥)
-    Tx2: SelfUpdate (目标父目录, 添加 ChildEntry)
-    Tx3: SelfUpdate (源节点 → op=DELETE, link_target=新 P_node 作为 moved_to 指针)
-    Tx4: SelfUpdate (源父目录, 移除 ChildEntry)
+  跨目录: 2 笔 (详见交易规范 §5.1):
+    Tx1: SelfUpdate (源父目录, 移除 ChildEntry)
+    Tx2: SelfUpdate (目标父目录, 添加 ChildEntry, 分配新 index)
+  注: P_node 不变, 不创建新节点, 不重新加密
 
 bitfs cp <src> <dst>
   复制 (真复制: 解密源 → 重新加密 → 创建新节点)
   交易: 2 笔 (CreateChild + SelfUpdate parent)
   注: 新 P_node, 新 HD 路径, 新 file_index, 新 key_hash
-
-bitfs link <target> <name>
-  硬链接 (默认)
-  限制: 仅文件, 禁止目录硬链接 (防止环路)
-  限制: 仅本 Vault 内
-  交易: 1 笔 (SelfUpdate parent, 添加 ChildEntry 复用目标 P_node)
-  注: 消耗 next_child_index 但不创建新 HD 密钥
 
 bitfs link -s <target> <name>
   本地软链接 (创建 LINK 节点, link_type=SOFT)
@@ -1706,8 +1662,7 @@ bitfs /<当前远程路径>
 | | rm \<path\> | 必填路径 | 删除文件 |
 | | mkdir \<path\> | 必填路径 | 创建目录 |
 | | rmdir \<path\> | 必填路径 | 删除空目录 |
-| | link \<target\> \<name\> | 目标和链接名 | 硬链接 |
-| | link -s \<target\> \<name\> | 同上 | 软链接 |
+| | link -s \<target\> \<name\> | 目标和链接名 | 软链接 |
 | **加密** | encrypt \<path\> | 必填路径 | 公开→私有 |
 | | decrypt \<path\> | 必填路径 | 私有→公开 |
 | **交易** | sell \<path\> --price N | 路径 + 价格 | 标价出售 |

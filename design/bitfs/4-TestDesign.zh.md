@@ -1,11 +1,6 @@
+> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · **测试设计** (本文档) · [交易规范](5-TransactionSpec.zh.md)
+>
 > 本文档为 BitFS 设计文档体系的第四层：测试用例设计。
->
-> **文档体系**: ([总体设计](../0-OverallDesign.zh.md))
-> 1. [概念设计](1-ConceptDesign.zh.md) — 项目愿景、核心概念、架构概览
-> 2. [系统设计](2-SystemDesign.zh.md) — 模块划分、接口定义、数据流
-> 3. [详细设计](3-DetailedDesign.zh.md) — 算法、数据结构、协议细节
-> 4. **测试用例** (本文档) — 测试用例设计
->
 > 设计章节交叉引用: 系统设计章节（如"第二节"）见 [2-SystemDesign](2-SystemDesign.zh.md)，详细设计章节（如"第四-B节"）见 [3-DetailedDesign](3-DetailedDesign.zh.md)。
 
 # BitFS 测试用例设计
@@ -253,7 +248,7 @@
 |----|---------|---------|------|---------|------|
 | T9.3.1 | 标准 rm | 文件存在于 parent | rm("test.txt") | parent.children 移除对应 ChildEntry, 生成 SelfUpdate | [unit] |
 | T9.3.2 | rm 不存在文件 | 文件名不在 parent | rm("ghost.txt") | 返回 file not found 错误 | [edge] |
-| T9.3.3 | rm 硬链接目标 | 文件有 2 个硬链接 | rm 其中一个 | 另一个硬链接仍有效, P_node 未删 | [unit] |
+| ~~T9.3.3~~ | ~~rm 硬链接目标~~ | ~~已移除: 不支持硬链接 (设计决策 #8)~~ | | | |
 
 ## T9.4: rmdir (删除目录)
 
@@ -279,12 +274,9 @@
 | T9.6.2 | cp 加密文件 | PAID 源 | cp → 检查目标 | 目标独立密钥, 可独立解密 | [unit] |
 | T9.6.3 | cp 目录递归 | 目录含多层子节点 | cp -r dir1 dir2 | 递归复制, 每个节点新 P_node | [edge] |
 
-## T9.7: link_hard (硬链接)
+## ~~T9.7: link_hard (硬链接)~~ — 已移除
 
-| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
-|----|---------|---------|------|---------|------|
-| T9.7.1 | 创建硬链接 | 源文件存在 | link("src.txt", "hard.txt", HARD) | 两个 ChildEntry → 同一 P_node | [unit] |
-| T9.7.2 | 删除原始文件 | 有硬链接 | rm 原始 → 通过链接访问 | 链接仍可正常读取 | [unit] |
+> 不支持硬链接 (交易规范设计决策 #8: Metanet DAG 是严格树, 不支持多父节点)。
 
 ## T9.8: link_soft (软链接)
 
@@ -621,7 +613,7 @@
 | T21.3.1 | Index 单调递增 | next_child_index 只增不减 | 四-B | [property] |
 | T21.3.2 | 父子一致性 | parent.children 包含所有子节点 P_node | 三, 四-B | [property] |
 | T21.3.3 | UTXO 链连续性 | 每个 Output 2 刷新到同一 P_node | 四-B | [property] |
-| T21.3.4 | 硬链接共享 | 硬链接的多个 ChildEntry → 同一 P_node | 三 | [property] |
+| ~~T21.3.4~~ | ~~硬链接共享~~ | ~~已移除: 不支持硬链接 (设计决策 #8)~~ | | |
 | T21.3.5 | 版本排序一致 | block height 排序 = TTOR 排序 (Last-Write-Wins) | 十二 | [property] |
 | T21.3.6 | Vault 隔离性 | 不同 vault → 不同密钥树, 不同 P_root | 二 | [property] |
 | T21.3.7 | rm 原子性 | rm 后 parent.children 不含已删条目 | 三 | [property] |

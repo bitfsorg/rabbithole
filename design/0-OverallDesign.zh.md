@@ -79,7 +79,7 @@ libbitfs-go/
 | `bitfs` | 文件所有者、访问者、AI Agent | `put/get/ls/cat/rm/mv/cp`、`sell`、`wallet`、`daemon` |
 | `metanet` | CDN 节点运营商 | `init/start/stop`、`status`、`contracts`、`peers`、`mine` |
 
-`bitfs` 用户无需安装 `metanet`；`metanet` 节点内嵌 libbitfs 以解密和服务内容。
+`bitfs` 用户无需安装 `metanet`；`metanet` 节点内嵌 libbitfs-go 以解密和服务内容。
 
 ### 3.3 链间职责
 

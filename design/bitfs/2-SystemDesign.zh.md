@@ -1,14 +1,10 @@
 # BitFS 系统设计
 
+> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · **系统设计** (本文档) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+>
 > 本文档为 BitFS 设计文档体系的第二层：模块划分、接口定义、数据流。
->
-> **文档体系**: ([总体设计](../0-OverallDesign.zh.md))
-> 1. [概念设计](1-ConceptDesign.zh.md) — 项目愿景、核心概念、架构概览
-> 2. **系统设计** (本文档) — 模块划分、接口定义、数据流
-> 3. [详细设计](3-DetailedDesign.zh.md) — 算法、数据结构、协议细节
-> 4. [测试用例](4-TestDesign.zh.md) — 测试用例设计
->
 > 各节的详细设计（算法、数据结构、协议细节）见 [3-DetailedDesign.zh.md](3-DetailedDesign.zh.md) 中对应的 B 节。
+> 交易结构的权威参考见 [交易规范](5-TransactionSpec.zh.md)。
 
 ---
 
@@ -173,11 +169,10 @@ BitFS 在链上实现了一个 Unix 文件系统。核心映射:
 | 文件名 | 仅存于父目录的 ChildEntry 中，节点自身不存 name |
 | `.` (当前目录) | 节点自身 P_node |
 | `..` (父目录) | 路径语义: 由遍历路径确定; parent 字段仅记录创建时父目录 |
-| 硬链接 | 多个 ChildEntry → 同一 P_node (真正的 Unix 语义) |
 | 软链接 (symlink) | LINK_SOFT → 指向 P_node (最新版本) |
 | 远程软链接 | LINK_SOFT_REMOTE → 指向 domain/path (跨用户) |
-| parent 字段 | 首次创建父目录 (硬链接不改变) |
-| inode 编号 | P_node (节点身份, 硬链接共享同一 P_node) |
+| parent 字段 | 首次创建父目录 |
+| inode 编号 | P_node (节点身份) |
 | dirent index | ChildEntry.index (父目录内序号, monotonic auto-increment) |
 
 ### 三种节点类型
@@ -188,12 +183,9 @@ DIR   - 目录节点 (持有 children 列表, next_child_index)
 LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 ```
 
-### 硬链接与软链接
+### 链接 (Link)
 
-**硬链接** = 多个 ChildEntry 指向同一 P_node (真正的 Unix inode 语义)。不创建 LINK 节点, 仅是目录操作。
-- 只允许文件硬链接, 禁止目录硬链接 (防止环路)
-- 只能本 Vault 内 (类 Unix 不能跨文件系统)
-- 删除: 仅删除 ChildEntry, 不维护引用计数, GC 留到后续工具
+> **设计决策 #8** (交易规范): Metanet DAG 是严格树结构, 不支持多父节点。因此**不支持硬链接** (硬链接隐式要求多父节点)。跨目录引用统一使用软链接。
 
 **软链接** = LINK 节点:
 
@@ -202,7 +194,7 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 | SOFT | P_node (33 bytes) | 本 Vault 内 | 查最新 TxID (跟随更新), 支持链式跟随 (最大深度 10) |
 | SOFT_REMOTE | domain/path (string) | 跨 Vault/跨用户 | DNSLink → Metanet 树遍历 |
 
-`bitfs link` 默认硬链接, `bitfs link -s` 软链接。
+`bitfs link -s` 创建软链接。
 
 ### 操作语义
 
@@ -210,12 +202,11 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 |------|------|------|
 | `put` (新建) | 分配新 HD index, op=CREATE | 新节点, 更新父目录 ChildEntry |
 | `put` (更新) | 复用 P_node, op=UPDATE | 同 P_node 新 TxID (Metanet 自动版本控制) |
-| `rm` | 1 笔交易: SelfUpdate 父目录移除 ChildEntry (不发 DELETE 交易, 因硬链接可能引用同一 P_node) | 删除目录需先确保目录为空, 或使用 `rm -r` 递归删除 |
+| `rm` | 1 笔交易: SelfUpdate 父目录移除 ChildEntry | 删除目录需先确保目录为空, 或使用 `rm -r` 递归删除 |
 | `mkdir` | 分配新 HD index, type=DIR | 新目录节点 |
 | `mv` (同目录) | SelfUpdate 父目录修改 ChildEntry.Name (1 笔交易) | 仅改名, 不改变节点身份/密钥 |
-| `mv` (跨目录) | DELETE 旧节点 + CreateChild 新节点 (4 笔交易) | 新 HD 路径, 新 P_node, 重新加密, 旧节点记录 moved_to 指针 |
+| `mv` (跨目录) | SelfUpdate(源父目录) + SelfUpdate(目标父目录) (2 笔交易) | P_node 不变, 仅移动 ChildEntry (目标目录分配新 index, 详见[交易规范 §5.1](5-TransactionSpec.zh.md#51-操作到交易的映射)) |
 | `cp` | 分配新 P_node, 重新加密 (新 file_index → 新 key) | 真正复制 (独立新节点, 新 key_hash) |
-| `link` | 往目标目录添加 ChildEntry (复用 P_node) | 硬链接 (不创建新节点, 仅目录操作) |
 | `link -s` | 分配新 P_node, type=LINK, SOFT | 软链接 (创建 LINK 节点) |
 
 > **并发写入**: Metanet Edge 只要求 Input 被 D_parent 签名, 不限定具体哪个 UTXO。
@@ -329,7 +320,7 @@ message BitFSPayload {
 
   // 时间与导航
   uint64 timestamp = 11;             // 操作时间 (Unix)
-  bytes parent = 12;                 // 首次创建父目录 P_node (根节点指向自身, 硬链接不改变)
+  bytes parent = 12;                 // 首次创建父目录 P_node (根节点指向自身)
   uint32 index = 13;                 // 本节点在父目录中的 index
 
   // 目录 (DIR)
@@ -835,12 +826,11 @@ bitfs put <local> <remote>     # 上传 (默认 D_node=1 加密 = 公开免费)
 bitfs put --encrypt <l> <r>    # 上传并加密 (私有, encrypted=true)
 bitfs put --keyword "tag1 tag2" --description "描述" <l> <r>  # 附加元信息
 bitfs mkdir <path>             # 创建目录
-bitfs mv <src> <dst>           # 移动 (新节点 + 旧节点变 SOFT 链接, 重新加密)
+bitfs mv <src> <dst>           # 移动 (同目录=改名; 跨目录=移动 ChildEntry, P_node 不变)
 bitfs cp <src> <dst>           # 复制 (独立新节点, 重新加密, 新 key_hash)
-bitfs rm <path>                # 删除: SelfUpdate 父目录移除 ChildEntry (不花费目标节点 UTXO, 因硬链接可能引用同一 P_node)
+bitfs rm <path>                # 删除: SelfUpdate 父目录移除 ChildEntry
 bitfs rm -r <path>             # 递归删除目录 (先递归删除所有子节点)
 bitfs rmdir <path>             # 删除空目录
-bitfs link <target> <name>     # 硬链接 (复用 P_node, 仅添加 ChildEntry)
 bitfs link -s <target> <name>  # 软链接 (本 Vault, 创建 LINK 节点)
 bitfs link -s example.com/path <name>  # 远程软链接 (跨用户)
 ```
@@ -921,7 +911,6 @@ mv <src> <dst>                移动/重命名
 rm <path>                     删除
 mkdir <path>                  创建目录
 rmdir <path>                  删除空目录
-link <target> <name>          硬链接
 link -s <target> <name>       软链接
 
 === Encryption ===
@@ -1238,7 +1227,7 @@ OP_DUP OP_HASH160 <H160(P)> OP_EQUALVERIFY OP_CHECKSIG
 
 ### TLV 字段
 
-`cltv_height` 字段 (field 35, uint32): 信息性标记, 实际约束在链上脚本中执行。
+`cltv_height` 字段 (tag 0x17, uint32): 信息性标记, 实际约束在链上脚本中执行。
 
 ---
 
