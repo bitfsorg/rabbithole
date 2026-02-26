@@ -46,7 +46,7 @@ func TestBuildFullMetanetTree(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, payload)
 
-	// 2. Build root directory transaction (BuildCreateRoot)
+	// 2. Build root directory transaction via MutationBatch
 	feeUTXO := &tx.UTXO{
 		TxID:       bytes.Repeat([]byte{0x01}, 32),
 		Vout:       0,
@@ -54,18 +54,18 @@ func TestBuildFullMetanetTree(t *testing.T) {
 		PrivateKey: feeKey.PrivateKey,
 	}
 
-	rootTx, err := tx.BuildCreateRoot(&tx.CreateRootParams{
-		NodePubKey: rootKey.PublicKey,
-		Payload:    payload,
-		FeeUTXO:    feeUTXO,
-		FeeRate:    1,
-	})
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, payload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetFeeRate(1)
+
+	rootResult, err := rootBatch.Build()
 	require.NoError(t, err)
-	assert.NotNil(t, rootTx)
-	assert.NotNil(t, rootTx.NodeUTXO)
-	assert.Equal(t, uint32(1), rootTx.NodeUTXO.Vout)
-	assert.Equal(t, tx.DustLimit, rootTx.NodeUTXO.Amount)
-	assert.Nil(t, rootTx.ParentUTXO, "root has no parent refresh UTXO")
+	require.NotNil(t, rootResult)
+	require.Len(t, rootResult.NodeOps, 1)
+	assert.NotNil(t, rootResult.NodeOps[0].NodeUTXO)
+	assert.Equal(t, uint32(1), rootResult.NodeOps[0].NodeVout)
+	assert.Equal(t, tx.DustLimit, rootResult.NodeOps[0].NodeUTXO.Amount)
 
 	// Verify OP_RETURN format
 	opReturnPushes, err := tx.BuildOPReturnData(rootKey.PublicKey, nil, payload)
@@ -89,7 +89,7 @@ func TestBuildFullMetanetTree(t *testing.T) {
 	assert.Empty(t, parentTxID)
 	assert.Equal(t, payload, parsedPayload)
 
-	// 3. Build child file transaction (BuildCreateChild)
+	// 3. Build child file transaction via MutationBatch
 	childKey, err := w.DeriveNodeKey(0, []uint32{1}, nil)
 	require.NoError(t, err)
 
@@ -111,20 +111,16 @@ func TestBuildFullMetanetTree(t *testing.T) {
 		PrivateKey: rootKey.PrivateKey,
 	}
 
-	childTx, err := tx.BuildCreateChild(&tx.CreateChildParams{
-		NodePubKey:    childKey.PublicKey,
-		ParentTxID:    fakeTxID,
-		Payload:       childPayload,
-		ParentUTXO:    parentUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       &tx.UTXO{TxID: bytes.Repeat([]byte{0x02}, 32), Vout: 0, Amount: 100000},
-		ParentPubKey:  rootKey.PublicKey,
-		FeeRate:       1,
-	})
+	childBatch := tx.NewMutationBatch()
+	childBatch.AddCreateChild(childKey.PublicKey, fakeTxID, childPayload, parentUTXO, rootKey.PrivateKey)
+	childBatch.AddFeeInput(&tx.UTXO{TxID: bytes.Repeat([]byte{0x02}, 32), Vout: 0, Amount: 100000})
+	childBatch.SetFeeRate(1)
+
+	childResult, err := childBatch.Build()
 	require.NoError(t, err)
-	assert.NotNil(t, childTx)
-	assert.NotNil(t, childTx.NodeUTXO)
-	assert.NotNil(t, childTx.ParentUTXO, "child should have parent refresh")
+	require.NotNil(t, childResult)
+	require.Len(t, childResult.NodeOps, 1)
+	assert.NotNil(t, childResult.NodeOps[0].NodeUTXO)
 
 	// Verify parent-child linkage via OP_RETURN
 	childPushes, err := tx.BuildOPReturnData(childKey.PublicKey, fakeTxID, childPayload)
@@ -132,7 +128,7 @@ func TestBuildFullMetanetTree(t *testing.T) {
 	assert.Equal(t, fakeTxID, childPushes[2], "ParentTxID should be in OP_RETURN")
 	assert.Equal(t, childKey.PublicKey.Compressed(), childPushes[1])
 
-	// 4. Build update transaction (BuildSelfUpdate)
+	// 4. Build update transaction via MutationBatch
 	updatedNode := &metanet.Node{
 		Version:  2,
 		Type:     metanet.NodeTypeFile,
@@ -143,19 +139,18 @@ func TestBuildFullMetanetTree(t *testing.T) {
 	updatePayload, err := metanet.SerializePayload(updatedNode)
 	require.NoError(t, err)
 
-	updateTx, err := tx.BuildSelfUpdate(&tx.SelfUpdateParams{
-		NodePubKey:  childKey.PublicKey,
-		NodePrivKey: childKey.PrivateKey,
-		ParentTxID:  fakeTxID, // preserved from original creation
-		Payload:     updatePayload,
-		NodeUTXO:    &tx.UTXO{TxID: bytes.Repeat([]byte{0xbb}, 32), Vout: 1, Amount: tx.DustLimit, PrivateKey: childKey.PrivateKey},
-		FeeUTXO:     &tx.UTXO{TxID: bytes.Repeat([]byte{0x03}, 32), Vout: 0, Amount: 100000},
-		FeeRate:     1,
-	})
+	updateBatch := tx.NewMutationBatch()
+	updateBatch.AddSelfUpdate(childKey.PublicKey, fakeTxID, updatePayload,
+		&tx.UTXO{TxID: bytes.Repeat([]byte{0xbb}, 32), Vout: 1, Amount: tx.DustLimit, PrivateKey: childKey.PrivateKey},
+		childKey.PrivateKey)
+	updateBatch.AddFeeInput(&tx.UTXO{TxID: bytes.Repeat([]byte{0x03}, 32), Vout: 0, Amount: 100000})
+	updateBatch.SetFeeRate(1)
+
+	updateResult, err := updateBatch.Build()
 	require.NoError(t, err)
-	assert.NotNil(t, updateTx)
-	assert.NotNil(t, updateTx.NodeUTXO)
-	assert.Nil(t, updateTx.ParentUTXO, "self-update has no parent refresh")
+	require.NotNil(t, updateResult)
+	require.Len(t, updateResult.NodeOps, 1)
+	assert.NotNil(t, updateResult.NodeOps[0].NodeUTXO)
 }
 
 // --- TestTransactionSigning ---
@@ -306,9 +301,9 @@ func TestTransactionFeeEstimation(t *testing.T) {
 	assert.Greater(t, largePayloadSize, rootSize, "larger payload should increase tx size")
 }
 
-// --- TestBuildCreateRootInsufficientFundsWithWalletKeys ---
+// --- TestBatchCreateRootInsufficientFundsWithWalletKeys ---
 
-func TestBuildCreateRootInsufficientFundsWithWalletKeys(t *testing.T) {
+func TestBatchCreateRootInsufficientFundsWithWalletKeys(t *testing.T) {
 	w, _, _ := createTestWallet(t, &wallet.MainNet)
 	rootKey, err := w.DeriveVaultRootKey(0)
 	require.NoError(t, err)
@@ -320,12 +315,12 @@ func TestBuildCreateRootInsufficientFundsWithWalletKeys(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = tx.BuildCreateRoot(&tx.CreateRootParams{
-		NodePubKey: rootKey.PublicKey,
-		Payload:    payload,
-		FeeUTXO:    &tx.UTXO{TxID: bytes.Repeat([]byte{0x01}, 32), Amount: 1}, // too little (need DustLimit + fee = 2)
-		FeeRate:    1,
-	})
+	batch := tx.NewMutationBatch()
+	batch.AddCreateRoot(rootKey.PublicKey, payload)
+	batch.AddFeeInput(&tx.UTXO{TxID: bytes.Repeat([]byte{0x01}, 32), Amount: 1}) // too little
+	batch.SetFeeRate(1)
+
+	_, err = batch.Build()
 	assert.ErrorIs(t, err, tx.ErrInsufficientFunds)
 }
 
@@ -352,7 +347,7 @@ func TestUTXOChainContinuity(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// 1. Build root tx
+	// 1. Build root tx via MutationBatch
 	feeUTXO := &tx.UTXO{
 		TxID:       bytes.Repeat([]byte{0x01}, 32),
 		Vout:       0,
@@ -360,19 +355,19 @@ func TestUTXOChainContinuity(t *testing.T) {
 		PrivateKey: feeKey.PrivateKey,
 	}
 
-	rootTx, err := tx.BuildCreateRoot(&tx.CreateRootParams{
-		NodePubKey: rootKey.PublicKey,
-		Payload:    rootPayload,
-		FeeUTXO:    feeUTXO,
-		FeeRate:    1,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, rootTx.NodeUTXO)
-	assert.Equal(t, tx.DustLimit, rootTx.NodeUTXO.Amount, "root NodeUTXO should be dust")
-	assert.Equal(t, uint32(1), rootTx.NodeUTXO.Vout, "root P_node at output 1")
-	assert.Nil(t, rootTx.ParentUTXO, "root has no parent refresh")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetFeeRate(1)
 
-	// 2. Build child 1: uses rootTx.NodeUTXO as ParentUTXO
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err)
+	require.Len(t, rootResult.NodeOps, 1)
+	require.NotNil(t, rootResult.NodeOps[0].NodeUTXO)
+	assert.Equal(t, tx.DustLimit, rootResult.NodeOps[0].NodeUTXO.Amount, "root NodeUTXO should be dust")
+	assert.Equal(t, uint32(1), rootResult.NodeOps[0].NodeVout, "root P_node at output 1")
+
+	// 2. Build child 1 via MutationBatch
 	child1Key, err := w.DeriveNodeKey(0, []uint32{1}, nil)
 	require.NoError(t, err)
 
@@ -385,35 +380,28 @@ func TestUTXOChainContinuity(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Simulate rootTx.NodeUTXO with a fake TxID (in production, rootTx.TxID would be set)
+	// Simulate rootTx.NodeUTXO with a fake TxID
 	parentUTXO1 := &tx.UTXO{
 		TxID:       bytes.Repeat([]byte{0xaa}, 32),
-		Vout:       rootTx.NodeUTXO.Vout,
-		Amount:     rootTx.NodeUTXO.Amount,
+		Vout:       rootResult.NodeOps[0].NodeVout,
+		Amount:     rootResult.NodeOps[0].NodeUTXO.Amount,
 		PrivateKey: rootKey.PrivateKey,
 	}
 
-	child1Tx, err := tx.BuildCreateChild(&tx.CreateChildParams{
-		NodePubKey:    child1Key.PublicKey,
-		ParentTxID:    bytes.Repeat([]byte{0xaa}, 32),
-		Payload:       child1Payload,
-		ParentUTXO:    parentUTXO1,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       &tx.UTXO{TxID: bytes.Repeat([]byte{0x02}, 32), Vout: 0, Amount: 500000},
-		ParentPubKey:  rootKey.PublicKey,
-		FeeRate:       1,
-	})
+	child1Batch := tx.NewMutationBatch()
+	child1Batch.AddCreateChild(child1Key.PublicKey, bytes.Repeat([]byte{0xaa}, 32), child1Payload, parentUTXO1, rootKey.PrivateKey)
+	child1Batch.AddFeeInput(&tx.UTXO{TxID: bytes.Repeat([]byte{0x02}, 32), Vout: 0, Amount: 500000})
+	child1Batch.SetFeeRate(1)
+
+	child1Result, err := child1Batch.Build()
 	require.NoError(t, err)
-	require.NotNil(t, child1Tx.NodeUTXO)
-	require.NotNil(t, child1Tx.ParentUTXO, "child should refresh parent UTXO")
+	require.Len(t, child1Result.NodeOps, 1)
+	require.NotNil(t, child1Result.NodeOps[0].NodeUTXO)
 
 	// Verify child1's outputs
-	assert.Equal(t, tx.DustLimit, child1Tx.NodeUTXO.Amount, "child1 NodeUTXO should be dust")
-	assert.Equal(t, uint32(1), child1Tx.NodeUTXO.Vout, "child1 P_node at output 1")
-	assert.Equal(t, tx.DustLimit, child1Tx.ParentUTXO.Amount, "parent refresh should be dust")
-	assert.Equal(t, uint32(2), child1Tx.ParentUTXO.Vout, "parent refresh at output 2")
+	assert.Equal(t, tx.DustLimit, child1Result.NodeOps[0].NodeUTXO.Amount, "child1 NodeUTXO should be dust")
 
-	// 3. Build child 2: uses child1Tx.ParentUTXO (refreshed parent) as ParentUTXO
+	// 3. Build child 2 via MutationBatch
 	child2Key, err := w.DeriveNodeKey(0, []uint32{2}, nil)
 	require.NoError(t, err)
 
@@ -426,35 +414,26 @@ func TestUTXOChainContinuity(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Use the refreshed parent UTXO from child1Tx
+	// Simulate refreshed parent UTXO for child2
 	parentUTXO2 := &tx.UTXO{
-		TxID:       bytes.Repeat([]byte{0xbb}, 32), // child1Tx's TxID
-		Vout:       child1Tx.ParentUTXO.Vout,
-		Amount:     child1Tx.ParentUTXO.Amount,
+		TxID:       bytes.Repeat([]byte{0xbb}, 32),
+		Vout:       1,
+		Amount:     tx.DustLimit,
 		PrivateKey: rootKey.PrivateKey,
 	}
 
-	child2Tx, err := tx.BuildCreateChild(&tx.CreateChildParams{
-		NodePubKey:    child2Key.PublicKey,
-		ParentTxID:    bytes.Repeat([]byte{0xbb}, 32),
-		Payload:       child2Payload,
-		ParentUTXO:    parentUTXO2,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       &tx.UTXO{TxID: bytes.Repeat([]byte{0x03}, 32), Vout: 0, Amount: 500000},
-		ParentPubKey:  rootKey.PublicKey,
-		FeeRate:       1,
-	})
+	child2Batch := tx.NewMutationBatch()
+	child2Batch.AddCreateChild(child2Key.PublicKey, bytes.Repeat([]byte{0xbb}, 32), child2Payload, parentUTXO2, rootKey.PrivateKey)
+	child2Batch.AddFeeInput(&tx.UTXO{TxID: bytes.Repeat([]byte{0x03}, 32), Vout: 0, Amount: 500000})
+	child2Batch.SetFeeRate(1)
+
+	child2Result, err := child2Batch.Build()
 	require.NoError(t, err)
-	require.NotNil(t, child2Tx.NodeUTXO)
-	require.NotNil(t, child2Tx.ParentUTXO)
+	require.Len(t, child2Result.NodeOps, 1)
+	require.NotNil(t, child2Result.NodeOps[0].NodeUTXO)
 
 	// 4. Verify chain continuity: all amounts should be DustLimit
-	assert.Equal(t, tx.DustLimit, child2Tx.NodeUTXO.Amount)
-	assert.Equal(t, tx.DustLimit, child2Tx.ParentUTXO.Amount)
-
-	// Vouts should follow the template pattern consistently
-	assert.Equal(t, uint32(1), child2Tx.NodeUTXO.Vout, "P_node always at output 1")
-	assert.Equal(t, uint32(2), child2Tx.ParentUTXO.Vout, "P_parent refresh always at output 2")
+	assert.Equal(t, tx.DustLimit, child2Result.NodeOps[0].NodeUTXO.Amount)
 }
 
 // --- TestTransactionSizeEstimationAccuracy (T032) ---
@@ -525,18 +504,18 @@ func TestTransactionSizeEstimationAccuracy(t *testing.T) {
 	assert.GreaterOrEqual(t, sizeDiff, payloadDiff,
 		"estimate should grow at least by payload size difference")
 
-	// Test that BuildCreateRoot uses fee estimation properly
-	rootTx, err := tx.BuildCreateRoot(&tx.CreateRootParams{
-		NodePubKey: rootKey.PublicKey,
-		Payload:    rootPayload,
-		FeeUTXO:    &tx.UTXO{TxID: bytes.Repeat([]byte{0x01}, 32), Vout: 0, Amount: 100000},
-		FeeRate:    1,
-	})
+	// Test that MutationBatch uses fee estimation properly
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(&tx.UTXO{TxID: bytes.Repeat([]byte{0x01}, 32), Vout: 0, Amount: 100000})
+	rootBatch.SetFeeRate(1)
+
+	rootResult, err := rootBatch.Build()
 	require.NoError(t, err)
 
 	// If change exists, verify: fee UTXO amount = dust + fee + change
-	if rootTx.ChangeUTXO != nil {
-		totalSpent := tx.DustLimit + tx.EstimateFee(rootEstSize, 1) + rootTx.ChangeUTXO.Amount
+	if rootResult.ChangeUTXO != nil {
+		totalSpent := tx.DustLimit + tx.EstimateFee(rootEstSize, 1) + rootResult.ChangeUTXO.Amount
 		assert.Equal(t, uint64(100000), totalSpent,
 			"total outputs + fee should equal input amount")
 	}
