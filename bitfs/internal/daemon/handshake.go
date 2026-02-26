@@ -30,6 +30,10 @@ type HandshakeResponse struct {
 // DefaultSessionTTL is the default session time-to-live.
 const DefaultSessionTTL = 24 * time.Hour
 
+// MaxHandshakeClockSkew is the maximum allowed time difference between
+// buyer and seller clocks for handshake requests.
+const MaxHandshakeClockSkew = 5 * time.Minute
+
 // handleHandshake handles POST /_bitfs/handshake.
 // Implements the Method 42 ECDH handshake:
 //  1. Buyer sends {P_buyer, nonce_b, timestamp}
@@ -57,6 +61,22 @@ func (d *Daemon) handleHandshake(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.NonceB == "" {
 		writeJSONError(w, http.StatusBadRequest, "MISSING_FIELD", "nonce_b is required")
+		return
+	}
+
+	// Validate timestamp is within acceptable window.
+	if req.Timestamp == 0 {
+		writeJSONError(w, http.StatusBadRequest, "MISSING_FIELD", "timestamp is required")
+		return
+	}
+	reqTime := time.Unix(req.Timestamp, 0)
+	skew := time.Since(reqTime)
+	if skew < 0 {
+		skew = -skew
+	}
+	if skew > MaxHandshakeClockSkew {
+		writeJSONError(w, http.StatusBadRequest, "INVALID_TIMESTAMP",
+			"timestamp too far from server time (max skew 5 minutes)")
 		return
 	}
 

@@ -281,9 +281,16 @@ func (e *Engine) utxoStateToTx(us *UTXOState) (*tx.UTXO, error) {
 // lookupPrivKey finds the private key for a UTXO based on its pubkey and type.
 func (e *Engine) lookupPrivKey(pubKeyHex, utxoType string) (*ec.PrivateKey, error) {
 	if utxoType == "fee" {
-		// Fee UTXOs use the fee key chain — try all derived indices.
-		// In practice, we store the index or try the most recent ones.
-		// For now, iterate the known fee range.
+		// Try direct lookup via stored derivation index first (O(1)).
+		us := e.State.FindUTXOByPubKey(pubKeyHex, "fee")
+		if us != nil && (us.FeeChain > 0 || us.FeeDerivIdx > 0) {
+			kp, err := e.Wallet.DeriveFeeKey(us.FeeChain, us.FeeDerivIdx)
+			if err == nil && hex.EncodeToString(kp.PublicKey.Compressed()) == pubKeyHex {
+				return kp.PrivateKey, nil
+			}
+		}
+
+		// Fallback: linear scan (for UTXOs saved before the index was added).
 		for i := uint32(0); i < e.WState.NextReceiveIndex+10; i++ {
 			kp, err := e.Wallet.DeriveFeeKey(wallet.ExternalChain, i)
 			if err != nil {
@@ -337,6 +344,13 @@ func (e *Engine) TrackNewUTXOs(mtx *tx.MetanetTx, nodePubHex, changePubHex strin
 
 	if mtx.ChangeUTXO != nil && changePubHex != "" {
 		scriptPK, _ := tx.BuildP2PKHScript(mustDecompressPubKey(changePubHex))
+		// Change UTXOs are derived from the internal fee chain.
+		// DeriveChangeAddr increments NextChangeIndex before returning,
+		// so the index used is NextChangeIndex - 1.
+		feeDerivIdx := uint32(0)
+		if e.WState.NextChangeIndex > 0 {
+			feeDerivIdx = e.WState.NextChangeIndex - 1
+		}
 		e.State.AddUTXO(&UTXOState{
 			TxID:         txIDHex,
 			Vout:         mtx.ChangeUTXO.Vout,
@@ -344,6 +358,8 @@ func (e *Engine) TrackNewUTXOs(mtx *tx.MetanetTx, nodePubHex, changePubHex strin
 			ScriptPubKey: hex.EncodeToString(scriptPK),
 			PubKeyHex:    changePubHex,
 			Type:         "fee",
+			FeeChain:     wallet.InternalChain,
+			FeeDerivIdx:  feeDerivIdx,
 		})
 	}
 }

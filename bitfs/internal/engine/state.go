@@ -67,6 +67,8 @@ type UTXOState struct {
 	PubKeyHex    string `json:"pubkey"`        // owner pubkey hex (for key lookup)
 	Type         string `json:"type"`          // "fee", "node"
 	Spent        bool   `json:"spent"`
+	FeeChain     uint32 `json:"fee_chain,omitempty"`     // 0=external, 1=internal (fee UTXOs only)
+	FeeDerivIdx  uint32 `json:"fee_deriv_idx,omitempty"` // derivation index within chain (fee UTXOs only)
 }
 
 // PublishBinding tracks a domain-to-vault DNSLink binding.
@@ -181,6 +183,18 @@ func (s *LocalState) AddUTXO(u *UTXOState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.UTXOs = append(s.UTXOs, u)
+}
+
+// FindUTXOByPubKey returns the first unspent UTXO matching the given pubkey and type.
+func (s *LocalState) FindUTXOByPubKey(pubKeyHex, utxoType string) *UTXOState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, u := range s.UTXOs {
+		if u.PubKeyHex == pubKeyHex && u.Type == utxoType && !u.Spent {
+			return u
+		}
+	}
+	return nil
 }
 
 // GetNode returns the node state for a given pubkey hex.

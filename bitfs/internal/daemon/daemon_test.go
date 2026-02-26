@@ -1598,6 +1598,205 @@ func TestCapsuleOverwrite_SecondBuyerCannotOverwrite(t *testing.T) {
 	assert.Equal(t, capsuleHash1, capsuleHash2, "capsule must not be overwritten by second buyer")
 }
 
+// --- Handshake Timestamp Validation Tests ---
+
+func TestHandshake_RejectsStaleTimestamp(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	priv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+
+	reqBody := HandshakeRequest{
+		BuyerPub:  hex.EncodeToString(priv.PubKey().Compressed()),
+		NonceB:    hex.EncodeToString(make([]byte, 32)),
+		Timestamp: time.Now().Add(-10 * time.Minute).Unix(),
+	}
+	body, _ := json.Marshal(reqBody)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/_bitfs/handshake", bytes.NewReader(body))
+	d.Handler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "timestamp")
+}
+
+func TestHandshake_RejectsFutureTimestamp(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	priv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+
+	reqBody := HandshakeRequest{
+		BuyerPub:  hex.EncodeToString(priv.PubKey().Compressed()),
+		NonceB:    hex.EncodeToString(make([]byte, 32)),
+		Timestamp: time.Now().Add(10 * time.Minute).Unix(),
+	}
+	body, _ := json.Marshal(reqBody)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/_bitfs/handshake", bytes.NewReader(body))
+	d.Handler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "timestamp")
+}
+
+func TestHandshake_RejectsMissingTimestamp(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	priv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+
+	reqBody := HandshakeRequest{
+		BuyerPub:  hex.EncodeToString(priv.PubKey().Compressed()),
+		NonceB:    hex.EncodeToString(make([]byte, 32)),
+		Timestamp: 0,
+	}
+	body, _ := json.Marshal(reqBody)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/_bitfs/handshake", bytes.NewReader(body))
+	d.Handler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "timestamp")
+}
+
+// --- Cleanup Tests ---
+
+func TestDaemon_CleansUpExpiredSessions(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.sessionsMu.Lock()
+	d.sessions["expired-1"] = &Session{
+		ID:        "expired-1",
+		ExpiresAt: time.Now().Add(-1 * time.Hour),
+	}
+	d.sessions["valid-1"] = &Session{
+		ID:        "valid-1",
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	d.sessionsMu.Unlock()
+
+	d.cleanupExpiredSessions()
+
+	d.sessionsMu.RLock()
+	defer d.sessionsMu.RUnlock()
+	assert.NotContains(t, d.sessions, "expired-1")
+	assert.Contains(t, d.sessions, "valid-1")
+}
+
+func TestDaemon_CleansUpExpiredInvoices(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	d.invoices["expired-inv"] = &InvoiceRecord{
+		ID:     "expired-inv",
+		Expiry: time.Now().Add(-1 * time.Hour),
+		Paid:   false,
+	}
+	d.invoices["fresh-inv"] = &InvoiceRecord{
+		ID:     "fresh-inv",
+		Expiry: time.Now().Add(1 * time.Hour),
+		Paid:   false,
+	}
+	d.invoices["paid-expired"] = &InvoiceRecord{
+		ID:     "paid-expired",
+		Expiry: time.Now().Add(-1 * time.Hour),
+		Paid:   true, // paid invoices should NOT be cleaned up
+	}
+	d.invoicesMu.Unlock()
+
+	d.cleanupExpiredInvoices()
+
+	d.invoicesMu.RLock()
+	defer d.invoicesMu.RUnlock()
+	assert.NotContains(t, d.invoices, "expired-inv")
+	assert.Contains(t, d.invoices, "fresh-inv")
+	assert.Contains(t, d.invoices, "paid-expired", "paid invoices must be preserved")
+}
+
+func TestRateLimiter_CleansUpStaleClients(t *testing.T) {
+	rl := newRateLimiter(60, 10)
+
+	rl.mu.Lock()
+	rl.clients["stale-ip"] = &clientRate{
+		tokens:    10,
+		lastCheck: time.Now().Add(-25 * time.Hour),
+	}
+	rl.clients["active-ip"] = &clientRate{
+		tokens:    10,
+		lastCheck: time.Now().Add(-1 * time.Minute),
+	}
+	rl.mu.Unlock()
+
+	rl.cleanup()
+
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	assert.NotContains(t, rl.clients, "stale-ip")
+	assert.Contains(t, rl.clients, "active-ip")
+}
+
+// --- Invoice Persistence Tests ---
+
+func TestDaemon_PersistsInvoiceOnPayment(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	dir := t.TempDir()
+	d.invoiceDir = dir
+
+	inv := &InvoiceRecord{
+		ID:      "test-inv-123",
+		Paid:    true,
+		Capsule: []byte("encrypted-capsule-data"),
+		Expiry:  time.Now().Add(1 * time.Hour),
+	}
+
+	require.NoError(t, d.persistInvoice(inv))
+
+	loaded, err := d.loadInvoice("test-inv-123")
+	require.NoError(t, err)
+	assert.True(t, loaded.Paid)
+	assert.Equal(t, inv.Capsule, loaded.Capsule)
+	assert.Equal(t, "test-inv-123", loaded.ID)
+}
+
+func TestDaemon_RecoversPaidInvoicesOnStart(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	dir := t.TempDir()
+	d.invoiceDir = dir
+
+	inv := &InvoiceRecord{
+		ID:      "recovered-inv",
+		Paid:    true,
+		Capsule: []byte("recovery-capsule"),
+		Expiry:  time.Now().Add(1 * time.Hour),
+	}
+	require.NoError(t, d.persistInvoice(inv))
+
+	// Clear in-memory invoices to simulate restart.
+	d.invoicesMu.Lock()
+	d.invoices = make(map[string]*InvoiceRecord)
+	d.invoicesMu.Unlock()
+
+	d.recoverPersistedInvoices()
+
+	d.invoicesMu.RLock()
+	defer d.invoicesMu.RUnlock()
+	loaded, ok := d.invoices["recovered-inv"]
+	require.True(t, ok, "persisted invoice should be recovered")
+	assert.True(t, loaded.Paid)
+	assert.Equal(t, []byte("recovery-capsule"), loaded.Capsule)
+}
+
+func TestDaemon_PersistInvoice_DisabledWhenNoDirSet(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	// invoiceDir is empty — persistence should be a no-op.
+	inv := &InvoiceRecord{ID: "test-123", Paid: true}
+	assert.NoError(t, d.persistInvoice(inv))
+}
+
 // --- PrivateKey from big.Int for mock ---
 
 func init() {

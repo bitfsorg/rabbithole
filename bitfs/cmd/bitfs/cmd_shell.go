@@ -20,6 +20,26 @@ import (
 	"github.com/tongxiaofeng/libbitfs-go/config"
 )
 
+// validAccessModes contains the accepted access mode strings.
+var validAccessModes = map[string]bool{
+	"free":    true,
+	"private": true,
+	"paid":    true,
+}
+
+// validateAccessMode checks if a mode string is a valid access mode.
+func validateAccessMode(mode string) error {
+	if !validAccessModes[mode] {
+		return fmt.Errorf("invalid access mode %q: must be free, private, or paid", mode)
+	}
+	return nil
+}
+
+// ensureHistoryFilePermissions restricts the history file to owner-only access.
+func ensureHistoryFilePermissions(path string) {
+	_ = os.Chmod(path, 0600)
+}
+
 // shellCommands is the list of all shell command names for tab completion.
 var shellCommands = []string{
 	"ls", "cd", "lcd", "pwd", "cat", "get", "mget", "mput", "mkdir", "put", "rm", "mv", "cp",
@@ -82,6 +102,7 @@ func runShell(args []string) int {
 		return exitError
 	}
 	defer func() { _ = rl.Close() }()
+	ensureHistoryFilePermissions(historyFile)
 
 	_, _ = fmt.Fprintf(rl.Stdout(), "BitFS Shell (vault %d). Type 'help' for commands, 'quit' to exit.\n", vaultIdx)
 
@@ -374,6 +395,10 @@ func runShell(args []string) int {
 			access := "free"
 			if len(cmdArgs) > 2 {
 				access = cmdArgs[2]
+			}
+			if err := validateAccessMode(access); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				continue
 			}
 			mputResult, mputErr := eng.Mput(&engine.MputOpts{
 				VaultIndex: vaultIdx,

@@ -24,12 +24,12 @@ type InvoiceRecord struct {
 	PricePerKB   uint64    `json:"price_per_kb"`
 	FileSize     uint64    `json:"file_size"`
 	PaymentAddr  string    `json:"payment_addr"`
-	SellerPubKey string    `json:"seller_pubkey"` // Hex-encoded compressed seller pubkey (for HTLC 2-of-2 multisig)
+	SellerPubKey string    `json:"seller_pubkey"`        // Hex-encoded compressed seller pubkey (for HTLC 2-of-2 multisig)
 	CapsuleHash  string    `json:"capsule_hash"`
-	HTLCScript   []byte    `json:"-"` // Precomputed HTLC script for verification
-	Capsule      []byte    `json:"-"` // ECDH capsule for buyer
-	Expiry       time.Time `json:"-"`
-	Paid         bool      `json:"-"`
+	HTLCScript   []byte    `json:"-"`                    // Precomputed HTLC script for verification
+	Capsule      []byte    `json:"capsule,omitempty"`    // ECDH capsule for buyer (persisted for crash recovery)
+	Expiry       time.Time `json:"expiry"`
+	Paid         bool      `json:"paid"`
 }
 
 // DefaultInvoiceExpiry is the default invoice time-to-live.
@@ -314,6 +314,9 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "NO_CAPSULE", "No capsule computed for this invoice")
 		return
 	}
+
+	// Persist paid invoice before sending response (crash recovery).
+	_ = d.persistInvoice(invoice)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{

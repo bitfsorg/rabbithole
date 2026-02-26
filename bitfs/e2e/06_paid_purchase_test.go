@@ -346,7 +346,7 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	claimTxBytes := claimTx.Bytes()
 	require.NotEmpty(t, claimTxBytes, "claim tx should serialize")
 
-	extractedCapsule, err := x402.ParseHTLCPreimage(claimTxBytes)
+	extractedCapsule, err := x402.ParseHTLCPreimage(claimTxBytes, nil)
 	require.NoError(t, err, "parse HTLC preimage from claim tx")
 	require.Equal(t, capsule, extractedCapsule,
 		"extracted capsule should match original capsule")
@@ -607,7 +607,7 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 	require.NoError(t, unlockScript.AppendOpcodes(script.OpTRUE))
 	claimTx.Inputs[0].UnlockingScript = unlockScript
 
-	extracted, err := x402.ParseHTLCPreimage(claimTx.Bytes())
+	extracted, err := x402.ParseHTLCPreimage(claimTx.Bytes(), nil)
 	require.NoError(t, err, "extract preimage from simulated claim tx")
 	assert.Equal(t, capsule, extracted, "extracted preimage should equal capsule")
 

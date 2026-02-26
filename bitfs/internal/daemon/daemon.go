@@ -9,10 +9,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -229,6 +231,12 @@ type Daemon struct {
 
 	// Rate limiting
 	rateLimiter *rateLimiter
+
+	// Background cleanup
+	stopCleanup chan struct{}
+
+	// Invoice persistence directory (empty = disabled).
+	invoiceDir string
 }
 
 // New creates a new Daemon instance.
@@ -309,6 +317,13 @@ func (d *Daemon) Start() error {
 
 	d.running = true
 
+	// Recover persisted invoices from a previous run.
+	d.recoverPersistedInvoices()
+
+	// Start background cleanup goroutine.
+	d.stopCleanup = make(chan struct{})
+	go d.runCleanup()
+
 	// Start in background
 	go func() {
 		var err error
@@ -334,6 +349,10 @@ func (d *Daemon) Stop(ctx context.Context) error {
 
 	if !d.running {
 		return ErrNotRunning
+	}
+
+	if d.stopCleanup != nil {
+		close(d.stopCleanup)
 	}
 
 	err := d.server.Shutdown(ctx)
@@ -407,6 +426,109 @@ func (d *Daemon) cleanupExpiredSessions() {
 	}
 }
 
+// cleanupExpiredInvoices removes invoices that have expired.
+func (d *Daemon) cleanupExpiredInvoices() {
+	d.invoicesMu.Lock()
+	defer d.invoicesMu.Unlock()
+
+	now := time.Now()
+	for id, inv := range d.invoices {
+		if !inv.Paid && now.After(inv.Expiry) {
+			delete(d.invoices, id)
+		}
+	}
+}
+
+// SetInvoiceDir configures the directory for invoice persistence. Must be called before Start.
+func (d *Daemon) SetInvoiceDir(dir string) {
+	d.invoiceDir = dir
+}
+
+// persistInvoice writes an invoice to disk atomically (write-to-tmp then rename).
+func (d *Daemon) persistInvoice(inv *InvoiceRecord) error {
+	if d.invoiceDir == "" {
+		return nil // persistence disabled
+	}
+	data, err := json.Marshal(inv)
+	if err != nil {
+		return fmt.Errorf("marshal invoice: %w", err)
+	}
+	if err := os.MkdirAll(d.invoiceDir, 0700); err != nil {
+		return fmt.Errorf("create invoice dir: %w", err)
+	}
+	path := filepath.Join(d.invoiceDir, inv.ID+".json")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return fmt.Errorf("write invoice: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename invoice: %w", err)
+	}
+	return nil
+}
+
+// loadInvoice reads a persisted invoice from disk.
+func (d *Daemon) loadInvoice(invoiceID string) (*InvoiceRecord, error) {
+	path := filepath.Join(d.invoiceDir, invoiceID+".json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var inv InvoiceRecord
+	if err := json.Unmarshal(data, &inv); err != nil {
+		return nil, err
+	}
+	return &inv, nil
+}
+
+// recoverPersistedInvoices loads paid invoices from disk on startup.
+func (d *Daemon) recoverPersistedInvoices() {
+	if d.invoiceDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(d.invoiceDir)
+	if err != nil {
+		return
+	}
+	d.invoicesMu.Lock()
+	defer d.invoicesMu.Unlock()
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(d.invoiceDir, entry.Name()))
+		if readErr != nil {
+			continue
+		}
+		var inv InvoiceRecord
+		if unmarshalErr := json.Unmarshal(data, &inv); unmarshalErr != nil {
+			continue
+		}
+		if inv.Paid && inv.ID != "" {
+			d.invoices[inv.ID] = &inv
+		}
+	}
+}
+
+// runCleanup periodically cleans up expired sessions, invoices, and rate limiter entries.
+func (d *Daemon) runCleanup() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			d.cleanupExpiredSessions()
+			d.cleanupExpiredInvoices()
+			if d.rateLimiter != nil {
+				d.rateLimiter.cleanup()
+			}
+		case <-d.stopCleanup:
+			return
+		}
+	}
+}
+
 // rateLimiter implements a simple per-IP token bucket rate limiter.
 type rateLimiter struct {
 	mu      sync.Mutex
@@ -457,6 +579,19 @@ func (rl *rateLimiter) Allow(ip string) bool {
 
 	client.tokens--
 	return true
+}
+
+// cleanup removes client entries that haven't been seen in 24 hours.
+func (rl *rateLimiter) cleanup() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-24 * time.Hour)
+	for ip, client := range rl.clients {
+		if client.lastCheck.Before(cutoff) {
+			delete(rl.clients, ip)
+		}
+	}
 }
 
 // extractClientIP gets the client IP from the request.
