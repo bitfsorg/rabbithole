@@ -12,7 +12,7 @@
 
 This is a **re-audit** of the BitFS codebase. It confirms that the core cryptographic engine remains sound, while identifying significant new issues missed by the first audit. The re-audit discovered **5 new HIGH**, **25 new MEDIUM**, and **23 new LOW** severity findings.
 
-**Fix progress**: Of 23 previous findings, **21 fixed** (C-1, H-1–H-4, M-1–M-16 except M-15 already fixed), 1 changed (L-9), 1 unfixed (L-1). Of 53 new findings, all 5 HIGH and **24 MEDIUM fixed**, 2 MEDIUM by-design, 23 LOW remain open. **Total: ~24 open findings** (down from ~89 at re-audit time). All MEDIUM and above findings are now FIXED or BY-DESIGN.
+**Fix progress**: Of 23 previous findings, **21 fixed** (C-1, H-1–H-4, M-1–M-16 except M-15 already fixed), 1 changed (L-9), 1 unfixed (L-1). Of 53 new findings, all 5 HIGH and **24 MEDIUM fixed**, 2 MEDIUM by-design, **6 LOW fixed**, 1 LOW won't-fix (Go limitation), 16 LOW remain open. **Total: ~17 open findings** (down from ~89 at re-audit time). All MEDIUM and above findings are now FIXED or BY-DESIGN.
 
 ---
 
@@ -316,7 +316,7 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **File**: `bitfs/internal/daemon/webserve.go`
 - **Description**: File contains only TODOs, references non-existent methods.
 
-### L-NEW-7: `containsPathTraversal` Misses Double-Encoded Sequences
+### L-NEW-7: `containsPathTraversal` Misses Double-Encoded Sequences (**FIXED**)
 
 - **File**: `bitfs/internal/daemon/content.go:160-169`
 - **Description**: `%252E%252E` bypasses the check. Low practical risk since `GetNodeByPath` would return not-found.
@@ -326,7 +326,7 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **File**: `bitfs/internal/daemon/daemon.go:373-390`
 - **Description**: Read lock released before write lock acquired for delete. Fresh session could be deleted if created between locks.
 
-### L-NEW-9: Rollback Defer Doesn't Clean Orphaned Store Blobs
+### L-NEW-9: Rollback Defer Doesn't Clean Orphaned Store Blobs (**FIXED**)
 
 - **File**: `bitfs/internal/engine/move.go:241-272`
 - **Description**: Phase 1 store write not reversed on Phase 2 failure. Overlaps with M-NEW-4.
@@ -336,13 +336,13 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **File**: `bitfs/cmd/bitfs/cmd_shell.go:119-131`
 - **Description**: `cd /nonexistent/path` silently accepted. Stale completions served.
 
-### L-NEW-11: `handleBSVAlias` Trusts `r.Host` for URL Construction
+### L-NEW-11: `handleBSVAlias` Trusts `r.Host` for URL Construction (**FIXED**)
 
 - **File**: `bitfs/internal/daemon/routes.go:106-128`
 - **Description**: Host header injection in Paymail capabilities endpoint. Malicious client can inject any hostname.
 - **Fix**: Use configured `ListenAddr` or explicit `PublicBaseURL`.
 
-### L-NEW-12: `zeroString` Zeroes Copy, Not Original
+### L-NEW-12: `zeroString` Zeroes Copy, Not Original — **WON'T FIX (Go limitation)**
 
 - **File**: `bitfs/cmd/bitfs/password.go:137-143`
 - **Description**: `[]byte(*s)` creates a copy. Original string backing array unaffected. False sense of security.
@@ -357,12 +357,12 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **File**: `libbitfs-go/wallet/hd.go:38-42`
 - **Description**: Accidental `json.Marshal(keyPair)` serializes private key.
 
-### L-NEW-15: `MemHeaderStore.GetHeader` Returns Mutable Reference
+### L-NEW-15: `MemHeaderStore.GetHeader` Returns Mutable Reference (**FIXED**)
 
 - **File**: `libbitfs-go/spv/store.go:100-114`
 - **Description**: Callers can corrupt store by mutating returned pointer.
 
-### L-NEW-16: `validateChildName` Allows Control Characters
+### L-NEW-16: `validateChildName` Allows Control Characters (**FIXED**)
 
 - **File**: `libbitfs-go/metanet/directory.go:156-170`
 - **Description**: Only rejects `/`, `\x00`, `.`, `..`. Allows `\r`, `\n`, `\t`, Unicode RLO overrides. Terminal spoofing risk.
@@ -379,7 +379,7 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Byte-by-byte loop with early exit. Low practical risk for Merkle roots.
 - **Fix**: `subtle.ConstantTimeCompare`.
 
-### L-NEW-19: Per-Link Depth Limit Allows Unlimited Total Follows
+### L-NEW-19: Per-Link Depth Limit Allows Unlimited Total Follows (**FIXED**)
 
 - **File**: `libbitfs-go/metanet/resolve.go:98-103`
 - **Description**: `MaxLinkDepth=10` is per-link, not total. Path `/link1/link2/.../link100` triggers 1000 lookups.
@@ -389,7 +389,7 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **File**: `bitfs/internal/engine/unpublish.go:16`
 - **Description**: Binding removal only persisted on Engine close. Crash loses unpublish.
 
-### L-NEW-21: `resolve.go` Always Prepends `https://` Without Scheme Check
+### L-NEW-21: `resolve.go` Always Prepends `https://` Without Scheme Check (**FIXED**)
 
 - **File**: `bitfs/internal/client/resolve.go:49`
 - **Description**: If endpoint already contains scheme, result is `https://http://...`.
@@ -412,9 +412,9 @@ All previously failing integration tests have been fixed in libbitfs-go:
 |----------|-------------|---------|--------------|----------------|
 | CRITICAL | 1 | 0 | 0 | **0** |
 | HIGH | 4 | 0 | 5 | **0** |
-| MEDIUM | 16 | 9 | 25 | **13** |
-| LOW | 20 | ~18 | 23 | **~41** |
-| **Total** | **41** | **~27** | **53** | **~54** |
+| MEDIUM | 16 | 0 | 25 | **0** |
+| LOW | 20 | ~18 | 23 | **~34** |
+| **Total** | **41** | **~18** | **53** | **~34** |
 
 ---
 
@@ -430,22 +430,17 @@ All CRITICAL and HIGH findings have been fixed:
 
 | Priority | IDs | Theme |
 |----------|-----|-------|
-| 1 | M-NEW-22 | Key lookup O(n) performance |
-| 2 | M-12, M-13 | Bounded maps + cleanup goroutines |
-| 3 | M-NEW-25 | Capsule persistence |
-| 4 | L-1 | Paid access mode mapping |
+| 1 | L-1 | Paid access mode mapping |
 
-Previously in this section, now fixed: M-NEW-2, M-NEW-4, M-NEW-5 (by-design), M-NEW-6, M-NEW-7, M-NEW-8, M-NEW-9, M-NEW-24, M-1, M-3, M-15.
+Previously in this section, now fixed: M-NEW-2, M-NEW-4, M-NEW-5 (by-design), M-NEW-6, M-NEW-7, M-NEW-8, M-NEW-9, M-NEW-22, M-NEW-24, M-NEW-25, M-1, M-3, M-12, M-13, M-15.
 
 ### Long-Term (Technical Debt)
 
 | IDs | Theme |
 |-----|-------|
-| M-NEW-3, M-NEW-23 | Shell validation, history security |
-| L-NEW-1 thru L-NEW-23 | Key material safety, path validation, state persistence |
-| M-4, M-5, M-9 thru M-11, M-14, M-16 | Spec compliance, RPC validation, config permissions |
+| L-NEW-1 thru L-NEW-23 (excl. fixed: 7,9,11,15,16,19,21; won't-fix: 12) | Key material safety, path validation, state persistence |
 
-Previously in this section, now fixed: M-NEW-10, M-NEW-12, M-NEW-15, M-NEW-17, M-NEW-18, M-NEW-20, M-6. M-NEW-16 resolved as by-design.
+Previously in this section, now fixed: M-NEW-3, M-NEW-6, M-NEW-10, M-NEW-12, M-NEW-15, M-NEW-17, M-NEW-18, M-NEW-20, M-NEW-23, M-4, M-5, M-9 thru M-11, M-14, M-16. M-NEW-16 resolved as by-design. All MEDIUM findings now resolved.
 
 ---
 
@@ -461,17 +456,17 @@ Previously in this section, now fixed: M-NEW-10, M-NEW-12, M-NEW-15, M-NEW-17, M
 ### Weaknesses (updated)
 
 1. **Concurrency safety gaps**: UTXO allocation (M-NEW-2) documented as single-writer model, session management (L-NEW-8) still has race condition. Payment flow (H-NEW-1, M-NEW-1) now fixed. The daemon serves concurrent HTTP requests but the engine was designed for single-threaded CLI use.
-2. **Trust boundary validation**: Significant progress — path traversal (H-NEW-2), unbounded reads (H-NEW-3), Merkle OOM (H-NEW-5), negative amounts (M-NEW-18) all fixed. Remaining gaps: RPC status codes (M-9, M-10), control chars in child names (L-NEW-16).
+2. **Trust boundary validation**: Significant progress — path traversal (H-NEW-2), unbounded reads (H-NEW-3), Merkle OOM (H-NEW-5), negative amounts (M-NEW-18), control chars in child names (L-NEW-16) all fixed. Remaining gaps: RPC status codes (M-9, M-10).
 3. **State persistence**: All critical state (invoices, payments, sessions, TxID replay set) is in-memory only. Any crash loses payment records (M-NEW-25).
 4. **SPV security fixed**: PoW validation (H-1) and single-tx block proofs (C-1) both fixed. Remaining SPV gaps: header chain continuity (M-11), duplicate header handling (L-NEW-17).
-5. **MEDIUM findings backlog**: ~13 MEDIUM findings still open across first audit and re-audit (down from ~28 after Batch 1+2 fixes).
+5. **MEDIUM findings resolved**: All MEDIUM findings now FIXED or BY-DESIGN across first audit and re-audit (down from ~28 at initial re-audit, cleared through Batches 1-4).
 
 ### Trust Boundaries (updated)
 
 | Boundary | Trust Level | Key Gaps |
 |----------|-------------|----------|
 | RPC node | Partially validated | ~~No PoW validation~~, ~~Merkle OOM~~, ~~negative amounts~~ (M-NEW-18 fixed), RPC status/ID (M-9, M-10) |
-| Metanet DAG content | Untrusted | ~~Path traversal~~ fixed, control chars (L-NEW-16) |
+| Metanet DAG content | Untrusted | ~~Path traversal~~ fixed, ~~control chars (L-NEW-16)~~ fixed |
 | HTTP endpoints | Partially validated | ~~Body size limits~~ fixed (H-NEW-3, M-NEW-6), ~~access control~~ fixed (M-NEW-24) |
 | Local state files | Trusted (improved) | ~~No WalletState validation~~ (M-NEW-12 fixed), no integrity checks |
 | Concurrent HTTP clients | Partially validated | ~~Payment TOCTOU~~ fixed, session races (L-NEW-8), unbounded maps (M-13) |
