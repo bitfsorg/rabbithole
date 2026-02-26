@@ -46,7 +46,7 @@ func ResolveURI(uri, hostOverride string, httpClient paymail.HTTPClient, dnsReso
 	case hostOverride != "":
 		baseURL = strings.TrimRight(hostOverride, "/")
 	case len(endpoints) > 0:
-		baseURL = "https://" + endpoints[0]
+		baseURL = endpointToBaseURL(endpoints[0])
 	default:
 		return nil, fmt.Errorf("bare pubkey URI requires --host flag to specify the daemon address")
 	}
@@ -66,4 +66,13 @@ func ResolveURI(uri, hostOverride string, httpClient paymail.HTTPClient, dnsReso
 		PNode:  pnode,
 		Path:   path,
 	}, nil
+}
+
+// endpointToBaseURL prepends "https://" to an endpoint only if it does not
+// already have a scheme (L-NEW-21).
+func endpointToBaseURL(endpoint string) string {
+	if strings.HasPrefix(endpoint, "https://") || strings.HasPrefix(endpoint, "http://") {
+		return endpoint
+	}
+	return "https://" + endpoint
 }

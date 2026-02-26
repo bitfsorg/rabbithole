@@ -98,3 +98,21 @@ func TestResolveURI_EmptyPath_DefaultsToRoot(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/", result.Path)
 }
+
+func TestEndpointToBaseURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		expected string
+	}{
+		{"bare host:port", "example.com:8080", "https://example.com:8080"},
+		{"has https", "https://example.com", "https://example.com"},
+		{"has http", "http://example.com", "http://example.com"},
+		{"bare host", "example.com", "https://example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, endpointToBaseURL(tt.endpoint))
+		})
+	}
+}
