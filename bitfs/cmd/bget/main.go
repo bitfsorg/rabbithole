@@ -20,7 +20,6 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
-	"github.com/tongxiaofeng/libbitfs-go/paymail"
 	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
@@ -39,7 +38,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 or 33 bytes)")
 	utxoStr := fs.String("utxo", "", "buyer UTXO for purchase (txid:vout:amount)")
 	version := fs.Bool("version", false, "show version-specific content")
-	host := fs.String("host", "http://localhost:8080", "daemon URL")
+	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
 
 	if err := fs.Parse(args); err != nil {
@@ -57,27 +56,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	uri := fs.Arg(0)
-	parsed, err := paymail.ParseURI(uri)
+	resolved, err := client.ResolveURI(uri, *host, nil, nil)
 	if err != nil {
 		fmt.Fprintf(stderr, "bget: %v\n", err)
 		return 6
 	}
 
-	// Resolve pnode from parsed URI.
-	var pnode string
-	switch parsed.Type {
-	case paymail.AddressPubKey:
-		pnode = hex.EncodeToString(parsed.PubKey)
-	case paymail.AddressPaymail, paymail.AddressDNSLink:
-		fmt.Fprintf(stderr, "bget: paymail/dnslink resolution not yet supported\n")
-		return 6
-	default:
-		fmt.Fprintf(stderr, "bget: unknown address type\n")
-		return 6
-	}
-
-	// Build client.
-	c := client.New(*host)
+	c := resolved.Client
 	if *timeout != "" {
 		d, err := time.ParseDuration(*timeout)
 		if err != nil {
@@ -87,13 +72,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		c = c.WithTimeout(d)
 	}
 
-	// Determine the path to query. Default to root "/" if none specified.
-	uriPath := parsed.Path
-	if uriPath == "" {
-		uriPath = "/"
-	}
+	uriPath := resolved.Path
 
-	meta, err := c.GetMeta(pnode, uriPath)
+	meta, err := c.GetMeta(resolved.PNode, uriPath)
 	if err != nil {
 		return handleError(err, stderr)
 	}
