@@ -27,6 +27,8 @@ import (
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
+const maxContentSize = 1 << 30 // 1 GB
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -306,7 +308,7 @@ func downloadFreeFile(c *client.Client, meta *client.MetaResponse, localPath str
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		return buyer.BatchFileEntry{Error: fmt.Sprintf("read data: %v", err), Code: 4}
 	}
@@ -376,7 +378,7 @@ func downloadPaidFile(c *client.Client, meta *client.MetaResponse, localPath str
 	}
 	defer func() { _ = reader.Close() }()
 
-	ciphertext, err := io.ReadAll(reader)
+	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
 		return buyer.BatchFileEntry{
 			Error:   fmt.Sprintf("read data: %v", err),
