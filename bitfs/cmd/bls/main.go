@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tongxiaofeng/bitfs/internal/buyer"
@@ -31,6 +32,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	longAlias := fs.Bool("l", false, "detailed listing (alias)")
 	host := fs.String("host", "", "daemon URL override")
 	timeout := fs.String("timeout", "", "request timeout (e.g. 10s, 1m)")
+	keyword := fs.String("keyword", "", "filter children by name substring")
 	noCache := fs.Bool("no-cache", false, "skip metadata cache")
 	offline := fs.Bool("offline", false, "cache-only mode")
 
@@ -86,6 +88,11 @@ Examples:
 	meta, err := cc.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
 		return buyer.HandleError(err, "bls", stderr)
+	}
+
+	// Apply keyword filter if set.
+	if *keyword != "" {
+		meta.Children = filterChildren(meta.Children, *keyword)
 	}
 
 	// Format output.
@@ -149,6 +156,21 @@ func outputJSON(meta *client.MetaResponse, stdout, stderr io.Writer) int {
 	}
 	_, _ = fmt.Fprintln(stdout, string(data))
 	return 0
+}
+
+// filterChildren returns only children whose name contains the keyword (case-insensitive).
+func filterChildren(children []client.ChildEntry, keyword string) []client.ChildEntry {
+	if keyword == "" {
+		return children
+	}
+	kw := strings.ToLower(keyword)
+	filtered := make([]client.ChildEntry, 0, len(children))
+	for _, c := range children {
+		if strings.Contains(strings.ToLower(c.Name), kw) {
+			filtered = append(filtered, c)
+		}
+	}
+	return filtered
 }
 
 // formatSize returns a human-readable file size string.
