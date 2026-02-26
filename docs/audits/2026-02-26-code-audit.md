@@ -53,8 +53,8 @@ All previously failing integration tests have been fixed in libbitfs-go:
 | M-4 | MEDIUM | **UNFIXED** | `ParseHTLCPreimage` extracts from fragile position without hash verification |
 | M-5 | MEDIUM | **UNFIXED** | `BuildSellerClaimTx` does not verify `SHA256(Capsule)` against HTLC script |
 | M-6 | MEDIUM | **UNFIXED** | Fee estimation underestimates HTLC output size |
-| M-7 | MEDIUM | **PARTIAL** | Discovery URL forces HTTPS, but PKI template URL from server not validated |
-| M-8 | MEDIUM | **UNFIXED** | PKI URL template injection — no `url.PathEscape()` |
+| M-7 | MEDIUM | **FIXED** | HTTPS validation on all capability URLs + template var escaping |
+| M-8 | MEDIUM | **FIXED** | PKI URL template injection — `url.PathEscape()` applied |
 | M-9 | MEDIUM | **UNFIXED** | RPC client does not check HTTP status code |
 | M-10 | MEDIUM | **UNFIXED** | RPC response ID not validated |
 | M-11 | MEDIUM | **UNFIXED** | SPV header sync does not validate chain continuity |
@@ -66,7 +66,7 @@ All previously failing integration tests have been fixed in libbitfs-go:
 | L-1 | LOW | **UNFIXED** | Paid access mode mapped to `AccessFree` in cat/copy/move |
 | L-9 | LOW | **CHANGED** | DustLimit corrected to 1 sat; practical impact now negligible |
 
-**Summary: 5 fixed, 2 partial, 14 unfixed, 1 changed** out of 22 tracked findings.
+**Summary: 7 fixed, 0 partial, 14 unfixed, 1 changed** out of 22 previous findings + **10 fixed, 1 by-design, 14 unfixed** out of 25 new findings.
 
 ---
 
@@ -135,11 +135,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 
 ## New MEDIUM Findings
 
-### M-NEW-1: Capsule Overwrite Race — Concurrent Buyer Keys
+### M-NEW-1: Capsule Overwrite Race — Concurrent Buyer Keys — **FIXED**
 
 - **File**: `bitfs/internal/daemon/payment.go:143-180`
 - **Description**: Concurrent `handleGetBuyInfo` calls with different `buyer_pubkey` can both observe `len(invoice.Capsule) == 0`, compute capsules for different buyers, and overwrite each other. Buyer A gets Buyer B's capsule, cannot decrypt.
-- **Fix**: Re-check `len(invoice.Capsule) == 0` inside write lock.
+- **Fix**: Re-check `len(invoice.Capsule) == 0` inside write lock. Regression test added.
 
 ### M-NEW-2: `GetNodeUTXO` Marks Spent Outside Lock
 
@@ -159,29 +159,29 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: New ciphertext written to store at line 177 before Phase 1 TX builds begin. On TX build failure, orphaned ciphertext remains in store. Source content deleted at line 412 even though rollback may be needed.
 - **Fix**: Defer `Store.Put` until after `allSuccess = true`, or add `Store.Delete(encResult.KeyHash)` to failure cleanup.
 
-### M-NEW-5: `/_bitfs/data/{hash}` Serves Ciphertext Without Access Control
+### M-NEW-5: `/_bitfs/data/{hash}` Serves Ciphertext Without Access Control — **BY DESIGN**
 
 - **File**: `bitfs/internal/daemon/content.go:20-63`
 - **Description**: Any caller who knows the key hash can fetch raw ciphertext of private/paid nodes. Key hashes are visible on-chain in OP_RETURN. While content is encrypted, this leaks ciphertext that could be decrypted if a Method 42 weakness is found.
-- **Fix**: Cross-reference hash against node access level before serving.
+- **Resolution**: Intentional design — ciphertext is AES-256-GCM encrypted and useless without Method 42 key exchange. Documented explicitly in code.
 
-### M-NEW-6: Unbounded `io.ReadAll` in bcat and bget Client
+### M-NEW-6: Unbounded `io.ReadAll` in bcat and bget Client — **FIXED**
 
 - **File**: `bitfs/cmd/bcat/main.go:123,281` and `bitfs/cmd/bget/main.go:142,345`
 - **Description**: All four `io.ReadAll(reader)` calls on HTTP response body from `GetData()` have no size limit. Malicious daemon can exhaust client memory.
-- **Fix**: `io.ReadAll(io.LimitReader(reader, maxContentSize))`
+- **Fix**: `io.ReadAll(io.LimitReader(reader, maxContentSize))` — applied to all 6 sites (3 per binary).
 
-### M-NEW-7: Query Parameter Injection in `GetBuyInfo`
+### M-NEW-7: Query Parameter Injection in `GetBuyInfo` — **FIXED**
 
 - **File**: `bitfs/internal/client/client.go:165`
 - **Description**: `buyerPubKeyHex` appended raw to URL without `url.QueryEscape`. No hex validation in `GetBuyInfo` (unlike `GetMeta`/`GetData`).
-- **Fix**: Use `url.Values` or add hex validation.
+- **Fix**: Replaced with `url.Values{}` + `q.Encode()` for proper percent-encoding.
 
-### M-NEW-8: `Mput` Follows Symlinked Directories
+### M-NEW-8: `Mput` Follows Symlinked Directories — **FIXED**
 
 - **File**: `bitfs/internal/engine/mput.go:44`
 - **Description**: `filepath.WalkDir` follows symlinked directories, potentially uploading contents of unintended paths (e.g., `/etc`).
-- **Fix**: Skip entries with `d.Type()&os.ModeSymlink != 0`.
+- **Fix**: Added `d.Type()&os.ModeSymlink != 0` check in WalkDir callback (defense in depth).
 
 ### M-NEW-9: `crossDirectoryMove` Silently Fails for Directory Nodes
 
@@ -195,11 +195,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: `accountIndex := vaultIndex + DefaultVaultAccount`. When `vaultIndex = MaxUint32`, overflows to 0, silently mapping to fee key account. `CreateVault` has no bounds check on `NextVaultIndex`.
 - **Fix**: Add `if state.NextVaultIndex >= 0x80000000-1 { return ErrTooManyVaults }`.
 
-### M-NEW-11: `sig.Serialize()` Append May Mutate Internal Buffer
+### M-NEW-11: `sig.Serialize()` Append May Mutate Internal Buffer — **FIXED**
 
 - **File**: `libbitfs-go/x402/htlc_tx.go:333,439,497`
 - **Description**: `sigBytes := append(sig.Serialize(), byte(sighash.AllForkID))` may mutate go-sdk's internal signature buffer if it has spare capacity.
-- **Fix**: Use `make` + `copy` instead of chaining `append` on `sig.Serialize()`.
+- **Fix**: Added `appendSighashFlag()` helper using `make` + `copy`. All 3 sites replaced.
 
 ### M-NEW-12: `WalletState` Not Validated on Deserialization
 
@@ -207,17 +207,17 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Corrupted or hand-edited `wallet.json` with wrong `NextVaultIndex` silently misdirects key derivation. No cross-validation of vault `AccountIndex` values.
 - **Fix**: Add `Validate()` method to `WalletState`.
 
-### M-NEW-13: `EncryptResult.AESKey` Exposes Raw Key Material
+### M-NEW-13: `EncryptResult.AESKey` Exposes Raw Key Material — **FIXED**
 
 - **File**: `libbitfs-go/method42/encrypt.go:33-36`
 - **Description**: `EncryptResult` includes the raw 32-byte AES key. If struct is logged/serialized, key is disclosed. Key can be re-derived from private key + keyHash.
-- **Fix**: Remove `AESKey` from `EncryptResult`.
+- **Fix**: Removed `AESKey` field from `EncryptResult`. All test references updated.
 
-### M-NEW-14: Nil Hash in Merkle Traversal Produces Silent Wrong Result
+### M-NEW-14: Nil Hash in Merkle Traversal Produces Silent Wrong Result — **FIXED**
 
 - **File**: `libbitfs-go/network/rpc_blockchain.go:158-203`
 - **Description**: When `getHash()` returns nil (pool exhausted), `combined` becomes 64 zero bytes and `DoubleHash` returns deterministic wrong hash. Corrupted proof data silently swallowed.
-- **Fix**: Add nil checks on `getHash()` return values and return error when exhausted.
+- **Fix**: Added `hashErr` sentinel to `getHash()`, nil check, bounds check, and error propagation after traversal.
 
 ### M-NEW-15: `KeyHashToPath` Panics on Empty Input
 
@@ -243,11 +243,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Negative float from compromised RPC wraps to `MaxUint64 - abs(amount)`, making wallet believe it has massive balance.
 - **Fix**: Add `if btc < 0 { return 0 }`.
 
-### M-NEW-19: `PutTxWithPubKey` Silently Overwrites Existing Transactions
+### M-NEW-19: `PutTxWithPubKey` Silently Overwrites Existing Transactions — **FIXED**
 
 - **File**: `libbitfs-go/spv/boltstore.go:231-258`
 - **Description**: Unlike `PutTx` (which returns `ErrDuplicateTx`), `PutTxWithPubKey` silently overwrites, including SPV proofs. Could replace verified proof with invalid one.
-- **Fix**: Add existence check analogous to `PutTx`.
+- **Fix**: Added duplicate TxID check in both `BoltTxStore` and `MemTxStore`, returns `ErrDuplicateTx`.
 
 ### M-NEW-20: `ResolvePath` Stack Unbounded
 
@@ -255,11 +255,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Path with 10,000 components allocates 10,000-element slice. No max depth check. Combined with symlink following: up to `MaxLinkDepth*pathDepth` lookups.
 - **Fix**: `if len(pathComponents) > MaxPathDepth { return ErrPathTooDeep }`.
 
-### M-NEW-21: Markdown Response Path Injection
+### M-NEW-21: Markdown Response Path Injection — **FIXED**
 
 - **File**: `bitfs/internal/daemon/routes.go:198-207`
 - **Description**: `serveBasicInfo` Markdown case does not escape `path`. If rendered to HTML downstream, enables XSS via crafted path.
-- **Fix**: Escape path in Markdown response.
+- **Fix**: Added `markdownEscape()` helper, applied to path in `serveBasicInfo` and child names in `serveMarkdown`.
 
 ### M-NEW-22: `lookupPrivKey` O(n) with Hardcoded Lookahead
 
@@ -273,11 +273,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Shell history file stores vault paths and potentially `--password` flag values. History file permissions not explicitly set.
 - **Fix**: Set history file mode to 0600. Filter sensitive commands.
 
-### M-NEW-24: `handleData` Endpoint Serves Private Node Metadata
+### M-NEW-24: `handleData` Endpoint Serves Private Node Metadata — **FIXED**
 
 - **File**: `bitfs/internal/daemon/routes.go:174-186`
 - **Description**: `serveJSON` encodes entire `NodeInfo` including `PNode` and `KeyHash` for private nodes without checking session auth. Private node metadata leaked over HTTP.
-- **Fix**: Create sanitized response struct that omits `KeyHash` for non-free content.
+- **Fix**: Replaced `serveJSON` with sanitized map builder that only exposes `key_hash` for `"free"` access nodes.
 
 ### M-NEW-25: Capsule Not Persisted — Process Crash Loses Delivery
 
