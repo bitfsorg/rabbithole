@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -324,4 +325,69 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		"capsule":    hex.EncodeToString(invoice.Capsule),
 		"paid":       true,
 	})
+}
+
+// handleSales handles GET /_bitfs/sales and returns sales (invoice) records,
+// optionally filtered by payment status.
+//
+// Query parameters:
+//   - status: "all" (default), "paid", or "pending"
+//   - limit:  maximum number of records to return (default 50)
+func (d *Daemon) handleSales(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "all"
+	}
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 50
+	if limitStr != "" {
+		if n, err := strconv.Atoi(limitStr); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	type saleRecord struct {
+		InvoiceID string `json:"invoice_id"`
+		Price     uint64 `json:"price"`
+		KeyHash   string `json:"key_hash"`
+		Timestamp int64  `json:"timestamp"`
+		Paid      bool   `json:"paid"`
+	}
+
+	d.invoicesMu.RLock()
+	records := make([]saleRecord, 0, len(d.invoices))
+	for _, inv := range d.invoices {
+		switch status {
+		case "paid":
+			if !inv.Paid {
+				continue
+			}
+		case "pending":
+			if inv.Paid {
+				continue
+			}
+		} // "all" includes everything
+
+		keyHashHex := ""
+		if len(inv.KeyHash) > 0 {
+			keyHashHex = hex.EncodeToString(inv.KeyHash)
+		}
+
+		records = append(records, saleRecord{
+			InvoiceID: inv.ID,
+			Price:     inv.TotalPrice,
+			KeyHash:   keyHashHex,
+			Timestamp: inv.Expiry.Unix(),
+			Paid:      inv.Paid,
+		})
+
+		if len(records) >= limit {
+			break
+		}
+	}
+	d.invoicesMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(records)
 }

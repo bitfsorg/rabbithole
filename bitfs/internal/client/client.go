@@ -70,6 +70,15 @@ type CapsuleResponse struct {
 	Capsule string `json:"capsule"`
 }
 
+// SaleRecord represents a completed or pending sale.
+type SaleRecord struct {
+	InvoiceID string `json:"invoice_id"`
+	Price     uint64 `json:"price"`
+	KeyHash   string `json:"key_hash"`
+	Timestamp int64  `json:"timestamp"`
+	Paid      bool   `json:"paid"`
+}
+
 // Client is an HTTP client for the BitFS daemon API.
 type Client struct {
 	BaseURL    string
@@ -285,6 +294,28 @@ func (c *Client) VerifySPV(txid string) (*SPVProofResponse, error) {
 		return nil, fmt.Errorf("client: decode SPV proof response: %w", err)
 	}
 	return &result, nil
+}
+
+// GetSales retrieves sales records from the daemon.
+// Endpoint: GET /_bitfs/sales[?status=...&limit=...]
+func (c *Client) GetSales(status string, limit int) ([]SaleRecord, error) {
+	reqURL := fmt.Sprintf("%s/_bitfs/sales?status=%s&limit=%d", c.BaseURL, url.QueryEscape(status), limit)
+
+	resp, err := c.HTTPClient.Get(reqURL)
+	if err != nil {
+		return nil, wrapNetworkError(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if err := checkStatus(resp); err != nil {
+		return nil, err
+	}
+
+	var records []SaleRecord
+	if err := json.NewDecoder(resp.Body).Decode(&records); err != nil {
+		return nil, fmt.Errorf("client: decode sales: %w", err)
+	}
+	return records, nil
 }
 
 // checkStatus maps HTTP status codes to sentinel errors.
