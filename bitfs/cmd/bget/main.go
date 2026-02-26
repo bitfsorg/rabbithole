@@ -14,15 +14,12 @@ import (
 	"io"
 	"os"
 	"path"
-	"strconv"
-	"strings"
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/tongxiaofeng/bitfs/internal/buyer"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
-	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 func main() {
@@ -236,166 +233,94 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 5
 	}
 
-	// Validate wallet key is provided.
-	if walletKey == "" {
-		fmt.Fprintf(stderr, "bget: --wallet-key is required for purchases\n")
+	cfg, err := buyer.LoadConfig(buyer.LoadConfigOpts{WalletKeyFlag: walletKey, UTXOFlag: utxoFlag})
+	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(err, stdout)
+		}
+		fmt.Fprintf(stderr, "bget: %v\n", err)
 		return 6
 	}
 
-	// Validate UTXO is provided.
-	if utxoFlag == "" {
-		fmt.Fprintf(stderr, "bget: --utxo is required for purchases (format: txid:vout:amount)\n")
-		return 6
-	}
-
-	// Parse the hex-encoded private key.
-	keyBytes, err := hex.DecodeString(walletKey)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: invalid wallet key hex: %v\n", err)
-		return 6
-	}
-
-	// Accept 32-byte raw scalar or 33-byte compressed key (strip prefix).
-	switch len(keyBytes) {
-	case 32:
-		// raw scalar, use as-is
-	case 33:
-		// compressed pubkey format: strip the 02/03 prefix
-		keyBytes = keyBytes[1:]
-	default:
-		fmt.Fprintf(stderr, "bget: wallet key must be 32 or 33 bytes, got %d\n", len(keyBytes))
-		return 6
-	}
-
-	privKey, _ := ec.PrivateKeyFromBytes(keyBytes)
-	if privKey == nil {
-		fmt.Fprintf(stderr, "bget: failed to parse wallet key\n")
-		return 6
-	}
-
-	// Parse UTXO from flag.
-	utxo, err := parseUTXOFlag(utxoFlag)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: invalid --utxo: %v\n", err)
-		return 6
-	}
-
-	// Derive buyer's P2PKH script for the UTXO.
-	buyerPKH := privKey.PubKey().Hash()
-	utxo.ScriptPubKey = buildBuyerP2PKHScript(buyerPKH)
-
-	// Validate that meta has a TxID for the purchase invoice.
-	if meta.TxID == "" {
-		fmt.Fprintf(stderr, "bget: paid content has no invoice txid\n")
-		return 5
-	}
-
-	// Step 1: Get buy info (capsule_hash, price, payment_addr).
-	// Pass buyer's pubkey so the server computes the buyer-specific capsule.
-	buyerPubHex := hex.EncodeToString(privKey.PubKey().Compressed())
-	buyInfo, err := c.GetBuyInfo(meta.TxID, buyerPubHex)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: get buy info: %v\n", err)
-		return handleError(err, stderr)
-	}
-
-	// Decode capsule hash from hex.
-	capsuleHash, err := hex.DecodeString(buyInfo.CapsuleHash)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: invalid capsule hash hex: %v\n", err)
-		return 5
-	}
-
-	// Decode payment address (hex-encoded 20-byte pubkey hash).
-	sellerAddr, err := hex.DecodeString(buyInfo.PaymentAddr)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: invalid payment address hex: %v\n", err)
-		return 5
-	}
-
-	// Decode seller pubkey (hex-encoded 33-byte compressed public key).
-	sellerPubKey, err := hex.DecodeString(buyInfo.SellerPubKey)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: invalid seller pubkey hex: %v\n", err)
-		return 5
-	}
-
-	// Step 2: Build HTLC funding transaction.
-	fundingResult, err := x402.BuildHTLCFundingTx(&x402.HTLCFundingParams{
-		BuyerPrivKey: privKey,
-		SellerAddr:   sellerAddr,
-		SellerPubKey: sellerPubKey,
-		CapsuleHash:  capsuleHash,
-		Amount:       buyInfo.Price,
-		Timeout:      x402.DefaultHTLCTimeout,
-		UTXOs:        []*x402.HTLCUTXO{utxo},
-		ChangeAddr:   buyerPKH,
-		FeeRate:      1,
+	result, err := buyer.Buy(&buyer.BuyParams{
+		Client: c,
+		TxID:   meta.TxID,
+		Config: cfg,
 	})
 	if err != nil {
-		fmt.Fprintf(stderr, "bget: build HTLC funding tx: %v\n", err)
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("purchase failed: %w", err), stdout)
+		}
+		// Map client errors (e.g. server error) to appropriate exit codes.
+		if errors.Is(err, client.ErrServer) || errors.Is(err, client.ErrNetwork) || errors.Is(err, client.ErrTimeout) {
+			return handleError(err, stderr)
+		}
+		fmt.Fprintf(stderr, "bget: purchase failed: %v\n", err)
 		return 5
 	}
 
-	// Step 3: Submit the signed funding transaction to get the capsule.
-	capsuleResp, err := c.SubmitHTLC(meta.TxID, fundingResult.RawTx)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: submit HTLC: %v\n", err)
-		return handleError(err, stderr)
-	}
+	return downloadPaidContent(c, meta, result, cfg.PrivKey, outputName, jsonOut, stdout, stderr)
+}
 
-	// Decode capsule from hex.
-	capsule, err := hex.DecodeString(capsuleResp.Capsule)
-	if err != nil {
-		fmt.Fprintf(stderr, "bget: invalid capsule hex: %v\n", err)
-		return 5
-	}
-
-	// Step 4: Fetch encrypted content.
-	if meta.KeyHash == "" {
-		fmt.Fprintf(stderr, "bget: no content hash available\n")
-		return 1
-	}
-
+// downloadPaidContent fetches encrypted data, decrypts it using the capsule
+// obtained from the purchase, and writes the plaintext to a file.
+func downloadPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *buyer.BuyResult, privKey *ec.PrivateKey, outputName string, jsonOut bool, stdout, stderr io.Writer) int {
+	// Fetch encrypted content.
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(err, stdout)
+		}
 		return handleError(err, stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
 	ciphertext, err := io.ReadAll(reader)
 	if err != nil {
-		fmt.Fprintf(stderr, "bget: read content: %v\n", err)
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("read error: %w", err), stdout)
+		}
+		fmt.Fprintf(stderr, "bget: read: %v\n", err)
 		return 4
 	}
 
-	// Decode keyHash from hex.
+	// Decrypt with capsule.
 	keyHashBytes, err := hex.DecodeString(meta.KeyHash)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("invalid key hash hex: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: invalid key hash hex: %v\n", err)
 		return 5
 	}
 
-	// Decode the node's public key for capsule decryption.
 	nodePubBytes, err := hex.DecodeString(meta.PNode)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("invalid pnode hex: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: invalid pnode hex: %v\n", err)
 		return 5
 	}
 	nodePub, err := ec.PublicKeyFromBytes(nodePubBytes)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("invalid pnode key: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: invalid pnode key: %v\n", err)
 		return 5
 	}
 
-	// Step 5: Decrypt with capsule.
-	result, err := method42.DecryptWithCapsule(ciphertext, capsule, keyHashBytes, privKey, nodePub)
+	decResult, err := method42.DecryptWithCapsule(ciphertext, buyResult.Capsule, keyHashBytes, privKey, nodePub)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("decrypt: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: decrypt: %v\n", err)
 		return 5
 	}
 
-	// Step 6: Write decrypted content to file.
+	// Write to file.
 	filename := outputName
 	if filename == "" {
 		filename = deriveFilename(meta.Path)
@@ -403,64 +328,45 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 
 	file, err := os.Create(filename)
 	if err != nil {
+		if jsonOut {
+			return handleErrorJSON(err, stdout)
+		}
 		fmt.Fprintf(stderr, "bget: cannot create file %q: %v\n", filename, err)
 		return 1
 	}
 
-	n, err := file.Write(result.Plaintext)
+	n, err := file.Write(decResult.Plaintext)
 	if err != nil {
 		_ = file.Close()
 		_ = os.Remove(filename)
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("write error: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: write error: %v\n", err)
 		return 1
 	}
 
 	if err := file.Close(); err != nil {
 		_ = os.Remove(filename)
+		if jsonOut {
+			return handleErrorJSON(fmt.Errorf("close error: %w", err), stdout)
+		}
 		fmt.Fprintf(stderr, "bget: close error: %v\n", err)
 		return 1
 	}
 
+	if jsonOut {
+		resp := &buyer.GetResponse{
+			Meta:         meta,
+			OutputPath:   filename,
+			BytesWritten: int64(n),
+			Payment:      &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
+		}
+		return writeJSON(resp, stdout, stderr)
+	}
+
 	fmt.Fprintf(stdout, "Downloaded %d bytes to %s\n", n, filename)
 	return 0
-}
-
-// parseUTXOFlag parses a UTXO from the --utxo flag (format: txid:vout:amount).
-func parseUTXOFlag(s string) (*x402.HTLCUTXO, error) {
-	parts := strings.SplitN(s, ":", 3)
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("expected txid:vout:amount")
-	}
-	txid, err := hex.DecodeString(parts[0])
-	if err != nil {
-		return nil, fmt.Errorf("invalid txid hex: %w", err)
-	}
-	if len(txid) != 32 {
-		return nil, fmt.Errorf("txid must be 32 bytes")
-	}
-	vout, err := strconv.ParseUint(parts[1], 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("invalid vout: %w", err)
-	}
-	amount, err := strconv.ParseUint(parts[2], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid amount: %w", err)
-	}
-	return &x402.HTLCUTXO{
-		TxID:   txid,
-		Vout:   uint32(vout),
-		Amount: amount,
-	}, nil
-}
-
-// buildBuyerP2PKHScript builds a standard P2PKH locking script from a pubkey hash.
-func buildBuyerP2PKHScript(pkh []byte) []byte {
-	// OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
-	s := make([]byte, 0, 25)
-	s = append(s, 0x76, 0xa9, 0x14) // OP_DUP OP_HASH160 PUSH20
-	s = append(s, pkh...)
-	s = append(s, 0x88, 0xac) // OP_EQUALVERIFY OP_CHECKSIG
-	return s
 }
 
 // handleError maps client errors to exit codes and prints a message.

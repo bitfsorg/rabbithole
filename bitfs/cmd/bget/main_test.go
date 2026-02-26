@@ -268,7 +268,7 @@ func TestPaid_WithBuy_MissingWalletKey(t *testing.T) {
 	code := run([]string{"--buy", "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
 	assert.Equal(t, 6, code, "--buy without --wallet-key should exit 6")
-	assert.Contains(t, stderr.String(), "--wallet-key is required")
+	assert.Contains(t, stderr.String(), "no wallet key configured")
 	assert.Empty(t, stdout.String())
 }
 
@@ -293,8 +293,8 @@ func TestPaid_WithBuy_InvalidWalletKey(t *testing.T) {
 		walletKey string
 		wantMsg   string
 	}{
-		{"not hex", "zzzz", "invalid wallet key hex"},
-		{"wrong length", "aabbcc", "wallet key must be 32 or 33 bytes"},
+		{"not hex", "zzzz", "invalid wallet key"},
+		{"wrong length", "aabbcc", "32 or 33 bytes"},
 	}
 
 	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
@@ -338,7 +338,7 @@ func TestPaid_WithBuy_MissingTxID(t *testing.T) {
 	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
 
 	assert.Equal(t, 5, code, "missing txid should exit 5")
-	assert.Contains(t, stderr.String(), "no invoice txid")
+	assert.Contains(t, stderr.String(), "transaction ID is required")
 	assert.Empty(t, stdout.String())
 }
 
