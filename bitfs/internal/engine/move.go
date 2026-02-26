@@ -373,6 +373,11 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	if err := e.Store.Put(encResult.KeyHash, encResult.Ciphertext); err != nil {
 		return nil, fmt.Errorf("engine: store copy: %w", err)
 	}
+	defer func() {
+		if !allSuccess {
+			_ = e.Store.Delete(encResult.KeyHash)
+		}
+	}()
 
 	// --- Phase 2: All 4 builds succeeded — apply state ---
 	allSuccess = true
