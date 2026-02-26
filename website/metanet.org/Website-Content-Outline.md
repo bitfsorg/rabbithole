@@ -137,8 +137,8 @@
 | # | 名称 EN | 名称 ZH | 描述 EN | 描述 ZH |
 |---|---------|---------|---------|---------|
 | 01 | BSV Layer | BSV 层 | Ownership, payments, and anchoring. The immutable foundation for all Metanet operations. | 所有权、支付与锚定。所有 Metanet 操作的不可变基础层。 |
-| 02 | Metanet Chain | Metanet Chain | BSV-homomorphic sidechain — identical tx format, Bitcoin Script, MNT Token. Handles node economics and staking. | BSV 同构侧链 — 相同的交易格式、Bitcoin Script、MNT Token。处理节点经济与质押。 |
-| 03 | CDN Layer | CDN 层 | Self-organizing content delivery through market incentives. Nodes cache, serve, and earn autonomously. | 通过市场激励实现自组织内容分发。节点自主缓存、分发并赚取收益。 |
+| 02 | Daemon Layer | Daemon 层 | LFCP content serving, x402 payment handling, and Metanet metadata. The bridge between blockchain and CDN. | LFCP 内容服务、x402 支付处理与 Metanet 元数据。区块链与 CDN 之间的桥梁层。 |
+| 03 | Metanet Chain | Metanet Chain | BSV-homomorphic sidechain — identical tx format, Bitcoin Script, MNT Token. Handles node economics and CDN incentives. | BSV 同构侧链 — 相同的交易格式、Bitcoin Script、MNT Token。处理节点经济与 CDN 激励。 |
 
 ---
 
@@ -157,7 +157,7 @@
 | # | 标题 EN | 标题 ZH | 描述 EN | 描述 ZH |
 |---|---------|---------|---------|---------|
 | 1 | Earn from Popular Content | 从热门内容中获利 | Cache trending files, serve them to users, collect retrieval fees automatically. Demand drives your revenue. | 缓存热门文件，分发给用户，自动收取检索费用。需求驱动你的收入。 |
-| 2 | Low Barrier to Entry | 低门槛入场 | Stake MNT tokens, run the daemon, start earning. No specialized hardware required. A standard server is all you need. | 质押 MNT 代币，运行守护进程，即刻开始赚取收益。无需专用硬件，一台标准服务器即可。 |
+| 2 | Low Barrier to Entry | 低门槛入场 | Run the daemon, start earning. No specialized hardware required, no minimum stake. A standard server is all you need. | 运行守护进程，即刻开始赚取收益。无需专用硬件，无最低质押要求，一台标准服务器即可。 |
 | 3 | Revenue Sharing | 收益分成 | Content owners set revenue splits. Earn passive income from content you helped distribute across the network. | 内容所有者设定收益分成比例。通过参与内容分发，获取被动收入。 |
 | 4 | Dual Payment Channels | 双支付通道 | BSV channels for user payments, MNT channels for node economics. Two rails, one seamless experience. | BSV 通道处理用户支付，MNT 通道处理节点经济。双轨运行，无缝体验。 |
 
@@ -177,8 +177,8 @@
 
 | # | 图标 | 标题 EN | 标题 ZH | 描述 EN | 描述 ZH |
 |---|------|---------|---------|---------|---------|
-| 1 | △ | STAKING | 质押 | Node operators stake MNT to join the network. Stake size signals commitment and determines content allocation priority. | 节点运营者质押 MNT 加入网络。质押规模代表承诺程度，并决定内容分配优先级。 |
-| 2 | ⚙ | RETRIEVAL FEES | 检索费用 | Micro-fees paid in MNT for each content retrieval. Prices set by market forces between competing node operators. | 每次内容检索支付 MNT 微费用。价格由竞争中的节点运营者通过市场力量决定。 |
+| 1 | △ | MINING | 挖矿 | Node operators mine MNT through merged mining with BSV. No minimum stake, no slashing. Organic growth like Bitcoin. | 节点运营者通过与 BSV 合并挖矿获取 MNT。无最低质押，无罚没机制，如比特币般有机增长。 |
+| 2 | ⚙ | RETRIEVAL FEES | 检索费用 | Micro-fees paid in BSV for each content retrieval via x402 protocol. Prices set by market forces between competing node operators. | 每次内容检索通过 x402 协议支付 BSV 微费用。价格由竞争中的节点运营者通过市场力量决定。 |
 | 3 | ⚘ | REVENUE SHARE | 收益分成 | Content owners configure ISO revenue splits. Operators earn a percentage of all retrieval fees for content they serve. | 内容所有者配置 ISO 收益分成比例。运营者从其分发内容的所有检索费用中赚取一定比例。 |
 
 ---
@@ -198,7 +198,7 @@
 
 ```bash
 # Start a Metanet node
-$ metanet node start --stake 1000
+$ metanet node start
 
 # Check node earnings
 $ metanet earnings --period 7d

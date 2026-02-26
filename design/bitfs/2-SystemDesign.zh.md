@@ -315,82 +315,88 @@ message BitFSPayload {
 
   // 文件属性 (FILE)
   string mime_type = 4;              // MIME 类型
-  // field 5 reserved (was encrypted_hash, 已移除 — 内容寻址由 key_hash 承担)
-  uint64 file_size = 6;              // 原始文件大小 (bytes)
-  bytes key_hash = 7;                // SHA256(SHA256(plaintext)) — 密钥派生 + 内容承诺 (双重哈希, 不暴露原始数据哈希)
+  uint64 file_size = 5;              // 原始文件大小 (bytes)
+  bytes key_hash = 6;                // SHA256(SHA256(plaintext)) — 密钥派生 + 内容承诺 (双重哈希, 不暴露原始数据哈希)
                                      // 目录节点的 key_hash 为空 (nil)——目录不包含数据内容，仅通过 Metanet 交易链维护子节点列表。
 
   // 访问控制
-  Access access = 8;                 // PRIVATE / FREE / PAID
-  uint64 price_per_kb = 9;          // 单价: satoshis/KB (仅 PAID, 支持继承)
+  Access access = 7;                 // PRIVATE / FREE / PAID
+  uint64 price_per_kb = 8;          // 单价: satoshis/KB (仅 PAID, 支持继承)
 
   // 链接 (LINK, 仅软链接使用)
-  bytes link_target = 10;            // SOFT: P_node / SOFT_REMOTE: domain/path
-  LinkType link_type = 11;           // 链接类型 (SOFT / SOFT_REMOTE)
+  bytes link_target = 9;             // SOFT: P_node / SOFT_REMOTE: domain/path
+  LinkType link_type = 10;           // 链接类型 (SOFT / SOFT_REMOTE)
 
   // 时间与导航
-  uint64 timestamp = 12;             // 操作时间 (Unix)
-  bytes parent = 13;                 // 首次创建父目录 P_node (根节点指向自身, 硬链接不改变)
-  uint32 index = 14;                 // 本节点在父目录中的 index
+  uint64 timestamp = 11;             // 操作时间 (Unix)
+  bytes parent = 12;                 // 首次创建父目录 P_node (根节点指向自身, 硬链接不改变)
+  uint32 index = 13;                 // 本节点在父目录中的 index
 
   // 目录 (DIR)
-  repeated ChildEntry children = 15; // 子节点列表
-  uint32 next_child_index = 16;      // 下一个可用子节点编号 (monotonic auto-increment)
+  repeated ChildEntry children = 14; // 子节点列表
+  uint32 next_child_index = 15;      // 下一个可用子节点编号 (monotonic auto-increment)
 
   // 发布
-  string domain = 17;                // DIR: 绑定的域名 (双向 DNSLink 验证)
+  string domain = 16;                // DIR: 绑定的域名 (双向 DNSLink 验证)
 
   // 元信息
-  string keywords = 18;              // 空格分隔的关键词
-  string description = 19;           // 简短描述
-  map<string, string> metadata = 20; // 自定义键值对 (灵活扩展)
+  string keywords = 17;              // 空格分隔的关键词
+  string description = 18;           // 简短描述
 
-  // 版本控制 (低优先级)
-  bytes version_log = 21;            // 指向版本记录 Metanet 节点的 P_node
-
-  // 共享 (远期: 群签名阶段)
-  bytes share_list = 22;             // 指向共享列表 Metanet 节点的 P_node
+  // === 以下字段编号与代码 parser.go tag 常量一致 ===
 
   // PRIVATE 模式支持 (明文 envelope, 供钱包恢复)
-  bool encrypted = 23;               // true = 加密模式 (其余字段为默认值)
-  bytes private_key_hash = 24;       // key_hash 明文副本 (供恢复 aes_key = KDF(ECDH(D_node, P_node), key_hash))
-  bytes enc_payload = 25;            // nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
-  uint32 private_file_index = 26;    // file_index 明文副本 (供恢复 D_node 的 HD 路径, 与 private_key_hash 配合)
-
-  // === 新增字段 (专利 US 2021/0399898 A1 对齐) ===
+  bool encrypted = 19;               // true = 加密模式 (其余字段为默认值)
 
   // 内容存储模式
-  bool onchain = 27;                       // true = 内容已发布到链上数据交易
-  repeated bytes content_txids = 28;       // 链上数据交易 TxID 列表 (onchain=true 时)
+  bool onchain = 20;                       // true = 内容已发布到链上数据交易
+  repeated bytes content_txids = 21;       // 链上数据交易 TxID 列表 (onchain=true 时)
 
   // 数据压缩
-  CompressionScheme compression = 29;      // 压缩方案
-
-  // 内容分片 (链上大文件)
-  uint32 chunk_index = 30;                 // 本 chunk 序号 (0-based)
-  uint32 total_chunks = 31;                // 总 chunk 数 (0 = 非分片)
-  bytes recombination_hash = 32;           // SHA256(chunk0 || chunk1 || ...) 单次哈希, 对加密后的密文分片按序拼接计算
-
-  // Rabin 签名 (内容认证)
-  bytes rabin_signature = 33;              // Rabin 签名 (S, U) 序列化
-  bytes rabin_pubkey = 34;                 // Rabin 公钥 n
+  CompressionScheme compression = 22;      // 压缩方案
 
   // 区块高度权限
-  uint32 cltv_height = 35;                 // CLTV 区块高度 (0 = 无限制)
-
-  // 收益权表 (Revenue Share)
-  bytes registry_txid              = 36;  // 指向 Registry UTXO 所在交易
-  uint32 registry_vout             = 37;  // Registry UTXO 的输出索引
-  ISOConfig iso                    = 38;  // ISO 配置 (可选, 仅 ISO 发起时写入)
-
-  // 网络标识 (仅根节点, 信息性)
-  string network_name = 39;            // "mainnet" / "testnet" / "teratestnet" / "regtest" / 自定义
-
-  // ACL 引用
-  bytes acl_ref = 40;                  // ACL 引用 (群签名公钥哈希或 ACL 规则 TxID)
+  uint32 cltv_height = 23;                 // CLTV 区块高度 (0 = 无限制)
 
   // 收益分成
-  uint32 revenue_share = 41;           // 收益分成比例 (0-10000, 表示 0.00%-100.00%)
+  uint32 revenue_share = 24;               // 收益分成比例 (0-10000, 表示 0.00%-100.00%)
+
+  // 网络标识 (仅根节点, 信息性)
+  string network_name = 25;                // "mainnet" / "testnet" / "teratestnet" / "regtest" / 自定义
+
+  // 目录完整性
+  bytes merkle_root = 26;                  // 目录 Merkle root (子节点哈希树根)
+
+  // PRIVATE 模式加密载荷
+  bytes enc_payload = 27;                  // nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
+
+  // === 以下字段已设计但尚未实现 (编号预留) ===
+
+  // PRIVATE 模式钱包恢复 (待实现, 见 C3)
+  bytes private_key_hash = 28;       // key_hash 明文副本 (供恢复 aes_key = KDF(ECDH(D_node, P_node), key_hash))
+  uint32 private_file_index = 29;    // file_index 明文副本 (供恢复 D_node 的 HD 路径)
+
+  // 元信息扩展 (待实现)
+  map<string, string> metadata = 30; // 自定义键值对 (灵活扩展)
+  bytes version_log = 31;            // 指向版本记录 Metanet 节点的 P_node
+  bytes share_list = 32;             // 指向共享列表 Metanet 节点的 P_node
+
+  // 内容分片 (链上大文件, 待实现)
+  uint32 chunk_index = 33;                 // 本 chunk 序号 (0-based)
+  uint32 total_chunks = 34;                // 总 chunk 数 (0 = 非分片)
+  bytes recombination_hash = 35;           // SHA256(chunk0 || chunk1 || ...) 单次哈希
+
+  // Rabin 签名 (内容认证, 待实现)
+  bytes rabin_signature = 36;              // Rabin 签名 (S, U) 序列化
+  bytes rabin_pubkey = 37;                 // Rabin 公钥 n
+
+  // 收益权表 (Revenue Share, 待实现)
+  bytes registry_txid              = 38;  // 指向 Registry UTXO 所在交易
+  uint32 registry_vout             = 39;  // Registry UTXO 的输出索引
+  ISOConfig iso                    = 40;  // ISO 配置 (可选, 仅 ISO 发起时写入)
+
+  // ACL 引用 (待实现)
+  bytes acl_ref = 41;                  // ACL 引用 (群签名公钥哈希或 ACL 规则 TxID)
 }
 ```
 
@@ -463,7 +469,7 @@ message BitFSPayload {
      三种模式 (FREE/PAID/PRIVATE) 均以相同方式计算 key_hash。
   2. ECDH 直接使用 D_node: point = ECDH(D_node, P_recipient)
   3. 对称密钥: aes_key = KDF(point, key_hash)
-     KDF = HKDF-SHA256(ikm=point.x, salt=key_hash, info="bitfs-method42")
+     KDF = HKDF-SHA256(ikm=point.x, salt=key_hash, info="bitfs-file-encryption")
   4. Koblitz 加密 aes_key: koblitz_envelope = Koblitz_Encrypt(aes_key, P_recipient)
   5. AES 加密内容: encrypted_content = nonce || AES-256-GCM(content, aes_key) || tag
   6. 存储:

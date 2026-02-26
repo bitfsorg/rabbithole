@@ -148,10 +148,9 @@
 
 | 步骤 | EN | ZH |
 |------|----|----|
-| 1 | Seller publishes HTLC with file hash | 卖方发布包含文件哈希的 HTLC |
-| 2 | Buyer locks payment to hash lock | 买方将付款锁定到哈希锁 |
-| 3 | Seller reveals preimage, claims payment | 卖方揭示原像，领取付款 |
-| 4 | Buyer uses preimage to decrypt file | 买方使用原像解密文件 |
+| 1 | Buyer creates HTLC, locking payment to file hash | 买方创建 HTLC，将付款锁定到文件哈希 |
+| 2 | Seller reveals preimage (decryption key), claims payment | 卖方揭示原像（解密密钥），领取付款 |
+| 3 | Buyer uses preimage to decrypt file | 买方使用原像解密文件 |
 
 #### 特性 2：Unix CLI
 

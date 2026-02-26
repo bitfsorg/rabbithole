@@ -1603,7 +1603,7 @@ bitfs wallet init
     2. 可选 passphrase
     3. 生成 BIP39 助记词
     4. 派生 master key (BIP39 seed)
-    5. AES-256-GCM 加密 seed, 存储到 wallet.db
+    5. AES-256-GCM 加密 seed, 存储到 wallet.enc
   输出: 助记词 (用户必须备份)
 
 bitfs wallet restore

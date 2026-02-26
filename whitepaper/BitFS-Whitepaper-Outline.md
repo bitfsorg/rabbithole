@@ -140,8 +140,8 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 
 输出:
   [0] OP_RETURN: <MetaFlag> <P_node> <TxID_parent> <TLV 载荷>
-  [1] P2PKH → P_node     (546 sat，节点可花费输出)
-  [2] P2PKH → P_parent   (546 sat，刷新父节点 UTXO)
+  [1] P2PKH → P_node     (1 sat，节点可花费输出)
+  [2] P2PKH → P_parent   (1 sat，刷新父节点 UTXO)
   [3] P2PKH → 找零地址
 ```
 
@@ -188,7 +188,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 **本地存储结构**：
 ```
 ~/.bitfs/
-├── wallet.db            加密的 HD 密钥 + UTXO 集合
+├── wallet.enc           Argon2id 加密的 HD 种子
 ├── txstore/{txid}.tx    完整交易数据
 ├── txstore/{txid}.proof Merkle 证明
 ├── headers/             区块头链
