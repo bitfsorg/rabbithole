@@ -37,18 +37,25 @@ func openTestBoltStore(t *testing.T) *spv.BoltStore {
 	return store
 }
 
-// buildTestBlockHeader constructs a BlockHeader with the given fields and computes its hash.
+// buildTestBlockHeader constructs a BlockHeader with the given fields and mines a valid PoW.
 func buildTestBlockHeader(height uint32, prevBlock, merkleRoot []byte) *spv.BlockHeader {
 	h := &spv.BlockHeader{
 		Version:    1,
 		PrevBlock:  prevBlock,
 		MerkleRoot: merkleRoot,
 		Timestamp:  1700000000 + height,
-		Bits:       0x1d00ffff,
-		Nonce:      height * 7,
+		Bits:       0x207fffff, // Regtest target: easy PoW
+		Nonce:      0,
 		Height:     height,
 	}
-	h.Hash = spv.ComputeHeaderHash(h)
+	// Mine a valid nonce for PoW validation.
+	for nonce := uint32(0); ; nonce++ {
+		h.Nonce = nonce
+		h.Hash = spv.ComputeHeaderHash(h)
+		if spv.VerifyPoW(h) == nil {
+			break
+		}
+	}
 	return h
 }
 

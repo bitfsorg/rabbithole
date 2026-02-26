@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // MgetOpts holds options for the Mget (recursive download) operation.
@@ -46,6 +47,12 @@ func (e *Engine) mgetRecurse(vaultIdx uint32, dir *NodeState, localDir string, r
 	result.DirsCreated++
 
 	for _, child := range dir.Children {
+		// Validate child name to prevent path traversal from untrusted Metanet DAG state.
+		if strings.Contains(child.Name, "..") || strings.ContainsAny(child.Name, "/\\") || child.Name == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("unsafe child name %q, skipping", child.Name))
+			continue
+		}
+
 		childNode := e.State.GetNode(child.PubKey)
 		if childNode == nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("node %s not found for %s", child.PubKey[:8], child.Name))
