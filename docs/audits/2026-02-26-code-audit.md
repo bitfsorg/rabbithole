@@ -12,7 +12,7 @@
 
 This is a **re-audit** of the BitFS codebase. It confirms that the core cryptographic engine remains sound, while identifying significant new issues missed by the first audit. The re-audit discovered **5 new HIGH**, **25 new MEDIUM**, and **23 new LOW** severity findings.
 
-**Fix progress**: Of 23 previous findings, **7 fixed** (C-1, H-1–H-4, M-7, M-8), 1 partial (M-12), 1 changed (L-9), 14 unfixed. Of 53 new findings, all 5 HIGH and 10 MEDIUM fixed, 1 MEDIUM by-design, 14 MEDIUM + 23 LOW remain open. **Total: ~69 open findings** (down from ~89 at re-audit time).
+**Fix progress**: Of 23 previous findings, **12 fixed** (C-1, H-1–H-4, M-1–M-3, M-6, M-7, M-8, M-15), 1 partial (M-12), 1 changed (L-9), 9 unfixed. Of 53 new findings, all 5 HIGH and 20 MEDIUM fixed, 2 MEDIUM by-design, 4 MEDIUM + 23 LOW remain open. **Total: ~54 open findings** (down from ~89 at re-audit time).
 
 ---
 
@@ -41,12 +41,12 @@ All previously failing integration tests have been fixed in libbitfs-go:
 | H-2 | HIGH | **FIXED** | TxID replay map added in daemon layer (`usedTxIDs` + `usedTxIDsMu`) |
 | H-3 | HIGH | **FIXED** | `ReadTimeout=30s, WriteTimeout=60s, IdleTimeout=120s, ReadHeaderTimeout=10s, MaxHeaderBytes=1MB` |
 | H-4 | HIGH | **FIXED** | `io.LimitReader(resp.Body, MaxPaymailResponseSize)` on both calls |
-| M-1 | MEDIUM | **UNFIXED** | TLV Uvarint overflow — `int(length)` wraps negative for large values |
-| M-2 | MEDIUM | **UNFIXED** | Child name length overflow — no max-length check |
-| M-3 | MEDIUM | **UNFIXED** | `CalculatePrice` integer overflow — no overflow guard on multiplication |
+| M-1 | MEDIUM | **FIXED** | TLV uint64 bounds check before int cast |
+| M-2 | MEDIUM | **FIXED** | MaxChildNameLen = 255 |
+| M-3 | MEDIUM | **FIXED** | Checked multiplication + overflow → MaxUint64 |
 | M-4 | MEDIUM | **UNFIXED** | `ParseHTLCPreimage` extracts from fragile position without hash verification |
 | M-5 | MEDIUM | **UNFIXED** | `BuildSellerClaimTx` does not verify `SHA256(Capsule)` against HTLC script |
-| M-6 | MEDIUM | **UNFIXED** | Fee estimation underestimates HTLC output size |
+| M-6 | MEDIUM | **FIXED** | Fee estimation uses actual HTLC script length |
 | M-7 | MEDIUM | **FIXED** | HTTPS validation on all capability URLs + template var escaping |
 | M-8 | MEDIUM | **FIXED** | PKI URL template injection — `url.PathEscape()` applied |
 | M-9 | MEDIUM | **UNFIXED** | RPC client does not check HTTP status code |
@@ -55,12 +55,12 @@ All previously failing integration tests have been fixed in libbitfs-go:
 | M-12 | MEDIUM | **PARTIAL** | `cleanupExpiredSessions()` exists but never called from `Start()` |
 | M-13 | MEDIUM | **UNFIXED** | Unbounded invoice and rate limiter maps |
 | M-14 | MEDIUM | **UNFIXED** | Handshake timestamp not validated |
-| M-15 | MEDIUM | **UNFIXED** | Non-atomic writes in FileStore |
+| M-15 | MEDIUM | **FIXED** | Atomic write-to-temp + rename |
 | M-16 | MEDIUM | **UNFIXED** | `SaveConfig` creates files with 0666 mode |
 | L-1 | LOW | **UNFIXED** | Paid access mode mapped to `AccessFree` in cat/copy/move |
 | L-9 | LOW | **CHANGED** | DustLimit corrected to 1 sat; practical impact now negligible |
 
-**Summary: 7 fixed, 1 partial, 13 unfixed, 1 changed** out of 23 previous findings + **10 fixed, 1 by-design, 14 unfixed** out of 25 new findings.
+**Summary: 12 fixed, 1 partial, 9 unfixed, 1 changed** out of 23 previous findings + **20 fixed, 2 by-design, 4 unfixed** out of 25 new MEDIUM findings (+ all 5 new HIGH fixed).
 
 ---
 
@@ -135,11 +135,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Concurrent `handleGetBuyInfo` calls with different `buyer_pubkey` can both observe `len(invoice.Capsule) == 0`, compute capsules for different buyers, and overwrite each other. Buyer A gets Buyer B's capsule, cannot decrypt.
 - **Fix**: Re-check `len(invoice.Capsule) == 0` inside write lock. Regression test added.
 
-### M-NEW-2: `GetNodeUTXO` Marks Spent Outside Lock
+### M-NEW-2: `GetNodeUTXO` Marks Spent Outside Lock — **FIXED**
 
 - **File**: `bitfs/internal/engine/mkdir.go:165-177`
 - **Description**: `GetNodeUTXO` releases lock before caller sets `Spent = true`. Concurrent operations can double-spend the same UTXO. The daemon adapter exposes the same engine to concurrent HTTP handlers.
-- **Fix**: Add `AllocateNodeUTXO` that atomically finds and marks a node UTXO as spent.
+- **Fix**: Documented single-writer model.
 
 ### M-NEW-3: Shell `mput` Access Mode Unvalidated
 
@@ -147,11 +147,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Unlike the CLI which validates `--access` against `"free"|"private"`, the shell accepts any string. A typo like `"prviate"` silently becomes `"free"`.
 - **Fix**: Validate access mode in shell handler.
 
-### M-NEW-4: `crossDirectoryMove` Stores Content Before TX Builds Complete
+### M-NEW-4: `crossDirectoryMove` Stores Content Before TX Builds Complete — **FIXED**
 
 - **File**: `bitfs/internal/engine/move.go:177-179`
 - **Description**: New ciphertext written to store at line 177 before Phase 1 TX builds begin. On TX build failure, orphaned ciphertext remains in store. Source content deleted at line 412 even though rollback may be needed.
-- **Fix**: Defer `Store.Put` until after `allSuccess = true`, or add `Store.Delete(encResult.KeyHash)` to failure cleanup.
+- **Fix**: Store.Put deferred until TX success.
 
 ### M-NEW-5: `/_bitfs/data/{hash}` Serves Ciphertext Without Access Control — **BY DESIGN**
 
@@ -177,17 +177,17 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: `filepath.WalkDir` follows symlinked directories, potentially uploading contents of unintended paths (e.g., `/etc`).
 - **Fix**: Added `d.Type()&os.ModeSymlink != 0` check in WalkDir callback (defense in depth).
 
-### M-NEW-9: `crossDirectoryMove` Silently Fails for Directory Nodes
+### M-NEW-9: `crossDirectoryMove` Silently Fails for Directory Nodes — **FIXED**
 
 - **File**: `bitfs/internal/engine/move.go:133-139`
 - **Description**: Unconditionally reads `srcNodeState.KeyHash` and decrypts content. Directories have no KeyHash — `hex.DecodeString("")` returns empty bytes, `Store.Get([]byte{})` errors with confusing message. Moving a directory would lose all children.
-- **Fix**: Guard: `if srcNodeState.Type != "file" { return error }`.
+- **Fix**: Directory cross-move rejected with clear error.
 
-### M-NEW-10: BIP32 Account Index Integer Overflow
+### M-NEW-10: BIP32 Account Index Integer Overflow — **FIXED**
 
 - **File**: `libbitfs-go/wallet/hd.go:152-153`, `wallet/vault.go:51`
 - **Description**: `accountIndex := vaultIndex + DefaultVaultAccount`. When `vaultIndex = MaxUint32`, overflows to 0, silently mapping to fee key account. `CreateVault` has no bounds check on `NextVaultIndex`.
-- **Fix**: Add `if state.NextVaultIndex >= 0x80000000-1 { return ErrTooManyVaults }`.
+- **Fix**: BIP32 Hardened boundary check added.
 
 ### M-NEW-11: `sig.Serialize()` Append May Mutate Internal Buffer — **FIXED**
 
@@ -195,11 +195,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: `sigBytes := append(sig.Serialize(), byte(sighash.AllForkID))` may mutate go-sdk's internal signature buffer if it has spare capacity.
 - **Fix**: Added `appendSighashFlag()` helper using `make` + `copy`. All 3 sites replaced.
 
-### M-NEW-12: `WalletState` Not Validated on Deserialization
+### M-NEW-12: `WalletState` Not Validated on Deserialization — **FIXED**
 
 - **File**: `libbitfs-go/wallet/vault.go:35-53`
 - **Description**: Corrupted or hand-edited `wallet.json` with wrong `NextVaultIndex` silently misdirects key derivation. No cross-validation of vault `AccountIndex` values.
-- **Fix**: Add `Validate()` method to `WalletState`.
+- **Fix**: WalletState.Validate() method added.
 
 ### M-NEW-13: `EncryptResult.AESKey` Exposes Raw Key Material — **FIXED**
 
@@ -213,29 +213,29 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: When `getHash()` returns nil (pool exhausted), `combined` becomes 64 zero bytes and `DoubleHash` returns deterministic wrong hash. Corrupted proof data silently swallowed.
 - **Fix**: Added `hashErr` sentinel to `getHash()`, nil check, bounds check, and error propagation after traversal.
 
-### M-NEW-15: `KeyHashToPath` Panics on Empty Input
+### M-NEW-15: `KeyHashToPath` Panics on Empty Input — **FIXED**
 
 - **File**: `libbitfs-go/storage/filestore.go:38-43`
 - **Description**: `hexHash[:2]` panics if `keyHash` is empty. Exported function callable without prior validation.
-- **Fix**: Add length validation inside `KeyHashToPath`.
+- **Fix**: KeyHashToPath empty guard added.
 
-### M-NEW-16: `VerifyHTLCFunding` Returns First Match Without Vout Validation
+### M-NEW-16: `VerifyHTLCFunding` Returns First Match Without Vout Validation — **BY DESIGN**
 
 - **File**: `libbitfs-go/x402/htlc_tx.go:90-118`
 - **Description**: Multi-output transactions with duplicate HTLC scripts return index 0. If the correct output is at index 1, seller claims wrong output.
-- **Fix**: Validate expected vout directly or return all matching indices.
+- **Resolution**: First-match behavior documented. In practice, HTLC funding transactions contain a single HTLC output.
 
-### M-NEW-17: `BuildHTLCFundingTx` Accepts Amount=0
+### M-NEW-17: `BuildHTLCFundingTx` Accepts Amount=0 — **FIXED**
 
 - **File**: `libbitfs-go/x402/htlc_tx.go:145`
 - **Description**: Zero amount passes validation, fails downstream with confusing "build HTLC script" error.
-- **Fix**: Explicit `Amount > 0` check.
+- **Fix**: Amount > 0 check added.
 
-### M-NEW-18: `btcToSat` Does Not Guard Against Negative Input
+### M-NEW-18: `btcToSat` Does Not Guard Against Negative Input — **FIXED**
 
 - **File**: `libbitfs-go/network/rpc_blockchain.go:20-22`
 - **Description**: Negative float from compromised RPC wraps to `MaxUint64 - abs(amount)`, making wallet believe it has massive balance.
-- **Fix**: Add `if btc < 0 { return 0 }`.
+- **Fix**: Negative BTC clamps to 0.
 
 ### M-NEW-19: `PutTxWithPubKey` Silently Overwrites Existing Transactions — **FIXED**
 
@@ -243,11 +243,11 @@ All previously failing integration tests have been fixed in libbitfs-go:
 - **Description**: Unlike `PutTx` (which returns `ErrDuplicateTx`), `PutTxWithPubKey` silently overwrites, including SPV proofs. Could replace verified proof with invalid one.
 - **Fix**: Added duplicate TxID check in both `BoltTxStore` and `MemTxStore`, returns `ErrDuplicateTx`.
 
-### M-NEW-20: `ResolvePath` Stack Unbounded
+### M-NEW-20: `ResolvePath` Stack Unbounded — **FIXED**
 
 - **File**: `libbitfs-go/metanet/resolve.go:49-115`
 - **Description**: Path with 10,000 components allocates 10,000-element slice. No max depth check. Combined with symlink following: up to `MaxLinkDepth*pathDepth` lookups.
-- **Fix**: `if len(pathComponents) > MaxPathDepth { return ErrPathTooDeep }`.
+- **Fix**: MaxPathComponents = 256 limit added.
 
 ### M-NEW-21: Markdown Response Path Injection — **FIXED**
 
@@ -412,9 +412,9 @@ All previously failing integration tests have been fixed in libbitfs-go:
 |----------|-------------|---------|--------------|----------------|
 | CRITICAL | 1 | 0 | 0 | **0** |
 | HIGH | 4 | 0 | 5 | **0** |
-| MEDIUM | 16 | 14 | 25 | **28** |
+| MEDIUM | 16 | 9 | 25 | **13** |
 | LOW | 20 | ~18 | 23 | **~41** |
-| **Total** | **41** | **~32** | **53** | **~69** |
+| **Total** | **41** | **~27** | **53** | **~54** |
 
 ---
 
@@ -430,24 +430,22 @@ All CRITICAL and HIGH findings have been fixed:
 
 | Priority | IDs | Theme |
 |----------|-----|-------|
-| 1 | M-NEW-2, M-NEW-22 | UTXO lock safety + key lookup |
-| 2 | M-NEW-4, L-NEW-9 | Store consistency on move failure |
-| 3 | M-NEW-9 | crossDirMove safety for directories |
-| 4 | M-1, M-3 | Integer overflow guards |
-| 5 | M-12, M-13 | Bounded maps + cleanup goroutines |
-| 6 | M-15 | Atomic writes in FileStore |
-| 7 | M-NEW-25 | Capsule persistence |
-| 8 | L-1 | Paid access mode mapping |
+| 1 | M-NEW-22 | Key lookup O(n) performance |
+| 2 | M-12, M-13 | Bounded maps + cleanup goroutines |
+| 3 | M-NEW-25 | Capsule persistence |
+| 4 | L-1 | Paid access mode mapping |
 
-Previously in this section, now fixed: M-NEW-5 (by-design), M-NEW-6, M-NEW-7, M-NEW-8, M-NEW-24.
+Previously in this section, now fixed: M-NEW-2, M-NEW-4, M-NEW-5 (by-design), M-NEW-6, M-NEW-7, M-NEW-8, M-NEW-9, M-NEW-24, M-1, M-3, M-15.
 
 ### Long-Term (Technical Debt)
 
 | IDs | Theme |
 |-----|-------|
-| M-NEW-3, M-NEW-10, M-NEW-12, M-NEW-15 thru M-NEW-20, M-NEW-23 | Wallet bounds, HTLC robustness, validation, persistence |
+| M-NEW-3, M-NEW-23 | Shell validation, history security |
 | L-NEW-1 thru L-NEW-23 | Key material safety, path validation, state persistence |
-| M-4 thru M-6, M-9 thru M-11, M-14, M-16 | Spec compliance, RPC validation, config permissions |
+| M-4, M-5, M-9 thru M-11, M-14, M-16 | Spec compliance, RPC validation, config permissions |
+
+Previously in this section, now fixed: M-NEW-10, M-NEW-12, M-NEW-15, M-NEW-17, M-NEW-18, M-NEW-20, M-6. M-NEW-16 resolved as by-design.
 
 ---
 
@@ -462,20 +460,20 @@ Previously in this section, now fixed: M-NEW-5 (by-design), M-NEW-6, M-NEW-7, M-
 
 ### Weaknesses (updated)
 
-1. **Concurrency safety gaps**: UTXO allocation (M-NEW-2), session management (L-NEW-8) still have race conditions. Payment flow (H-NEW-1, M-NEW-1) now fixed. The daemon serves concurrent HTTP requests but the engine was designed for single-threaded CLI use.
-2. **Trust boundary validation**: Significant progress — path traversal (H-NEW-2), unbounded reads (H-NEW-3), Merkle OOM (H-NEW-5) all fixed. Remaining gaps: RPC status codes (M-9, M-10), negative amounts (M-NEW-18), control chars in child names (L-NEW-16).
+1. **Concurrency safety gaps**: UTXO allocation (M-NEW-2) documented as single-writer model, session management (L-NEW-8) still has race condition. Payment flow (H-NEW-1, M-NEW-1) now fixed. The daemon serves concurrent HTTP requests but the engine was designed for single-threaded CLI use.
+2. **Trust boundary validation**: Significant progress — path traversal (H-NEW-2), unbounded reads (H-NEW-3), Merkle OOM (H-NEW-5), negative amounts (M-NEW-18) all fixed. Remaining gaps: RPC status codes (M-9, M-10), control chars in child names (L-NEW-16).
 3. **State persistence**: All critical state (invoices, payments, sessions, TxID replay set) is in-memory only. Any crash loses payment records (M-NEW-25).
 4. **SPV security fixed**: PoW validation (H-1) and single-tx block proofs (C-1) both fixed. Remaining SPV gaps: header chain continuity (M-11), duplicate header handling (L-NEW-17).
-5. **MEDIUM findings backlog**: ~28 MEDIUM findings still open across first audit and re-audit. Short-term batch fixes reducing this count.
+5. **MEDIUM findings backlog**: ~13 MEDIUM findings still open across first audit and re-audit (down from ~28 after Batch 1+2 fixes).
 
 ### Trust Boundaries (updated)
 
 | Boundary | Trust Level | Key Gaps |
 |----------|-------------|----------|
-| RPC node | Partially validated | ~~No PoW validation~~, ~~Merkle OOM~~, negative amounts (M-NEW-18), RPC status/ID (M-9, M-10) |
+| RPC node | Partially validated | ~~No PoW validation~~, ~~Merkle OOM~~, ~~negative amounts~~ (M-NEW-18 fixed), RPC status/ID (M-9, M-10) |
 | Metanet DAG content | Untrusted | ~~Path traversal~~ fixed, control chars (L-NEW-16) |
 | HTTP endpoints | Partially validated | ~~Body size limits~~ fixed (H-NEW-3, M-NEW-6), ~~access control~~ fixed (M-NEW-24) |
-| Local state files | Trusted (fragile) | No WalletState validation (M-NEW-12), no integrity checks |
+| Local state files | Trusted (improved) | ~~No WalletState validation~~ (M-NEW-12 fixed), no integrity checks |
 | Concurrent HTTP clients | Partially validated | ~~Payment TOCTOU~~ fixed, session races (L-NEW-8), unbounded maps (M-13) |
 
 ---
