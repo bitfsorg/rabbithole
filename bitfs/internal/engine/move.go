@@ -118,7 +118,7 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	}
 
 	// 4. Find the child entry in source parent.
-	var srcChildIdx int = -1
+	var srcChildIdx = -1
 	for i, c := range srcParent.Children {
 		if c.Name == srcName {
 			srcChildIdx = i
@@ -288,7 +288,7 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 	dstParent.Children = dstChildrenAfter
 	dstParent.NextChildIdx = childIdx + 1
 	dstParentTxHex, dstParentTxIDHex, err := e.buildParentSelfUpdate(dstParent)
-	dstParent.Children = origDstChildren     // restore
+	dstParent.Children = origDstChildren    // restore
 	dstParent.NextChildIdx = origDstNextIdx // restore
 	if err != nil {
 		return nil, fmt.Errorf("engine: update destination parent: %w", err)
