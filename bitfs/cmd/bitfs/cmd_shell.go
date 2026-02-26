@@ -43,7 +43,7 @@ func ensureHistoryFilePermissions(path string) {
 // shellCommands is the list of all shell command names for tab completion.
 var shellCommands = []string{
 	"ls", "cd", "lcd", "pwd", "cat", "get", "mget", "mput", "mkdir", "put", "rm", "mv", "cp",
-	"link", "sell", "encrypt", "publish", "unpublish", "help", "quit", "exit",
+	"link", "sell", "encrypt", "decrypt", "publish", "unpublish", "help", "quit", "exit",
 }
 
 // runShell handles the "bitfs shell" command.
@@ -199,7 +199,7 @@ func runShell(args []string) int {
 			}
 		case "put":
 			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: put <local-file> <remote-path>")
+				fmt.Println("Usage: put <local-file> <remote-path> [free|private]")
 				continue
 			}
 			localFile := cmdArgs[0]
@@ -207,11 +207,15 @@ func runShell(args []string) int {
 				localFile = filepath.Join(localCwd, localFile)
 			}
 			remotePath := resolvePath(cwd, cmdArgs[1])
+			access := "free"
+			if len(cmdArgs) > 2 && cmdArgs[2] == "private" {
+				access = "private"
+			}
 			result, putErr := eng.PutFile(&engine.PutOpts{
 				VaultIndex: vaultIdx,
 				LocalFile:  localFile,
 				RemotePath: remotePath,
-				Access:     "free",
+				Access:     access,
 			})
 			if putErr != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", putErr)
@@ -220,15 +224,34 @@ func runShell(args []string) int {
 			}
 		case "rm":
 			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: rm <path>")
+				fmt.Println("Usage: rm [-r] <path>")
 				continue
 			}
-			path := resolvePath(cwd, cmdArgs[0])
-			result, rmErr := eng.Remove(&engine.RemoveOpts{VaultIndex: vaultIdx, Path: path})
-			if rmErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", rmErr)
+			recursive := false
+			pathArgs := cmdArgs
+			for i, a := range cmdArgs {
+				if a == "-r" || a == "--recursive" {
+					recursive = true
+					pathArgs = append(cmdArgs[:i], cmdArgs[i+1:]...)
+					break
+				}
+			}
+			if len(pathArgs) < 1 {
+				fmt.Println("Usage: rm [-r] <path>")
+				continue
+			}
+			rmPath := resolvePath(cwd, pathArgs[0])
+			if recursive {
+				if err := shellRemoveRecursive(eng, vaultIdx, rmPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				}
 			} else {
-				fmt.Println(result.Message)
+				result, rmErr := eng.Remove(&engine.RemoveOpts{VaultIndex: vaultIdx, Path: rmPath})
+				if rmErr != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", rmErr)
+				} else {
+					fmt.Println(result.Message)
+				}
 			}
 		case "mv":
 			if len(cmdArgs) < 2 {
@@ -282,14 +305,26 @@ func runShell(args []string) int {
 			}
 		case "link":
 			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: link <target> <link-path> [--soft]")
+				fmt.Println("Usage: link <target> <link-path> [-s|--soft]")
 				continue
 			}
-			soft := len(cmdArgs) > 2 && cmdArgs[2] == "--soft"
+			soft := false
+			posArgs := make([]string, 0, len(cmdArgs))
+			for _, a := range cmdArgs {
+				if a == "-s" || a == "--soft" {
+					soft = true
+				} else {
+					posArgs = append(posArgs, a)
+				}
+			}
+			if len(posArgs) < 2 {
+				fmt.Println("Usage: link <target> <link-path> [-s|--soft]")
+				continue
+			}
 			result, lnErr := eng.Link(&engine.LinkOpts{
 				VaultIndex: vaultIdx,
-				TargetPath: resolvePath(cwd, cmdArgs[0]),
-				LinkPath:   resolvePath(cwd, cmdArgs[1]),
+				TargetPath: resolvePath(cwd, posArgs[0]),
+				LinkPath:   resolvePath(cwd, posArgs[1]),
 				Soft:       soft,
 			})
 			if lnErr != nil {
@@ -299,24 +334,43 @@ func runShell(args []string) int {
 			}
 		case "sell":
 			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: sell <path> <price-sats-per-kb>")
+				fmt.Println("Usage: sell <path> <price-sats-per-kb> [--recursive]")
+				continue
+			}
+			recursive := false
+			cleanArgs := make([]string, 0, len(cmdArgs))
+			for _, a := range cmdArgs {
+				if a == "-r" || a == "--recursive" {
+					recursive = true
+				} else {
+					cleanArgs = append(cleanArgs, a)
+				}
+			}
+			if len(cleanArgs) < 2 {
+				fmt.Println("Usage: sell <path> <price-sats-per-kb> [--recursive]")
 				continue
 			}
 			var price uint64
-			_, _ = fmt.Sscanf(cmdArgs[1], "%d", &price)
-			if price == 0 {
-				fmt.Println("Error: price must be positive")
+			if _, err := fmt.Sscanf(cleanArgs[1], "%d", &price); err != nil || price == 0 {
+				fmt.Println("Error: price must be a positive integer")
 				continue
 			}
-			result, sellErr := eng.Sell(&engine.SellOpts{
-				VaultIndex: vaultIdx,
-				Path:       resolvePath(cwd, cmdArgs[0]),
-				PricePerKB: price,
-			})
-			if sellErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", sellErr)
+			sellPath := resolvePath(cwd, cleanArgs[0])
+			if recursive {
+				if err := shellSellRecursive(eng, vaultIdx, sellPath, price); err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				}
 			} else {
-				fmt.Println(result.Message)
+				result, sellErr := eng.Sell(&engine.SellOpts{
+					VaultIndex: vaultIdx,
+					Path:       sellPath,
+					PricePerKB: price,
+				})
+				if sellErr != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", sellErr)
+				} else {
+					fmt.Println(result.Message)
+				}
 			}
 		case "cat":
 			if len(cmdArgs) < 1 {
@@ -480,6 +534,19 @@ func runShell(args []string) int {
 			} else {
 				fmt.Println(result.Message)
 			}
+		case "decrypt":
+			if len(cmdArgs) < 1 {
+				fmt.Println("Usage: decrypt <path>")
+				continue
+			}
+			result, decErr := eng.DecryptNode(&engine.DecryptOpts{
+				Path: resolvePath(cwd, cmdArgs[0]),
+			})
+			if decErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", decErr)
+			} else {
+				fmt.Println(result.Message)
+			}
 		default:
 			fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", cmd)
 		}
@@ -488,26 +555,27 @@ func runShell(args []string) int {
 
 func shellHelp() {
 	fmt.Println(`Available commands:
-  ls [path]                List directory contents
-  cd [path]                Change remote directory
-  lcd [path]               Change local directory (or print current)
-  pwd                      Print remote working directory
-  cat <path>               View file contents (--force for binary)
-  get <remote> [local]     Download file to local disk
-  mget <dir> [local-dir]   Download directory recursively
-  mput <dir> [remote-dir]  Upload directory recursively
-  mkdir <path>             Create directory
-  put <local> <remote>     Upload file
-  rm <path>                Remove file/directory
-  mv <src> <dst>           Move/rename
-  cp <src> <dst>           Copy file
-  link <target> <path>     Create hard link (--soft for symlink)
-  sell <path> <price>      Set price (sats/KB)
-  encrypt <path>           Encrypt (FREE -> PRIVATE)
-  publish [domain]         List or bind domain via DNSLink
-  unpublish <domain>       Remove domain binding
-  help                     Show this help
-  quit                     Exit shell`)
+  ls [path]                     List directory contents
+  cd [path]                     Change remote directory
+  lcd [path]                    Change local directory (or print current)
+  pwd                           Print remote working directory
+  cat <path>                    View file contents (--force for binary)
+  get <remote> [local]          Download file to local disk
+  mget <dir> [local-dir]        Download directory recursively
+  mput <dir> [remote-dir]       Upload directory recursively
+  mkdir <path>                  Create directory
+  put <local> <remote> [access] Upload file (access: free|private, default free)
+  rm [-r] <path>                Remove file/directory (-r for recursive)
+  mv <src> <dst>                Move/rename
+  cp <src> <dst>                Copy file
+  link <target> <path> [-s]     Create link (-s for soft/symlink)
+  sell <path> <price> [-r]      Set price sats/KB (-r for recursive)
+  encrypt <path>                Encrypt (FREE -> PRIVATE)
+  decrypt <path>                Decrypt (PRIVATE -> FREE)
+  publish [domain]              List or bind domain via DNSLink
+  unpublish <domain>            Remove domain binding
+  help                          Show this help
+  quit                          Exit shell`)
 }
 
 func shellLs(eng *engine.Engine, dir string) {
@@ -557,4 +625,54 @@ func cleanPath(p string) string {
 		return "/"
 	}
 	return "/" + strings.Join(clean, "/")
+}
+
+// shellRemoveRecursive removes a path and all its children bottom-up.
+func shellRemoveRecursive(eng *engine.Engine, vaultIdx uint32, path string) error {
+	ns := eng.State.FindNodeByPath(path)
+	if ns == nil {
+		return fmt.Errorf("engine: node %q not found", path)
+	}
+	// Remove children first (depth-first).
+	if ns.Type == "dir" {
+		for _, child := range ns.Children {
+			childPath := path + "/" + child.Name
+			if err := shellRemoveRecursive(eng, vaultIdx, childPath); err != nil {
+				return err
+			}
+		}
+	}
+	result, err := eng.Remove(&engine.RemoveOpts{VaultIndex: vaultIdx, Path: path})
+	if err != nil {
+		return err
+	}
+	fmt.Println(result.Message)
+	return nil
+}
+
+// shellSellRecursive applies a price to a path and all file descendants.
+func shellSellRecursive(eng *engine.Engine, vaultIdx uint32, path string, price uint64) error {
+	ns := eng.State.FindNodeByPath(path)
+	if ns == nil {
+		return fmt.Errorf("engine: node %q not found", path)
+	}
+	if ns.Type == "dir" {
+		for _, child := range ns.Children {
+			childPath := path + "/" + child.Name
+			if err := shellSellRecursive(eng, vaultIdx, childPath, price); err != nil {
+				return err
+			}
+		}
+		return nil // don't sell directories themselves
+	}
+	result, err := eng.Sell(&engine.SellOpts{
+		VaultIndex: vaultIdx,
+		Path:       path,
+		PricePerKB: price,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println(result.Message)
+	return nil
 }
