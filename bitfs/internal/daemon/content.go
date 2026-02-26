@@ -133,6 +133,9 @@ func (d *Daemon) handleMeta(w http.ResponseWriter, r *http.Request) {
 	if node.PricePerKB > 0 {
 		resp.PricePerKB = node.PricePerKB
 	}
+	if node.Timestamp > 0 {
+		resp.Timestamp = int64(node.Timestamp)
+	}
 	if node.Type == "dir" && len(node.Children) > 0 {
 		resp.Children = make([]metaChildResponse, len(node.Children))
 		for i, c := range node.Children {
@@ -154,6 +157,7 @@ type metaNodeResponse struct {
 	FileSize   uint64              `json:"file_size,omitempty"`
 	KeyHash    string              `json:"key_hash,omitempty"`
 	PricePerKB uint64              `json:"price_per_kb,omitempty"`
+	Timestamp  int64               `json:"timestamp,omitempty"`
 	Children   []metaChildResponse `json:"children,omitempty"`
 }
 

@@ -81,6 +81,7 @@ type NodeInfo struct {
 	Access     string // "free", "paid", "private"
 	PricePerKB uint64
 	Children   []ChildInfo
+	Timestamp  uint64
 	Domain     string
 }
 

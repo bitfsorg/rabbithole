@@ -47,6 +47,7 @@ type MetaResponse struct {
 	Access     string       `json:"access"` // "free", "paid", "private"
 	PricePerKB uint64       `json:"price_per_kb,omitempty"`
 	TxID       string       `json:"txid,omitempty"`
+	Timestamp  int64        `json:"timestamp,omitempty"` // Unix timestamp (seconds), 0 if unavailable
 	Children   []ChildEntry `json:"children,omitempty"`
 }
 

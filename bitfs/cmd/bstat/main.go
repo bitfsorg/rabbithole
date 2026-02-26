@@ -128,6 +128,11 @@ func outputHuman(meta *client.MetaResponse, w io.Writer) int {
 		fmt.Fprintf(w, "    TxID: %s\n", meta.TxID)
 	}
 
+	if meta.Timestamp > 0 {
+		t := time.Unix(meta.Timestamp, 0).UTC()
+		fmt.Fprintf(w, "    Time: %s\n", t.Format("2006-01-02 15:04:05 UTC"))
+	}
+
 	return 0
 }
 
