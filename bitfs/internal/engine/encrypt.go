@@ -7,6 +7,7 @@ import (
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // EncryptOpts holds options for the Encrypt operation.
@@ -117,24 +118,25 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 		}
 	}()
 
-	mtx, err := buildUnsignedSelfUpdateTx(kp, parentTxID, payload, nodeUTXO, feeUTXO, changeAddr)
-	if err != nil {
-		return nil, fmt.Errorf("engine: build self-update tx: %w", err)
-	}
+	// Build atomic batch: OpUpdate(node).
+	batch := tx.NewMutationBatch()
+	batch.AddSelfUpdate(kp.PublicKey, parentTxID, payload, nodeUTXO, kp.PrivateKey)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
 
-	txHex, err := signSelfUpdateTx(mtx, nodeUTXO, feeUTXO)
+	txHex, result, err := buildAndSignBatch(batch)
 	if err != nil {
-		return nil, fmt.Errorf("engine: sign self-update tx: %w", err)
+		return nil, fmt.Errorf("engine: batch encrypt tx: %w", err)
 	}
 
 	success = true
-	txIDHex := hex.EncodeToString(mtx.TxID)
+	txIDHex := hex.EncodeToString(result.TxID)
 
 	// Update local state.
 	nodeState.TxID = txIDHex
 	nodeState.Access = "private"
 	nodeState.KeyHash = hex.EncodeToString(reEncResult.KeyHash)
-	e.TrackNewUTXOs(mtx, nodeState.PubKeyHex, changePubHex)
+	e.TrackBatchUTXOs(result, []string{nodeState.PubKeyHex}, changePubHex)
 
 	return &Result{
 		TxHex:   txHex,

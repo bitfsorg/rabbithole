@@ -106,19 +106,45 @@ func (e *Engine) Mkdir(opts *MkdirOpts) (*Result, error) {
 		}
 	}()
 
-	parentPubBytes := mustDecodeHex(parent.PubKeyHex)
-	mtx, err := buildUnsignedCreateChildTx(childKP, parentTxID, payload, parentUTXO, feeUTXO, parentPubBytes, changeAddr)
+	// Build atomic batch: OpCreate(child) + OpUpdate(parent).
+	batch := tx.NewMutationBatch()
+	batch.AddCreateChild(childKP.PublicKey, parentTxID, payload, parentUTXO, parentUTXO.PrivateKey)
+
+	// Build parent update payload with new child added.
+	parentPayload, err := e.buildParentUpdatePayload(parent, &ChildState{
+		Name:     childName,
+		Type:     "dir",
+		PubKey:   childPubHex,
+		Index:    childIdx,
+		Hardened: true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("engine: build child tx: %w", err)
+		return nil, fmt.Errorf("engine: parent payload: %w", err)
 	}
 
-	txHex, err := signCreateChildTx(mtx, parentUTXO, feeUTXO)
+	parentKP, err := e.Wallet.DeriveNodeKey(parent.VaultIndex, parent.ChildIndices, nil)
 	if err != nil {
-		return nil, fmt.Errorf("engine: sign child tx: %w", err)
+		return nil, fmt.Errorf("engine: derive parent key: %w", err)
+	}
+	var parentParentTxID []byte
+	if parent.ParentTxID != "" {
+		parentParentTxID, err = TxIDBytes(parent.ParentTxID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	batch.AddSelfUpdate(parentKP.PublicKey, parentParentTxID, parentPayload, parentUTXO, parentKP.PrivateKey)
+
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
+
+	txHex, result, err := buildAndSignBatch(batch)
+	if err != nil {
+		return nil, fmt.Errorf("engine: batch mkdir tx: %w", err)
 	}
 
 	success = true
-	txIDHex := hex.EncodeToString(mtx.TxID)
+	txIDHex := hex.EncodeToString(result.TxID)
 
 	// Update local state.
 	childPath := opts.Path
@@ -144,11 +170,10 @@ func (e *Engine) Mkdir(opts *MkdirOpts) (*Result, error) {
 		Hardened: true,
 	})
 	parent.NextChildIdx = childIdx + 1
-	parent.TxID = txIDHex // parent TxID updates on child creation
+	parent.TxID = txIDHex
 
-	// Track new UTXOs.
-	e.TrackNewUTXOs(mtx, childPubHex, changePubHex)
-	e.TrackParentRefreshUTXO(mtx, parent.PubKeyHex)
+	// Track batch UTXOs: [0]=child, [1]=parent.
+	e.TrackBatchUTXOs(result, []string{childPubHex, parent.PubKeyHex}, changePubHex)
 
 	return &Result{
 		TxHex:   txHex,

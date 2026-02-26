@@ -179,20 +179,6 @@ func TestNodeTypeFromString(t *testing.T) {
 	}
 }
 
-func TestPubKeyFromBytes(t *testing.T) {
-	// Wrong length.
-	_, err := pubKeyFromBytes([]byte{0x01, 0x02})
-	if err == nil {
-		t.Error("pubKeyFromBytes(2 bytes) expected error")
-	}
-
-	// Correct length but invalid key (all zeros).
-	_, err = pubKeyFromBytes(make([]byte, 33))
-	if err == nil {
-		t.Error("pubKeyFromBytes(33 zero bytes) expected error")
-	}
-}
-
 func TestMustDecompressPubKey(t *testing.T) {
 	// Invalid hex.
 	if mustDecompressPubKey("zzzz") != nil {

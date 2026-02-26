@@ -7,6 +7,7 @@ import (
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // CopyOpts holds options for the Copy (file copy) operation.
@@ -164,19 +165,44 @@ func (e *Engine) Copy(opts *CopyOpts) (*Result, error) {
 		}
 	}()
 
-	parentPubBytes := mustDecodeHex(dstParent.PubKeyHex)
-	mtx, err := buildUnsignedCreateChildTx(childKP, parentTxID, payload, parentUTXO, feeUTXO, parentPubBytes, changeAddr)
+	// Build atomic batch: OpCreate(child) + OpUpdate(parent).
+	batch := tx.NewMutationBatch()
+	batch.AddCreateChild(childKP.PublicKey, parentTxID, payload, parentUTXO, parentUTXO.PrivateKey)
+
+	parentPayload, err := e.buildParentUpdatePayload(dstParent, &ChildState{
+		Name:     dstName,
+		Type:     "file",
+		PubKey:   childPubHex,
+		Index:    childIdx,
+		Hardened: true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("engine: build child tx: %w", err)
+		return nil, fmt.Errorf("engine: parent payload: %w", err)
 	}
 
-	txHex, err := signCreateChildTx(mtx, parentUTXO, feeUTXO)
+	parentKP, err := e.Wallet.DeriveNodeKey(dstParent.VaultIndex, dstParent.ChildIndices, nil)
 	if err != nil {
-		return nil, fmt.Errorf("engine: sign child tx: %w", err)
+		return nil, fmt.Errorf("engine: derive parent key: %w", err)
+	}
+	var parentParentTxID []byte
+	if dstParent.ParentTxID != "" {
+		parentParentTxID, err = TxIDBytes(dstParent.ParentTxID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	batch.AddSelfUpdate(parentKP.PublicKey, parentParentTxID, parentPayload, parentUTXO, parentKP.PrivateKey)
+
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
+
+	txHex, result, err := buildAndSignBatch(batch)
+	if err != nil {
+		return nil, fmt.Errorf("engine: batch copy tx: %w", err)
 	}
 
 	success = true
-	txIDHex := hex.EncodeToString(mtx.TxID)
+	txIDHex := hex.EncodeToString(result.TxID)
 
 	// 12. Update local state.
 	childState := &NodeState{
@@ -213,9 +239,8 @@ func (e *Engine) Copy(opts *CopyOpts) (*Result, error) {
 	dstParent.NextChildIdx = childIdx + 1
 	dstParent.TxID = txIDHex
 
-	// Track UTXOs.
-	e.TrackNewUTXOs(mtx, childPubHex, changePubHex)
-	e.TrackParentRefreshUTXO(mtx, dstParent.PubKeyHex)
+	// Track batch UTXOs: [0]=child, [1]=parent.
+	e.TrackBatchUTXOs(result, []string{childPubHex, dstParent.PubKeyHex}, changePubHex)
 
 	return &Result{
 		TxHex:   txHex,

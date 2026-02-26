@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
 // resolveParentDir finds the parent directory node for a given directory path.
@@ -30,18 +31,10 @@ func (e *Engine) resolveParentDir(dirPath string, vaultIdx uint32) (*NodeState, 
 	return nil, fmt.Errorf("directory %q not found", dirPath)
 }
 
-// buildParentSelfUpdate builds and signs a SelfUpdate transaction for a parent
-// directory node, reflecting its current children list. It allocates a fee UTXO,
-// derives a change address, and tracks the resulting UTXOs.
-// Returns the signed tx hex and tx ID hex.
-func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex string, err error) {
-	// Derive parent key.
-	parentKP, err := e.Wallet.DeriveNodeKey(parent.VaultIndex, parent.ChildIndices, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("derive parent key: %w", err)
-	}
-
-	// Build children list for payload.
+// buildParentUpdatePayload builds a serialized payload for a parent directory update.
+// If newChild is non-nil, it is appended to the parent's children list for the payload
+// (but the caller is responsible for updating parent.Children in local state).
+func (e *Engine) buildParentUpdatePayload(parent *NodeState, newChild *ChildState) ([]byte, error) {
 	var children []metanet.ChildEntry
 	for _, c := range parent.Children {
 		children = append(children, metanet.ChildEntry{
@@ -53,6 +46,20 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 		})
 	}
 
+	nextChildIdx := parent.NextChildIdx
+	if newChild != nil {
+		children = append(children, metanet.ChildEntry{
+			Index:    newChild.Index,
+			Name:     newChild.Name,
+			Type:     metanet.NodeType(nodeTypeInt(newChild.Type)),
+			PubKey:   mustDecodeHex(newChild.PubKey),
+			Hardened: newChild.Hardened,
+		})
+		if newChild.Index >= nextChildIdx {
+			nextChildIdx = newChild.Index + 1
+		}
+	}
+
 	parentNode := &metanet.Node{
 		Version:        1,
 		Type:           metanet.NodeTypeDir,
@@ -60,17 +67,28 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 		Access:         metanet.AccessFree,
 		Timestamp:      uint64(time.Now().Unix()),
 		Children:       children,
-		NextChildIndex: parent.NextChildIdx,
+		NextChildIndex: nextChildIdx,
 	}
 
-	// Preserve extended metadata in on-chain payload.
 	parentNode.Keywords = parent.Keywords
 	parentNode.Description = parent.Description
 	parentNode.Domain = parent.Domain
 	parentNode.OnChain = parent.OnChain
 	parentNode.Compression = parent.Compression
 
-	payload, err := metanet.SerializePayload(parentNode)
+	return metanet.SerializePayload(parentNode)
+}
+
+// buildParentSelfUpdate builds and signs a SelfUpdate transaction for a parent
+// directory node, reflecting its current children list using MutationBatch.
+// Returns the signed tx hex and tx ID hex.
+func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex string, err error) {
+	parentKP, err := e.Wallet.DeriveNodeKey(parent.VaultIndex, parent.ChildIndices, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("derive parent key: %w", err)
+	}
+
+	payload, err := e.buildParentUpdatePayload(parent, nil)
 	if err != nil {
 		return "", "", fmt.Errorf("serialize payload: %w", err)
 	}
@@ -109,21 +127,20 @@ func (e *Engine) buildParentSelfUpdate(parent *NodeState) (txHex string, txIDHex
 		}
 	}()
 
-	mtx, err := buildUnsignedSelfUpdateTx(parentKP, parentTxIDBytes, payload, parentUTXO, feeUTXO, changeAddr)
-	if err != nil {
-		return "", "", fmt.Errorf("build self-update tx: %w", err)
-	}
+	batch := tx.NewMutationBatch()
+	batch.AddSelfUpdate(parentKP.PublicKey, parentTxIDBytes, payload, parentUTXO, parentKP.PrivateKey)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(changeAddr)
 
-	signedHex, err := signSelfUpdateTx(mtx, parentUTXO, feeUTXO)
+	signedHex, result, err := buildAndSignBatch(batch)
 	if err != nil {
-		return "", "", fmt.Errorf("sign self-update tx: %w", err)
+		return "", "", fmt.Errorf("batch self-update tx: %w", err)
 	}
 
 	success = true
-	txIDHex = hex.EncodeToString(mtx.TxID)
+	txIDHex = hex.EncodeToString(result.TxID)
 
-	// Track new UTXOs from this transaction.
-	e.TrackNewUTXOs(mtx, parent.PubKeyHex, changePubHex)
+	e.TrackBatchUTXOs(result, []string{parent.PubKeyHex}, changePubHex)
 
 	return signedHex, txIDHex, nil
 }
