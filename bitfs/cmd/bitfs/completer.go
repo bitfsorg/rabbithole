@@ -64,6 +64,26 @@ func (sc *shellCompleter) Do(line []rune, pos int) ([][]rune, int) {
 		candidates := sc.completeRemotePath(currentPrefix)
 		return formatCandidates(candidates, currentPrefix)
 
+	case "cat", "get":
+		// Remote path completion.
+		candidates := sc.completeRemotePath(currentPrefix)
+		return formatCandidates(candidates, currentPrefix)
+
+	case "mget":
+		// Remote directory path completion.
+		candidates := sc.completeRemotePath(currentPrefix)
+		return formatCandidates(candidates, currentPrefix)
+
+	case "mput":
+		if argIndex <= 1 {
+			// First arg: local directory.
+			candidates := sc.completeLocalPath(currentPrefix)
+			return formatCandidates(candidates, currentPrefix)
+		}
+		// Second arg: remote path.
+		candidates := sc.completeRemotePath(currentPrefix)
+		return formatCandidates(candidates, currentPrefix)
+
 	default:
 		return nil, 0
 	}

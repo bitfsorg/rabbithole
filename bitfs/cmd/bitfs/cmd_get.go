@@ -13,9 +13,10 @@ import (
 	"github.com/tongxiaofeng/libbitfs-go/config"
 )
 
-// runUnpublish handles the "bitfs unpublish" command.
-func runUnpublish(args []string) int {
-	fs := flag.NewFlagSet("unpublish", flag.ContinueOnError)
+// runGet handles the "bitfs get" command.
+func runGet(args []string) int {
+	fs := flag.NewFlagSet("get", flag.ContinueOnError)
+	vault := fs.String("vault", "", "vault name")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing)")
 
@@ -24,11 +25,15 @@ func runUnpublish(args []string) int {
 	}
 
 	if fs.NArg() < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: bitfs unpublish <domain>\n")
+		fmt.Fprintf(os.Stderr, "Usage: bitfs get <remote-path> [local-path] [--vault N]\n")
 		return exitUsageError
 	}
 
-	domain := fs.Arg(0)
+	remotePath := fs.Arg(0)
+	localPath := ""
+	if fs.NArg() > 1 {
+		localPath = fs.Arg(1)
+	}
 
 	pass, err := resolvePassword(*password)
 	if err != nil {
@@ -43,8 +48,18 @@ func runUnpublish(args []string) int {
 	}
 	defer func() { _ = eng.Close() }()
 
-	result, err := eng.Unpublish(&engine.UnpublishOpts{
-		Domain: domain,
+	vaultIdx, err := eng.ResolveVaultIndex(*vault)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitNotFound
+	}
+
+	localDir, _ := os.Getwd()
+	result, err := eng.Get(&engine.GetOpts{
+		VaultIndex: vaultIdx,
+		RemotePath: remotePath,
+		LocalDir:   localDir,
+		LocalPath:  localPath,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

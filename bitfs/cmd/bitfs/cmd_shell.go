@@ -22,8 +22,8 @@ import (
 
 // shellCommands is the list of all shell command names for tab completion.
 var shellCommands = []string{
-	"ls", "cd", "lcd", "pwd", "mkdir", "put", "rm", "mv", "cp",
-	"link", "sell", "encrypt", "help", "quit", "exit",
+	"ls", "cd", "lcd", "pwd", "cat", "get", "mget", "mput", "mkdir", "put", "rm", "mv", "cp",
+	"link", "sell", "encrypt", "publish", "unpublish", "help", "quit", "exit",
 }
 
 // runShell handles the "bitfs shell" command.
@@ -214,9 +214,9 @@ func runShell(args []string) int {
 					fmt.Println("Buyers will need to re-purchase access at the new location.")
 					fmt.Print("Continue? [y/N] ")
 					var confirm string
-					fmt.Scanln(&confirm)
+					_, _ = fmt.Scanln(&confirm)
 					if confirm != "y" && confirm != "Y" {
-						fmt.Println("Move cancelled.")
+						fmt.Println("Move canceled.")
 						continue
 					}
 				}
@@ -286,6 +286,151 @@ func runShell(args []string) int {
 			} else {
 				fmt.Println(result.Message)
 			}
+		case "cat":
+			if len(cmdArgs) < 1 {
+				fmt.Println("Usage: cat <path>")
+				continue
+			}
+			remotePath := resolvePath(cwd, cmdArgs[0])
+			force := len(cmdArgs) > 1 && cmdArgs[1] == "--force"
+			reader, info, catErr := eng.Cat(&engine.CatOpts{
+				VaultIndex: vaultIdx,
+				Path:       remotePath,
+			})
+			switch {
+			case catErr != nil:
+				fmt.Fprintf(os.Stderr, "Error: %v\n", catErr)
+			case !force && !isTextMime(info.MimeType):
+				fmt.Fprintf(os.Stderr, "Binary file (%s, %d bytes). Use 'cat <path> --force' or 'get' to download.\n", info.MimeType, info.FileSize)
+			default:
+				if _, cpErr := io.Copy(os.Stdout, reader); cpErr != nil {
+					fmt.Fprintf(os.Stderr, "Error writing output: %v\n", cpErr)
+				}
+			}
+		case "get":
+			if len(cmdArgs) < 1 {
+				fmt.Println("Usage: get <remote> [local]")
+				continue
+			}
+			remotePath := resolvePath(cwd, cmdArgs[0])
+			localPath := ""
+			if len(cmdArgs) > 1 {
+				localPath = cmdArgs[1]
+				if !filepath.IsAbs(localPath) {
+					localPath = filepath.Join(localCwd, localPath)
+				}
+			}
+			result, getErr := eng.Get(&engine.GetOpts{
+				VaultIndex: vaultIdx,
+				RemotePath: remotePath,
+				LocalDir:   localCwd,
+				LocalPath:  localPath,
+			})
+			if getErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", getErr)
+			} else {
+				fmt.Println(result.Message)
+			}
+		case "mget":
+			if len(cmdArgs) < 1 {
+				fmt.Println("Usage: mget <remote-dir> [local-dir]")
+				continue
+			}
+			remotePath := resolvePath(cwd, cmdArgs[0])
+			localDir := localCwd
+			if len(cmdArgs) > 1 {
+				localDir = cmdArgs[1]
+				if !filepath.IsAbs(localDir) {
+					localDir = filepath.Join(localCwd, localDir)
+				}
+			}
+			mgetResult, mgetErr := eng.Mget(&engine.MgetOpts{
+				VaultIndex: vaultIdx,
+				RemotePath: remotePath,
+				LocalDir:   localDir,
+			})
+			if mgetErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", mgetErr)
+			} else {
+				fmt.Printf("Downloaded %d files, created %d directories\n",
+					mgetResult.FilesDownloaded, mgetResult.DirsCreated)
+				for _, e := range mgetResult.Errors {
+					fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
+				}
+			}
+		case "mput":
+			if len(cmdArgs) < 1 {
+				fmt.Println("Usage: mput <local-dir> [remote-dir]")
+				continue
+			}
+			localDir := cmdArgs[0]
+			if !filepath.IsAbs(localDir) {
+				localDir = filepath.Join(localCwd, localDir)
+			}
+			remoteDir := cwd
+			if len(cmdArgs) > 1 {
+				remoteDir = resolvePath(cwd, cmdArgs[1])
+			}
+			access := "free"
+			if len(cmdArgs) > 2 {
+				access = cmdArgs[2]
+			}
+			mputResult, mputErr := eng.Mput(&engine.MputOpts{
+				VaultIndex: vaultIdx,
+				LocalDir:   localDir,
+				RemoteDir:  remoteDir,
+				Access:     access,
+			})
+			if mputErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", mputErr)
+			} else {
+				fmt.Printf("Uploaded %d files, created %d directories\n",
+					mputResult.FilesUploaded, mputResult.DirsCreated)
+				for _, e := range mputResult.Errors {
+					fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
+				}
+			}
+		case "publish":
+			if len(cmdArgs) == 0 {
+				// List all publish bindings.
+				bindings := eng.State.ListPublishBindings()
+				if len(bindings) == 0 {
+					fmt.Println("No published domains.")
+				} else {
+					for _, b := range bindings {
+						verified := ""
+						if b.Verified {
+							verified = " [verified]"
+						}
+						fmt.Printf("  %s -> vault %d%s\n", b.Domain, b.VaultIndex, verified)
+					}
+				}
+			} else {
+				domain := cmdArgs[0]
+				result, pubErr := eng.Publish(&engine.PublishOpts{
+					VaultIndex: vaultIdx,
+					Domain:     domain,
+				})
+				if pubErr != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", pubErr)
+				} else {
+					fmt.Println(result.Message)
+				}
+			}
+		case "unpublish":
+			if len(cmdArgs) < 1 {
+				fmt.Println("Usage: unpublish <domain>")
+				continue
+			}
+			domain := cmdArgs[0]
+			result, unpubErr := eng.Unpublish(&engine.UnpublishOpts{
+				Domain: domain,
+			})
+			if unpubErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", unpubErr)
+			} else {
+				fmt.Println(result.Message)
+			}
 		case "encrypt":
 			if len(cmdArgs) < 1 {
 				fmt.Println("Usage: encrypt <path>")
@@ -312,6 +457,10 @@ func shellHelp() {
   cd [path]                Change remote directory
   lcd [path]               Change local directory (or print current)
   pwd                      Print remote working directory
+  cat <path>               View file contents (--force for binary)
+  get <remote> [local]     Download file to local disk
+  mget <dir> [local-dir]   Download directory recursively
+  mput <dir> [remote-dir]  Upload directory recursively
   mkdir <path>             Create directory
   put <local> <remote>     Upload file
   rm <path>                Remove file/directory
@@ -320,6 +469,8 @@ func shellHelp() {
   link <target> <path>     Create hard link (--soft for symlink)
   sell <path> <price>      Set price (sats/KB)
   encrypt <path>           Encrypt (FREE -> PRIVATE)
+  publish [domain]         List or bind domain via DNSLink
+  unpublish <domain>       Remove domain binding
   help                     Show this help
   quit                     Exit shell`)
 }

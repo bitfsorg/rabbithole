@@ -46,6 +46,14 @@ func run(args []string) int {
 		return runWallet(cmdArgs)
 	case "vault":
 		return runVault(cmdArgs)
+	case "cat":
+		return runCat(cmdArgs)
+	case "get":
+		return runGet(cmdArgs)
+	case "mget":
+		return runMget(cmdArgs)
+	case "mput":
+		return runMput(cmdArgs)
 	case "put":
 		return runPut(cmdArgs)
 	case "mkdir":
@@ -104,6 +112,10 @@ Vault Commands:
   vault delete   Delete a vault
 
 File Commands:
+  cat            View file contents
+  get            Download a file
+  mget           Download a directory recursively
+  mput           Upload a directory recursively
   put            Upload a file
   mkdir          Create a directory
   rm             Remove a file or directory
