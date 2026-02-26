@@ -11,14 +11,13 @@ import (
 	"github.com/tongxiaofeng/libbitfs-go/tx"
 )
 
-// EncryptOpts holds options for the Encrypt operation.
-type EncryptOpts struct {
-	VaultIndex uint32
-	Path       string // remote path
+// DecryptOpts holds options for the Decrypt operation.
+type DecryptOpts struct {
+	Path string // remote path
 }
 
-// EncryptNode re-encrypts content from FREE to PRIVATE access.
-func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
+// DecryptNode re-encrypts content from PRIVATE to FREE access.
+func (e *Engine) DecryptNode(opts *DecryptOpts) (*Result, error) {
 	nodeState := e.State.FindNodeByPath(opts.Path)
 	if nodeState == nil {
 		return nil, fmt.Errorf("engine: node %q not found", opts.Path)
@@ -27,7 +26,7 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 	if nodeState.Type != "file" {
 		return nil, fmt.Errorf("engine: %q is not a file", opts.Path)
 	}
-	if nodeState.Access != "free" {
+	if nodeState.Access != "private" {
 		return nil, fmt.Errorf("engine: %q is already %s", opts.Path, nodeState.Access)
 	}
 
@@ -43,8 +42,8 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 		return nil, fmt.Errorf("engine: read content: %w", err)
 	}
 
-	// Re-encrypt FREE → PRIVATE.
-	reEncResult, err := method42.ReEncrypt(ciphertext, kp.PrivateKey, kp.PublicKey, keyHash, method42.AccessFree, method42.AccessPrivate)
+	// Re-encrypt PRIVATE -> FREE.
+	reEncResult, err := method42.ReEncrypt(ciphertext, kp.PrivateKey, kp.PublicKey, keyHash, method42.AccessPrivate, method42.AccessFree)
 	if err != nil {
 		return nil, fmt.Errorf("engine: re-encrypt: %w", err)
 	}
@@ -65,7 +64,7 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 		Version:   1,
 		Type:      metanet.NodeTypeFile,
 		Op:        metanet.OpUpdate,
-		Access:    metanet.AccessPrivate,
+		Access:    metanet.AccessFree,
 		KeyHash:   reEncResult.KeyHash,
 		Timestamp: uint64(time.Now().Unix()),
 	}
@@ -130,7 +129,7 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 
 	txHex, result, err := buildAndSignBatch(batch)
 	if err != nil {
-		return nil, fmt.Errorf("engine: batch encrypt tx: %w", err)
+		return nil, fmt.Errorf("engine: batch decrypt tx: %w", err)
 	}
 
 	success = true
@@ -138,14 +137,14 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 
 	// Update local state.
 	nodeState.TxID = txIDHex
-	nodeState.Access = "private"
+	nodeState.Access = "free"
 	nodeState.KeyHash = hex.EncodeToString(reEncResult.KeyHash)
 	e.TrackBatchUTXOs(result, []string{nodeState.PubKeyHex}, changePubHex)
 
 	return &Result{
 		TxHex:   txHex,
 		TxID:    txIDHex,
-		Message: fmt.Sprintf("Encrypted %s (FREE -> PRIVATE)", opts.Path),
+		Message: fmt.Sprintf("Decrypted %s (PRIVATE -> FREE)", opts.Path),
 		NodePub: nodeState.PubKeyHex,
 	}, nil
 }
