@@ -26,7 +26,7 @@
 2. **外部文档 (网站/白皮书) 偏离设计** — Staking 立场、检索费货币、HTLC 流程、三层架构
 3. **TLV 协议格式** — tag 编号偏移、PRIVATE 模式字段未实现
 
-> **2026-02-28 更新**: 11 个不一致项已修复（H1, L1, L5, L6, L7, M2, M3, M4, M6, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。详见各项末尾的 ✅ 标记。
+> **2026-02-28 更新**: 12 个不一致项已修复/关闭（H1, C3, L1, L5, L6, L7, M2, M3, M4, M6, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。C3 因设计决策 #10（废弃明文字段，改用 enc_payload 整体加密）已关闭。详见各项末尾的 ✅ 标记。
 
 ---
 
@@ -98,6 +98,8 @@ tagPricePerKB = 0x08  // 设计 = 9
 
 **影响**: PRIVATE 模式文件的钱包恢复机制无法工作——即使数据写入链上，恢复时也无法从 TLV 中提取恢复所需的明文信息。
 **修复**: 在 `parser.go` 中添加 tag 24/26 的序列化/反序列化支持。
+
+✅ **已关闭** (2026-02-28): 设计决策 #10 废弃了 `private_key_hash`/`private_file_index` 明文字段（见 `2-SystemDesign.zh.md:369-372`）。PRIVATE 模式改用 `enc_payload`（tag 0x1B）整体加密 TLV，钱包恢复通过 BIP32 派生 D_node → ECDH → 解密 enc_payload。`parser.go` 已完整实现 `enc_payload` 的序列化/反序列化。此项不再需要修复。
 
 ---
 
@@ -300,14 +302,14 @@ L4 测试 T9.5.2 与 Section 9-B 一致（SOFT 链接方案）。
 | 字段组 | 涉及 Field # |
 |--------|-------------|
 | 文件元数据 | metadata(20), version_log(21), share_list(22) |
-| PRIVATE 模式 | private_key_hash(24), private_file_index(26) — 见 C3 |
+| ~~PRIVATE 模式~~ | ~~private_key_hash(24), private_file_index(26)~~ — ✅ 已废弃 (设计决策 #10, 改用 enc_payload) |
 | 内容分片 | chunk_index(30), total_chunks(31), recombination_hash(32) |
 | Rabin 签名 | rabin_signature(33), rabin_pubkey(34) |
 | 注册表 | registry_txid(36), registry_vout(37) |
 | ISO/RevShare | iso(38) |
 | 访问控制 | acl_ref(40) |
 
-**说明**: 部分为尚未实现的功能（Rabin、分片、ISO），属于路线图中的计划项。但 PRIVATE 模式字段 (C3) 是当前需要的。
+**说明**: 部分为尚未实现的功能（Rabin、分片、ISO），属于路线图中的计划项。PRIVATE 模式字段已通过设计决策 #10 废弃（改用 enc_payload），不再需要。其余 H5 字段在后续开发中已全部实现。
 
 ---
 
@@ -620,10 +622,10 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 | 19 | ~~**M2/M3** storage/config 命名~~ | ✅ 已修复 (2026-02-28) |
 | 20 | **H8** CLI 命令补齐 | spec/10-cmd-bitfs.md |
 | 21 | ~~**M6** Shell 命令文档~~ | ✅ 已修复 (2026-02-28) |
-| 22 | **C3** PRIVATE TLV 序列化 | 需代码变更: parser.go |
+| 22 | ~~**C3** PRIVATE TLV 序列化~~ | ✅ 已关闭 (2026-02-28, 设计决策 #10 废弃, 改用 enc_payload) |
 
 ### P3 — 低优先级
 
 L1-L8 和其余 MEDIUM 项。可在相关功能开发时顺便修复。
 
-> ✅ 2026-02-28 已修复: L1, L5, L6, L7, M4, M8。另外 `spec/10-cmd-bitfs.md` 中 cobra/viper 依赖描述已替换为标准库 `flag`。
+> ✅ 2026-02-28 已修复/关闭: C3, L1, L5, L6, L7, M4, M8。C3 因设计决策 #10 关闭（改用 enc_payload）。`spec/10-cmd-bitfs.md` 中 cobra/viper 依赖描述已替换为标准库 `flag`。
