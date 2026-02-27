@@ -1918,6 +1918,7 @@ bitfs/
 │   ├── bls/main.go           # 独立只读工具
 │   ├── bcat/main.go
 │   ├── bget/main.go
+│   ├── bmget/main.go
 │   ├── bstat/main.go
 │   ├── btree/main.go
 │   └── bitfs/main.go         # 主命令 (子命令 + shell)

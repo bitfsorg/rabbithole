@@ -26,7 +26,7 @@
 2. **外部文档 (网站/白皮书) 偏离设计** — Staking 立场、检索费货币、HTLC 流程、三层架构
 3. **TLV 协议格式** — tag 编号偏移、PRIVATE 模式字段未实现
 
-> **2026-02-28 更新**: 16 个不一致项已修复/关闭（C2, C3, H1, H2, H3, H4, L1, L5, L6, L7, M2, M3, M4, M6, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。C3 因设计决策 #10（废弃明文字段，改用 enc_payload 整体加密）已关闭。详见各项末尾的 ✅ 标记。
+> **2026-02-28 更新**: 23 个不一致项已修复/关闭（C2, C3, H1, H2, H3, H4, H8, H11, H12, L1, L5, L6, L7, M1, M2, M3, M4, M5, M6, M7, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。详见各项末尾的 ✅ 标记。
 
 ---
 
@@ -368,6 +368,8 @@ L4 测试 T9.5.2 与 Section 9-B 一致（SOFT 链接方案）。
 
 **实现了但不在 Spec 中的命令**: `cat`, `get`, `mget`, `mput`, `verify`, `wallet balance`
 
+✅ **已修复** (2026-02-28): `spec/10-cmd-bitfs.md` 子命令列表已与代码对齐。添加 cat/get/mget/mput/verify/wallet show/wallet balance；移除 init（改为 wallet init）；`wallet info` 改为 `wallet show`；mv 跨目录改为 2 笔 SelfUpdate；shell-only 命令（rmdir/decrypt/sales）和计划中命令（vault use/info, wallet restore, daemon status/config）分别注明。
+
 ---
 
 ### H9. DNS TXT 记录格式分歧
@@ -417,6 +419,8 @@ aes_key = KDF(P_node.x, key_hash)
 
 `P_node` 是 33 字节压缩公钥，`P_node.x` 是 32 字节 x 坐标。KDF 输入不同会产生不同密钥。
 
+✅ **已修复** (2026-02-28): 白皮书 line 114 已使用 `P_node.x`，与代码和设计文档一致。
+
 ---
 
 ### H12. 白皮书省略 HKDF info 参数
@@ -429,6 +433,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 **代码/设计**: HKDF 有三个输入 `(ikm, salt, info)`，白皮书缺少 `info="bitfs-file-encryption"`。
 按白皮书实现（无 info）会派生出不同的密钥。
 
+✅ **已修复** (2026-02-28): 白皮书 line 99 已包含完整参数 `HKDF-SHA256(point.x, key_hash, info="bitfs-file-encryption")`，line 113-114 也已使用正确的 `.x` 和 info 参数。Line 117 非正式说明中的 `P_node` 也已更正为 `P_node.x`。
+
 ---
 
 ## MEDIUM — 命名不一致与过时信息 (11)
@@ -436,6 +442,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 ### M1. 项目结构过时
 
 `2-SystemDesign.zh.md:1916-1943` 列出的 `bitfs/internal/` 包含 method42/wallet/tx/metanet/spv/storage/x402/paymail 等包，这些在 2026-02-21 libbitfs 抽取重构后已移至 `libbitfs-go/`。当前 `bitfs/internal/` 只有 `buyer/`, `client/`, `daemon/`, `engine/`。
+
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 项目结构已更新为当前布局（internal/ 仅 buyer/client/daemon/engine，libbitfs-go 独立列出 11 包），bmget 工具已补充。
 
 ---
 
@@ -484,6 +492,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 
 `spec/TASKS.md:57` 仍写 "546 聪"。`integration/tx_build_extra_test.go:547` 断言 `DustLimit==546` 会失败（实际为 1）。
 
+✅ **已修复** (2026-02-28): `spec/TASKS.md` 中 DustLimit 已更正为 1 聪。`tx_build_extra_test.go` 中无 546 残留。
+
 ---
 
 ### M6. 用户指南缺失 7 个 Shell 命令
@@ -497,6 +507,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 ### M7. Go 版本：设计说 1.21+，实际 1.25.6
 
 `2-SystemDesign.zh.md:1906` 写 "Go 1.21+"，误导最低版本要求。实际 `go.mod` 声明 `go 1.25.6`。
+
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md:1904` 已更正为 `Go 1.25.6`。
 
 ---
 
@@ -618,17 +630,17 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 | 12 | **H7** Exit codes | spec/10-cmd-bitfs.md:67-76 |
 | 13 | **H9** DNS 记录格式 | 统一 paymail/dns.go 与 engine/publish.go |
 | 14 | **H10** BIP32 路径 | bitfs.org Website-Content-Outline.md:202-207 |
-| 15 | **H11/H12** 白皮书 KDF | BitFS-Whitepaper-Outline.md:99,114 |
-| 16 | **M5** 失败测试 | tx_build_extra_test.go:547, TASKS.md:57 |
+| 15 | ~~**H11/H12** 白皮书 KDF~~ | ✅ 已修复 (2026-02-28) |
+| 16 | ~~**M5** 失败测试~~ | ✅ 已修复 (2026-02-28) |
 
 ### P2 — 版本更新时修复 (文档更新)
 
 | # | Issue | 修改位置 |
 |---|-------|----------|
 | 17 | ~~**H2** libbitfs 包列表~~ | ✅ 已修复 (2026-02-28) |
-| 18 | **M1** 项目结构 | 2-SystemDesign.zh.md:1916-1943 |
+| 18 | ~~**M1** 项目结构~~ | ✅ 已修复 (2026-02-28) |
 | 19 | ~~**M2/M3** storage/config 命名~~ | ✅ 已修复 (2026-02-28) |
-| 20 | **H8** CLI 命令补齐 | spec/10-cmd-bitfs.md |
+| 20 | ~~**H8** CLI 命令补齐~~ | ✅ 已修复 (2026-02-28) |
 | 21 | ~~**M6** Shell 命令文档~~ | ✅ 已修复 (2026-02-28) |
 | 22 | ~~**C3** PRIVATE TLV 序列化~~ | ✅ 已关闭 (2026-02-28, 设计决策 #10 废弃, 改用 enc_payload) |
 
@@ -636,4 +648,4 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 
 L1-L8 和其余 MEDIUM 项。可在相关功能开发时顺便修复。
 
-> ✅ 2026-02-28 已修复/关闭: C2, C3, H2, H3, H4, L1, L5, L6, L7, M4, M8。C2 删除保留字段重新编号; C3 因设计决策 #10 关闭（改用 enc_payload）; H2 包列表已补全; H3 rm 交易数已更正; H4 mv 跨目录描述已统一。`spec/10-cmd-bitfs.md` 中 cobra/viper 依赖描述已替换为标准库 `flag`。
+> ✅ 2026-02-28 已修复/关闭共 23 项: C2, C3, H1, H2, H3, H4, H8, H11, H12, L1, L5, L6, L7, M1, M2, M3, M4, M5, M6, M7, M8，以及 spec/10 cobra/viper→flag。

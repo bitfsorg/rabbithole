@@ -114,7 +114,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 | 免费 | aes_key = HKDF(P_node.x, key_hash, "bitfs-file-encryption")（平凡密钥） | 知道 P_node 的任何人 |
 | 付费 | 标准 Method 42 ECDH capsule 交换 | 买方（HTLC 交换后）|
 
-**平凡密钥技巧**：免费数据使用 P_node 作为 KDF 输入 → aes_key = KDF(P_node, key_hash)。P_node 通过 DNS 公开 → 任何人可派生解密密钥，但磁盘上仍加密 → 统一存储模型。
+**平凡密钥技巧**：免费数据使用 P_node.x 作为 KDF 输入 → aes_key = HKDF(P_node.x, key_hash, "bitfs-file-encryption")。P_node 通过 DNS 公开 → 任何人可派生解密密钥，但磁盘上仍加密 → 统一存储模型。
 
 **私有数据**：整个 Metanet 载荷用所有者对称密钥加密 → 文件名/大小/时间戳/目录结构在链上不可见。
 

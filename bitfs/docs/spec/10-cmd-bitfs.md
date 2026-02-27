@@ -11,45 +11,54 @@ BitFS 的主 CLI 二进制文件——去中心化加密文件系统的所有者
 ### 子命令
 
 ```
-bitfs init [--network <net>]           初始化钱包 + 第一个保险库
+# 文件操作
 bitfs put <local> <remote>             上传文件（创建或更新）
 bitfs put --encrypt <local> <remote>   上传加密文件（私有模式）
 bitfs mkdir <path>                     创建目录
-bitfs rm <path>                        删除文件（从父目录移除 ChildEntry）
+bitfs rm <path>                        删除文件（从父目录移除 ChildEntry, 1 笔交易）
 bitfs rm -r <path>                     递归删除
-bitfs rmdir <path>                     删除空目录
 bitfs mv <src> <dst>                   移动/重命名
   同目录: 仅修改父目录 ChildEntry.Name (1 笔交易)
-  跨目录: DELETE 旧节点 + CreateChild 新节点, 新密钥, 重新加密 (4 笔交易)
-  注意: 跨目录 mv 付费文件会使已购买 capsule 失效
-bitfs cp <src> <dst>                   复制（创建独立新节点）
+  跨目录: SelfUpdate 源父 + SelfUpdate 目标父 (2 笔交易, P_node 不变)
+bitfs cp <src> <dst>                   复制（创建独立新节点, 新密钥）
 bitfs link <target> <name>             硬链接
 bitfs link -s <target> <name>          软链接（本地）
 bitfs link -s <domain/path> <name>     软链接（远程）
+bitfs cat <path>                       输出文件内容到 stdout
+bitfs get <remote> [local]             下载文件到本地
+bitfs mget <dir> [local-dir]           批量下载目录
+bitfs mput <dir> [remote-dir]          批量上传目录
 bitfs encrypt <path>                   免费 -> 私有
-bitfs decrypt <path>                   私有 -> 免费
 bitfs sell <path> --price <sat/KB>     设置价格（付费模式）
 bitfs sell <path> --recursive          递归定价
-bitfs sales [path]                     查看销售记录
+bitfs verify <txid>                    SPV 验证交易
 bitfs publish <domain> [path]          通过 DNSLink 绑定域名
 bitfs unpublish <domain>               解绑域名
 bitfs publish                          列出绑定
+
+# 钱包/保险库
+bitfs wallet init                      创建 HD 钱包
+bitfs wallet show                      显示钱包信息（地址、网络）
+bitfs wallet balance                   查询余额
+bitfs wallet fund                      显示充值地址
 bitfs vault create <name>              创建新保险库
 bitfs vault list                       列出保险库
-bitfs vault use <name>                 切换活跃保险库
-bitfs vault info [name]                显示保险库详情
 bitfs vault rename <old> <new>         重命名保险库
 bitfs vault delete <name>              删除保险库（软删除）
-bitfs wallet init                      创建 HD 钱包
-bitfs wallet restore                   从助记词恢复
-bitfs wallet info                      余额、地址、网络
-bitfs wallet fund                      显示充值地址
+
+# 守护进程
 bitfs daemon start [-d]                启动守护进程（可选后台运行）
 bitfs daemon stop                      停止守护进程
-bitfs daemon status                    显示守护进程状态
-bitfs daemon config                    显示守护进程配置
+
+# 交互模式
 bitfs shell                            FTP 风格交互式 REPL
 ```
+
+> **Shell-only 命令**: 以下命令仅在 `bitfs shell` REPL 中可用，不作为顶层 CLI 子命令：
+> `rmdir`, `decrypt`, `sales`。
+>
+> **计划中**: 以下命令已设计但尚未实现：
+> `vault use <name>`, `vault info [name]`, `wallet restore`, `daemon status`, `daemon config`。
 
 ### Shell 命令
 
