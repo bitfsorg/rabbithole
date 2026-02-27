@@ -51,6 +51,40 @@ bitfs daemon config                    显示守护进程配置
 bitfs shell                            FTP 风格交互式 REPL
 ```
 
+### Shell 命令
+
+`bitfs shell` 进入 FTP 风格交互式 REPL，支持以下命令：
+
+| 命令 | 语法 | 说明 |
+|------|------|------|
+| help | `help` | 显示命令帮助 |
+| quit/exit | `quit` / `exit` | 退出 shell |
+| pwd | `pwd` | 显示当前远程目录 |
+| cd | `cd <path>` | 切换远程目录 |
+| lcd | `lcd <path>` | 切换本地目录 |
+| ls | `ls [path]` | 列出目录内容 |
+| mkdir | `mkdir <path>` | 创建目录 |
+| put | `put <local> <remote> [access]` | 上传文件 (access: free/private/paid) |
+| rm | `rm [-r] <path>` | 删除文件或目录 (-r 递归) |
+| mv | `mv <src> <dst>` | 移动/重命名 |
+| cp | `cp <src> <dst>` | 复制文件 |
+| link | `link [-s] <target> <name>` | 创建链接 (-s 软链接, 默认硬链接) |
+| sell | `sell <path> <price> [--recursive]` | 设置价格 |
+| cat | `cat <path> [--force]` | 显示文件内容 |
+| get | `get <remote> [local]` | 下载文件 |
+| mget | `mget <dir> [local-dir]` | 批量下载 |
+| mput | `mput <dir> [remote-dir]` | 批量上传 |
+| publish | `publish [domain]` | 发布/列出 DNSLink 绑定 |
+| unpublish | `unpublish <domain>` | 解绑域名 |
+| encrypt | `encrypt <path>` | Free -> Private |
+| decrypt | `decrypt <path>` | Private -> Free |
+| sales | `sales` | 查看销售记录 |
+
+Shell 特性：
+- Tab 补全（命令名 + 路径）
+- 命令历史 (`~/.bitfs/shell_history`, 0600 权限, 500 行上限)
+- 路径解析：支持 `.` / `..` / 绝对路径 / 相对路径
+
 ### 全局标志
 
 ```

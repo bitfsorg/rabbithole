@@ -14,13 +14,13 @@ BitFS 的 Method 42 ECDH 加密引擎。基于 secp256k1 椭圆曲线 Diffie-Hel
 ### 类型
 
 ```go
-// Access represents the three access control modes for encrypted content.
-type Access int
+// AccessLevel represents the three access control modes for encrypted content.
+type AccessLevel int32
 
 const (
-    AccessPrivate Access = 0 // Only owner can decrypt (ECDH with BIP32 D_node)
-    AccessFree    Access = 1 // Anyone can decrypt (D_node = scalar 1, trivial ECDH)
-    AccessPaid    Access = 2 // Buyer decrypts via HTLC-obtained capsule
+    AccessPrivate AccessLevel = 0 // Only owner can decrypt (ECDH with BIP32 D_node)
+    AccessFree    AccessLevel = 1 // Anyone can decrypt (D_node = scalar 1, trivial ECDH)
+    AccessPaid    AccessLevel = 2 // Buyer decrypts via HTLC-obtained capsule
 )
 
 // EncryptResult holds the output of an encryption operation.
@@ -33,6 +33,13 @@ type EncryptResult struct {
 type DecryptResult struct {
     Plaintext []byte // Decrypted content
     KeyHash   []byte // Recomputed SHA256(SHA256(plaintext)) for verification
+}
+
+// RabinKeyPair holds the private and public keys for Rabin signatures.
+type RabinKeyPair struct {
+    P *big.Int // Private Blum prime p ≡ 3 (mod 4)
+    Q *big.Int // Private Blum prime q ≡ 3 (mod 4)
+    N *big.Int // Public modulus n = p * q
 }
 ```
 
@@ -63,14 +70,14 @@ func DeriveAESKey(sharedSecretX []byte, keyHash []byte) ([]byte, error)
 //
 // For AccessFree: D_node is scalar 1 (anyone can reproduce).
 // For AccessPrivate/AccessPaid: D_node is the BIP32-derived private key.
-func Encrypt(plaintext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, access Access) (*EncryptResult, error)
+func Encrypt(plaintext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, access AccessLevel) (*EncryptResult, error)
 
 // Decrypt decrypts ciphertext using Method 42.
 //   - Performs ECDH to recover shared secret
 //   - Derives AES key using provided key_hash
 //   - Decrypts with AES-256-GCM
 //   - Verifies SHA256(SHA256(plaintext)) == key_hash
-func Decrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, access Access) (*DecryptResult, error)
+func Decrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, access AccessLevel) (*DecryptResult, error)
 
 // DecryptWithCapsule decrypts using a pre-computed ECDH shared secret (capsule).
 // Used by buyers who obtained the capsule via HTLC atomic swap.
@@ -79,7 +86,7 @@ func DecryptWithCapsule(ciphertext []byte, capsule []byte, keyHash []byte) (*Dec
 // ReEncrypt re-encrypts content from one access mode to another.
 // Decrypts with fromAccess parameters, then encrypts with toAccess parameters.
 // Returns new ciphertext and new key_hash.
-func ReEncrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, fromAccess, toAccess Access) (*EncryptResult, error)
+func ReEncrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, fromAccess, toAccess AccessLevel) (*EncryptResult, error)
 
 // ComputeCapsule computes the ECDH capsule for a buyer.
 // capsule = ECDH(D_node, P_buyer).x
@@ -92,6 +99,41 @@ func ComputeCapsuleHash(capsule []byte) []byte
 // FreePrivateKey returns a private key with scalar value 1.
 // Used for AccessFree mode where ECDH(1, P_node) = P_node.
 func FreePrivateKey() *ec.PrivateKey
+
+// --- Rabin Signature Scheme ---
+// Rabin signatures provide content authenticity using the computational
+// difficulty of finding modular square roots without factoring n.
+
+// GenerateRabinKey generates a new Rabin key pair.
+// bitSize is the bit length of each prime (e.g., 1024 for 2048-bit modulus).
+// Both primes are Blum primes: p ≡ 3 (mod 4), q ≡ 3 (mod 4).
+func GenerateRabinKey(bitSize int) (*RabinKeyPair, error)
+
+// RabinSign signs a message using the Rabin signature scheme.
+// Finds padding U such that H(message || U) is a quadratic residue mod N.
+// H = SHA256 mapped to [0, N).
+// Returns (S, U) where S² ≡ H(message || U) (mod N).
+// Uses CRT for efficient square root computation.
+func RabinSign(key *RabinKeyPair, message []byte) (sig *big.Int, pad []byte, err error)
+
+// RabinVerify verifies a Rabin signature.
+// Checks: sig² ≡ H(message || pad) (mod n).
+// Requires only the public modulus n.
+func RabinVerify(n *big.Int, message []byte, sig *big.Int, pad []byte) bool
+
+// SerializeRabinSignature encodes (sig, pad) to binary.
+// Format: sigLen(4 BE) || sig(big-endian) || padLen(4 BE) || pad
+func SerializeRabinSignature(sig *big.Int, pad []byte) []byte
+
+// DeserializeRabinSignature decodes binary to (sig, pad).
+func DeserializeRabinSignature(data []byte) (*big.Int, []byte, error)
+
+// SerializeRabinPubKey encodes the public modulus n.
+// Returns n.Bytes() (big-endian).
+func SerializeRabinPubKey(n *big.Int) []byte
+
+// DeserializeRabinPubKey decodes the public modulus.
+func DeserializeRabinPubKey(data []byte) (*big.Int, error)
 ```
 
 ### 内部（未导出）函数
@@ -135,6 +177,31 @@ Info = "bitfs-file-encryption"    // constant string
 Len  = 32                         // AES-256 key length
 ```
 
+### Rabin 签名方案
+
+Rabin 签名基于二次剩余的计算困难性。无需椭圆曲线——安全性归约到整数分解。
+
+#### 密钥生成
+- 生成两个 Blum 素数 p, q：p ≡ 3 (mod 4), q ≡ 3 (mod 4)
+- 公钥: n = p × q
+- 私钥: (p, q)
+
+#### 签名
+1. 尝试随机填充 U (最多 256 次)
+2. 计算 h = SHA256(message || U) mod n
+3. 检查 h 是否为模 p 和模 q 的二次剩余 (Legendre 符号)
+4. 若是，通过 CRT 计算平方根: S = sqrt(h) mod n
+5. 返回 (S, U)
+
+#### 验证
+- 验证: S² mod n == SHA256(message || pad) mod n
+- 仅需公钥 n
+
+#### 序列化格式
+
+**签名**: `sigLen(4 BE) || sig(big-endian bytes) || padLen(4 BE) || pad`
+**公钥**: `n.Bytes()` (大端序)
+
 ## 错误处理
 
 | 错误 | 条件 |
@@ -146,6 +213,9 @@ Len  = 32                         // AES-256 key length
 | `ErrKeyHashMismatch` | SHA256(SHA256(decrypted)) != 期望的 key_hash |
 | `ErrInvalidAccess` | 未知的访问模式值 |
 | `ErrHKDFFailure` | HKDF 密钥推导失败 |
+| `ErrRabinKeyGeneration` | 素数生成失败 |
+| `ErrRabinNoQuadraticResidue` | 256 次填充尝试均未找到二次剩余 |
+| `ErrInvalidRabinSignature` | 签名反序列化失败 |
 
 ## 安全考量
 
@@ -160,3 +230,6 @@ Len  = 32                         // AES-256 key length
 5. **密钥哈希作为内容承诺**：解密后，调用者必须验证 `SHA256(SHA256(plaintext)) == key_hash` 以确认内容完整性。
 
 6. **无密钥存储**：AES 密钥从 (D_node, P_node, key_hash) 确定性推导，永远不会存储。只需备份 HD 种子。
+
+7. **Rabin 安全性**：2048-bit 模数 (1024-bit 素数) 提供 ~112-bit 安全强度。签名伪造等价于分解 n。
+8. **填充重试**：签名需要找到使哈希为二次剩余的填充。期望值约 4 次尝试，最坏 256 次。
