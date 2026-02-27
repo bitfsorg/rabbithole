@@ -22,16 +22,16 @@
 - `errors.go` — 包错误类型
 
 **验收标准**：
-- [ ] MainNetParams() 返回正确的参数（2100 万供应量、50 MNT 奖励、210K 减半、32MB 区块、10 分钟出块）
-- [ ] TestNetParams() 返回适合测试的独立参数
-- [ ] BlockReward(height) 对所有减半纪元（0 到 33+）返回正确的奖励
-- [ ] BlockReward 在最后一个减半纪元之后返回 0
-- [ ] TotalSupplyAtHeight 正确地将所有奖励累加到指定高度
-- [ ] TotalSupplyAtHeight 在最终高度等于 2,100,000,000,000,000 聪（2100 万 MNT）
-- [ ] GenesisBlock() 在 coinbase 中包含消息 "Metanet: Decentralized CDN on Bitcoin"
-- [ ] GenesisBlockHash() 在不同构建之间是确定性且稳定的
-- [ ] SerializeBlockHeader/DeserializeBlockHeader 往返正确
-- [ ] HashBlockHeader 生成 80 字节序列化区块头的双重 SHA256
+- [x]MainNetParams() 返回正确的参数（2100 万供应量、50 MNT 奖励、210K 减半、32MB 区块、10 分钟出块）
+- [x]TestNetParams() 返回适合测试的独立参数
+- [x]BlockReward(height) 对所有减半纪元（0 到 33+）返回正确的奖励
+- [x]BlockReward 在最后一个减半纪元之后返回 0
+- [x]TotalSupplyAtHeight 正确地将所有奖励累加到指定高度
+- [x]TotalSupplyAtHeight 在最终高度等于 2,100,000,000,000,000 聪（2100 万 MNT）
+- [x]GenesisBlock() 在 coinbase 中包含消息 "Metanet: Decentralized CDN on Bitcoin"
+- [x]GenesisBlockHash() 在不同构建之间是确定性且稳定的
+- [x]SerializeBlockHeader/DeserializeBlockHeader 往返正确
+- [x]HashBlockHeader 生成 80 字节序列化区块头的双重 SHA256
 
 **预估测试数**：18
 
@@ -50,22 +50,22 @@
 - `errors.go` — 包错误类型
 
 **验收标准**：
-- [ ] BuildCoinbaseCommitment 生成 `OP_RETURN MNMP <block_hash>` 格式
-- [ ] FindAuxPoWCommitment 正确从 coinbase 中提取区块哈希
-- [ ] FindAuxPoWCommitment 对不含 MNMP 标记的 coinbase 返回 nil
-- [ ] ValidateAuxPoW 接受有效的合并挖矿证明
-- [ ] ValidateAuxPoW 拒绝包含错误区块哈希的证明
-- [ ] ValidateAuxPoW 拒绝包含无效 coinbase 分支的证明
-- [ ] ValidateAuxPoW 拒绝未达到难度目标的证明
-- [ ] VerifyCoinbaseBranch 正确验证 Merkle 包含性
-- [ ] CalcNextDifficulty 与 Bitcoin 算法一致（限幅到 4 倍，相同公式）
-- [ ] CalcNextDifficulty 将时间跨度限制在 [expected/4, expected*4]
-- [ ] CompactToBig/BigToCompact 往返正确
-- [ ] HashMeetsTarget 正确比较哈希与紧凑目标
-- [ ] SerializeAnchorData/DeserializeAnchorData 往返正确
-- [ ] BuildAnchorTx 生成正确的 MNTA 格式
-- [ ] ValidateAnchorChain 检测断裂的链式连接
-- [ ] BuildBlockRangeMerkleRoot 计算正确的 Merkle 根
+- [x]BuildCoinbaseCommitment 生成 `OP_RETURN MNMP <block_hash>` 格式
+- [x]FindAuxPoWCommitment 正确从 coinbase 中提取区块哈希
+- [x]FindAuxPoWCommitment 对不含 MNMP 标记的 coinbase 返回 nil
+- [x]ValidateAuxPoW 接受有效的合并挖矿证明
+- [x]ValidateAuxPoW 拒绝包含错误区块哈希的证明
+- [x]ValidateAuxPoW 拒绝包含无效 coinbase 分支的证明
+- [x]ValidateAuxPoW 拒绝未达到难度目标的证明
+- [x]VerifyCoinbaseBranch 正确验证 Merkle 包含性
+- [x]CalcNextDifficulty 与 Bitcoin 算法一致（限幅到 4 倍，相同公式）
+- [x]CalcNextDifficulty 将时间跨度限制在 [expected/4, expected*4]
+- [x]CompactToBig/BigToCompact 往返正确
+- [x]HashMeetsTarget 正确比较哈希与紧凑目标
+- [x]SerializeAnchorData/DeserializeAnchorData 往返正确
+- [x]BuildAnchorTx 生成正确的 MNTA 格式
+- [x]ValidateAnchorChain 检测断裂的链式连接
+- [x]BuildBlockRangeMerkleRoot 计算正确的 Merkle 根
 
 **预估测试数**：22
 **依赖**：任务 1
@@ -89,19 +89,19 @@
 - `errors.go` — 包错误类型
 
 **验收标准**：
-- [ ] ComputeChallenge 是确定性的：相同的 (txid, period, numChunks) 始终产生相同结果
-- [ ] ComputeChallenge 对不同周期产生不同结果
-- [ ] ComputeChallenge 的 chunk_index 始终在 [0, numChunks) 范围内
-- [ ] BuildDealScript 生成正确的 OP_IF/ELSE/ENDIF 结构
-- [ ] BuildDealScript 包含正确的 OP_CHECKSIGVERIFY 和 OP_SHA256
-- [ ] BuildDealScript 包含正确的 OP_CHECKLOCKTIMEVERIFY
-- [ ] BuildClaimInput 生成 `<sig> <proof_data> OP_TRUE`
-- [ ] BuildRefundInput 生成 `<sig> OP_FALSE`
-- [ ] ComputeExpectedHash 匹配 SHA256(proof || chunk_data)
-- [ ] NewStorageDeal 创建正确数量的 UTXO
-- [ ] ValidateDealParams 拒绝零周期、零付款、无效密钥
-- [ ] StorageDeal -> T1.1（N 个包含预计算 expected_proof_hash 的 UTXO）
-- [ ] 挑战确定性 -> T1.2（可复现，每个 k 不同）
+- [x]ComputeChallenge 是确定性的：相同的 (txid, period, numChunks) 始终产生相同结果
+- [x]ComputeChallenge 对不同周期产生不同结果
+- [x]ComputeChallenge 的 chunk_index 始终在 [0, numChunks) 范围内
+- [x]BuildDealScript 生成正确的 OP_IF/ELSE/ENDIF 结构
+- [x]BuildDealScript 包含正确的 OP_CHECKSIGVERIFY 和 OP_SHA256
+- [x]BuildDealScript 包含正确的 OP_CHECKLOCKTIMEVERIFY
+- [x]BuildClaimInput 生成 `<sig> <proof_data> OP_TRUE`
+- [x]BuildRefundInput 生成 `<sig> OP_FALSE`
+- [x]ComputeExpectedHash 匹配 SHA256(proof || chunk_data)
+- [x]NewStorageDeal 创建正确数量的 UTXO
+- [x]ValidateDealParams 拒绝零周期、零付款、无效密钥
+- [x]StorageDeal -> T1.1（N 个包含预计算 expected_proof_hash 的 UTXO）
+- [x]挑战确定性 -> T1.2（可复现，每个 k 不同）
 
 **预估测试数**：16
 **依赖**：任务 1
@@ -121,22 +121,22 @@
 - `errors.go` — 包错误类型
 
 **验收标准**：
-- [ ] DeriveNodeKey 对不同的节点公钥产生不同的密钥
-- [ ] EncryptForNode 对不同的节点产生不同的密文
-- [ ] EncryptForNode 的密文与输入不同（已应用双重加密）
-- [ ] BuildMerkleTree 对已知测试向量生成正确的根
-- [ ] BuildMerkleTree 处理奇数叶子（复制最后一个）
-- [ ] GenerateMerkleProof 为任意叶子生成有效证明
-- [ ] VerifyMerkleProof 接受有效证明
-- [ ] VerifyMerkleProof 拒绝包含错误分片数据的证明
-- [ ] VerifyMerkleProof 拒绝包含错误兄弟节点的证明
-- [ ] ComputeProofHash 匹配 expected_hash 格式
-- [ ] VerifyStorageProof 接受完整的有效证明
-- [ ] VerifyStorageProof 拒绝错误的分片索引
-- [ ] VerifyStorageProof 拒绝被篡改的分片数据
-- [ ] SerializeProofData/DeserializeProofData 往返正确
-- [ ] ECDH 唯一性 -> T3.1（提供者密文 != 所有者密文）
-- [ ] Merkle 证明 -> T2.1、T2.2、T2.3（正确/错误/不匹配的证明）
+- [x]DeriveNodeKey 对不同的节点公钥产生不同的密钥
+- [x]EncryptForNode 对不同的节点产生不同的密文
+- [x]EncryptForNode 的密文与输入不同（已应用双重加密）
+- [x]BuildMerkleTree 对已知测试向量生成正确的根
+- [x]BuildMerkleTree 处理奇数叶子（复制最后一个）
+- [x]GenerateMerkleProof 为任意叶子生成有效证明
+- [x]VerifyMerkleProof 接受有效证明
+- [x]VerifyMerkleProof 拒绝包含错误分片数据的证明
+- [x]VerifyMerkleProof 拒绝包含错误兄弟节点的证明
+- [x]ComputeProofHash 匹配 expected_hash 格式
+- [x]VerifyStorageProof 接受完整的有效证明
+- [x]VerifyStorageProof 拒绝错误的分片索引
+- [x]VerifyStorageProof 拒绝被篡改的分片数据
+- [x]SerializeProofData/DeserializeProofData 往返正确
+- [x]ECDH 唯一性 -> T3.1（提供者密文 != 所有者密文）
+- [x]Merkle 证明 -> T2.1、T2.2、T2.3（正确/错误/不匹配的证明）
 
 **预估测试数**：20
 **依赖**：任务 1、任务 3（用于 ComputeChallenge）
@@ -161,20 +161,20 @@
 - `errors.go` — 包错误类型
 
 **验收标准**：
-- [ ] BuildFundingTx 创建正确的 2-of-2 多重签名输出
-- [ ] OpenChannel 初始化时全部容量在发起方
-- [ ] UpdateChannel 转移正确金额，递增序列号
-- [ ] UpdateChannel 返回前一个状态的撤销密钥
-- [ ] CloseChannelCooperative 生成有效的结算交易，无争议窗口
-- [ ] CloseChannelUnilateral 广播最新的承诺交易
-- [ ] BuildPunishmentTx 使用撤销密钥领取全部余额
-- [ ] VerifyVoucher 接受有效的签名承诺更新
-- [ ] VerifyVoucher 拒绝过期或被篡改的凭证
-- [ ] EncodeVoucher/DecodeVoucher 往返正确
-- [ ] FormatChannelID/ParseChannelID 往返正确
-- [ ] 支付通道开启 -> T4.2
-- [ ] 支付通道更新 -> T4.3
-- [ ] 支付通道关闭 -> T4.4
+- [x]BuildFundingTx 创建正确的 2-of-2 多重签名输出
+- [x]OpenChannel 初始化时全部容量在发起方
+- [x]UpdateChannel 转移正确金额，递增序列号
+- [x]UpdateChannel 返回前一个状态的撤销密钥
+- [x]CloseChannelCooperative 生成有效的结算交易，无争议窗口
+- [x]CloseChannelUnilateral 广播最新的承诺交易
+- [x]BuildPunishmentTx 使用撤销密钥领取全部余额
+- [x]VerifyVoucher 接受有效的签名承诺更新
+- [x]VerifyVoucher 拒绝过期或被篡改的凭证
+- [x]EncodeVoucher/DecodeVoucher 往返正确
+- [x]FormatChannelID/ParseChannelID 往返正确
+- [x]支付通道开启 -> T4.2
+- [x]支付通道更新 -> T4.3
+- [x]支付通道关闭 -> T4.4
 
 **预估测试数**：18
 **依赖**：任务 1
@@ -195,15 +195,15 @@
 - `errors.go` — 包错误类型
 
 **验收标准**：
-- [ ] NewOverlayService 使用本地节点正确初始化
-- [ ] Advertise 生成签名广告
-- [ ] VerifyAdvertisement 接受有效签名
-- [ ] VerifyAdvertisement 拒绝伪造签名
-- [ ] Discover 返回匹配的节点
-- [ ] LocateContent 找到拥有特定内容的节点
-- [ ] RegisterTopic/UnregisterTopic 正确管理订阅
-- [ ] PruneStalePeers 移除过期对等节点
-- [ ] 内存 PeerStore 的添加/移除/列表操作
+- [x]NewOverlayService 使用本地节点正确初始化
+- [x]Advertise 生成签名广告
+- [x]VerifyAdvertisement 接受有效签名
+- [x]VerifyAdvertisement 拒绝伪造签名
+- [x]Discover 返回匹配的节点
+- [x]LocateContent 找到拥有特定内容的节点
+- [x]RegisterTopic/UnregisterTopic 正确管理订阅
+- [x]PruneStalePeers 移除过期对等节点
+- [x]内存 PeerStore 的添加/移除/列表操作
 
 **预估测试数**：14
 **依赖**：任务 1
@@ -230,14 +230,14 @@
 - `cmd_mine.go` — `metanet mine` 实现
 
 **验收标准**：
-- [ ] `metanet init` 创建数据目录、生成密钥对、写入配置
-- [ ] `metanet init` 使用 `--testnet` 时使用测试网参数
-- [ ] `metanet init` 在已初始化时优雅失败
-- [ ] `metanet status --json` 生成有效的 JSON 输出
-- [ ] `metanet contracts --json` 以 JSON 格式列出合约
-- [ ] `metanet peers --json` 以 JSON 格式列出对等节点
-- [ ] 所有命令使用一致的退出码
-- [ ] `--help` 对所有子命令有效
+- [x]`metanet init` 创建数据目录、生成密钥对、写入配置
+- [x]`metanet init` 使用 `--testnet` 时使用测试网参数
+- [x]`metanet init` 在已初始化时优雅失败
+- [x]`metanet status --json` 生成有效的 JSON 输出
+- [x]`metanet contracts --json` 以 JSON 格式列出合约
+- [x]`metanet peers --json` 以 JSON 格式列出对等节点
+- [x]所有命令使用一致的退出码
+- [x]`--help` 对所有子命令有效
 
 **预估测试数**：12
 **依赖**：任务 1-6、`internal/config`
@@ -254,10 +254,10 @@
 - `validate.go` — 参数验证
 
 **验收标准**：
-- [ ] Load 解析有效的 TOML 配置
-- [ ] Load 对缺失字段返回默认值
-- [ ] Save 写入有效的 TOML
-- [ ] Validate 拒绝无效的端口号、路径等
+- [x]Load 解析有效的 TOML 配置
+- [x]Load 对缺失字段返回默认值
+- [x]Save 写入有效的 TOML
+- [x]Validate 拒绝无效的端口号、路径等
 
 **预估测试数**：8
 **依赖**：任务 1
