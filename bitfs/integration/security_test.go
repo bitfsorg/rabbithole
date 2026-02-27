@@ -381,7 +381,8 @@ func TestHTLCCapsuleHashIntegrity(t *testing.T) {
 	capsule, err := method42.ECDH(nodeKey.PrivateKey, nodeKey.PublicKey)
 	require.NoError(t, err)
 
-	hash1 := method42.ComputeCapsuleHash(capsule)
+	fileTxID := bytes.Repeat([]byte{0xf0}, 32) // mock file txid
+	hash1 := method42.ComputeCapsuleHash(fileTxID, capsule)
 	assert.Len(t, hash1, 32)
 
 	// Tamper capsule: flip a bit
@@ -389,7 +390,7 @@ func TestHTLCCapsuleHashIntegrity(t *testing.T) {
 	copy(tampered, capsule)
 	tampered[0] ^= 0x01
 
-	hash2 := method42.ComputeCapsuleHash(tampered)
+	hash2 := method42.ComputeCapsuleHash(fileTxID, tampered)
 	assert.NotEqual(t, hash1, hash2, "tampered capsule should produce different hash")
 }
 

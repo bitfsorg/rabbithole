@@ -177,14 +177,17 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	require.Len(t, capsule, 32, "capsule should be 32 bytes")
 	t.Logf("capsule: %x", capsule[:16])
 
-	// CapsuleHash = SHA256(capsule) -- used to lock the HTLC.
-	capsuleHash := method42.ComputeCapsuleHash(capsule)
+	// CapsuleHash = SHA256(fileTxID ‖ capsule) -- used to lock the HTLC.
+	fileTxID := bytes.Repeat([]byte{0xf0}, 32) // mock file txid for e2e test
+	capsuleHash := method42.ComputeCapsuleHash(fileTxID, capsule)
 	require.Len(t, capsuleHash, 32, "capsule hash should be 32 bytes")
 	t.Logf("capsuleHash: %x", capsuleHash[:16])
 
-	// Verify capsuleHash == SHA256(capsule) independently.
-	expectedHash := sha256.Sum256(capsule)
-	require.Equal(t, expectedHash[:], capsuleHash, "capsule hash should be SHA256(capsule)")
+	// Verify capsuleHash == SHA256(fileTxID ‖ capsule) independently.
+	expectedHasher := sha256.New()
+	expectedHasher.Write(fileTxID)
+	expectedHasher.Write(capsule)
+	require.Equal(t, expectedHasher.Sum(nil), capsuleHash, "capsule hash should be SHA256(fileTxID || capsule)")
 
 	// ==================================================================
 	// Step 6: Create x402 invoice.
@@ -537,7 +540,8 @@ func TestPaidPurchase_CryptoFlowUnit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, capsule, 32)
 
-	capsuleHash := method42.ComputeCapsuleHash(capsule)
+	fileTxID := bytes.Repeat([]byte{0xf0}, 32) // mock file txid for e2e test
+	capsuleHash := method42.ComputeCapsuleHash(fileTxID, capsule)
 	require.Len(t, capsuleHash, 32)
 
 	// ------------------------------------------------------------------

@@ -15,6 +15,7 @@ const defaultFeeRate = uint64(1) // 1 sat/byte
 // BuyResult holds the result of a successful purchase.
 type BuyResult struct {
 	Capsule      []byte // Decryption capsule (raw bytes)
+	CapsuleNonce []byte // Per-invoice nonce for capsule unlinkability (nil = legacy)
 	HTLCTxID     string // HTLC funding transaction ID (hex)
 	CostSatoshis uint64 // Total cost including fees
 }
@@ -110,6 +111,15 @@ func Buy(params *BuyParams) (*BuyResult, error) {
 		return nil, fmt.Errorf("buyer: invalid capsule hex in response: %w", err)
 	}
 
+	// Decode capsule nonce if present (used for per-purchase unlinkability).
+	var capsuleNonce []byte
+	if capsuleResp.CapsuleNonce != "" {
+		capsuleNonce, err = hex.DecodeString(capsuleResp.CapsuleNonce)
+		if err != nil {
+			return nil, fmt.Errorf("buyer: invalid capsule nonce hex in response: %w", err)
+		}
+	}
+
 	// Compute total cost: HTLC amount + fee (total input - change).
 	var totalInput uint64
 	for _, u := range utxos {
@@ -123,6 +133,7 @@ func Buy(params *BuyParams) (*BuyResult, error) {
 
 	return &BuyResult{
 		Capsule:      capsule,
+		CapsuleNonce: capsuleNonce,
 		HTLCTxID:     hex.EncodeToString(fundingResult.TxID),
 		CostSatoshis: cost,
 	}, nil

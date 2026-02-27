@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -719,4 +720,249 @@ func TestBuyEndpoint_OptionsPreflight(t *testing.T) {
 	d.Handler().ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// --- Invoice Eviction Tests ---
+
+func TestEvictExpiredInvoices_UnpaidExpired(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	// Insert an unpaid expired invoice.
+	d.invoicesMu.Lock()
+	d.invoices["unpaid-expired"] = &InvoiceRecord{
+		ID:     "unpaid-expired",
+		Expiry: time.Now().Add(-10 * time.Minute),
+		Paid:   false,
+	}
+	// Insert an unpaid non-expired invoice (should survive).
+	d.invoices["unpaid-fresh"] = &InvoiceRecord{
+		ID:     "unpaid-fresh",
+		Expiry: time.Now().Add(30 * time.Minute),
+		Paid:   false,
+	}
+	d.invoicesMu.Unlock()
+
+	evicted := d.evictExpiredInvoices()
+	assert.Equal(t, 1, evicted)
+
+	d.invoicesMu.RLock()
+	_, expiredExists := d.invoices["unpaid-expired"]
+	_, freshExists := d.invoices["unpaid-fresh"]
+	d.invoicesMu.RUnlock()
+
+	assert.False(t, expiredExists, "unpaid expired invoice should be evicted")
+	assert.True(t, freshExists, "unpaid fresh invoice should survive")
+}
+
+func TestEvictExpiredInvoices_RecentlyPaidNotEvicted(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	// Insert a paid invoice that expired recently (within maxInvoiceAge grace period).
+	d.invoicesMu.Lock()
+	d.invoices["paid-recent"] = &InvoiceRecord{
+		ID:     "paid-recent",
+		Expiry: time.Now().Add(-5 * time.Minute), // expired 5 min ago, well within 30 min grace
+		Paid:   true,
+	}
+	d.invoicesMu.Unlock()
+
+	// Also track its txid in usedTxIDs.
+	d.usedTxIDsMu.Lock()
+	d.usedTxIDs["tx-for-paid-recent"] = "paid-recent"
+	d.usedTxIDsMu.Unlock()
+
+	evicted := d.evictExpiredInvoices()
+	assert.Equal(t, 0, evicted, "recently paid invoice should NOT be evicted")
+
+	d.invoicesMu.RLock()
+	_, exists := d.invoices["paid-recent"]
+	d.invoicesMu.RUnlock()
+	assert.True(t, exists, "recently paid invoice should still exist")
+
+	// usedTxIDs entry should also survive.
+	d.usedTxIDsMu.Lock()
+	_, txExists := d.usedTxIDs["tx-for-paid-recent"]
+	d.usedTxIDsMu.Unlock()
+	assert.True(t, txExists, "usedTxIDs entry should survive for recent paid invoice")
+}
+
+func TestEvictExpiredInvoices_OldPaidEvicted(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	// Insert a paid invoice that expired well beyond the grace period.
+	d.invoicesMu.Lock()
+	d.invoices["paid-old"] = &InvoiceRecord{
+		ID:     "paid-old",
+		Expiry: time.Now().Add(-45 * time.Minute), // 45 min past expiry > 30 min grace
+		Paid:   true,
+	}
+	d.invoicesMu.Unlock()
+
+	// Track its txid in usedTxIDs.
+	d.usedTxIDsMu.Lock()
+	d.usedTxIDs["tx-for-paid-old"] = "paid-old"
+	d.usedTxIDsMu.Unlock()
+
+	evicted := d.evictExpiredInvoices()
+	assert.Equal(t, 1, evicted)
+
+	d.invoicesMu.RLock()
+	_, exists := d.invoices["paid-old"]
+	d.invoicesMu.RUnlock()
+	assert.False(t, exists, "old paid invoice should be evicted")
+
+	// usedTxIDs entry should also be cleaned up.
+	d.usedTxIDsMu.Lock()
+	_, txExists := d.usedTxIDs["tx-for-paid-old"]
+	d.usedTxIDsMu.Unlock()
+	assert.False(t, txExists, "usedTxIDs entry should be cleaned up for evicted paid invoice")
+}
+
+func TestEvictExpiredInvoices_MixedScenario(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	// 1. Unpaid expired -> evict
+	d.invoices["unpaid-exp"] = &InvoiceRecord{
+		ID: "unpaid-exp", Expiry: time.Now().Add(-1 * time.Hour), Paid: false,
+	}
+	// 2. Unpaid fresh -> keep
+	d.invoices["unpaid-fresh"] = &InvoiceRecord{
+		ID: "unpaid-fresh", Expiry: time.Now().Add(1 * time.Hour), Paid: false,
+	}
+	// 3. Paid recently expired -> keep (grace period)
+	d.invoices["paid-grace"] = &InvoiceRecord{
+		ID: "paid-grace", Expiry: time.Now().Add(-10 * time.Minute), Paid: true,
+	}
+	// 4. Paid old -> evict
+	d.invoices["paid-old"] = &InvoiceRecord{
+		ID: "paid-old", Expiry: time.Now().Add(-1 * time.Hour), Paid: true,
+	}
+	d.invoicesMu.Unlock()
+
+	d.usedTxIDsMu.Lock()
+	d.usedTxIDs["tx-grace"] = "paid-grace"
+	d.usedTxIDs["tx-old"] = "paid-old"
+	d.usedTxIDsMu.Unlock()
+
+	evicted := d.evictExpiredInvoices()
+	assert.Equal(t, 2, evicted, "should evict unpaid-exp and paid-old")
+
+	d.invoicesMu.RLock()
+	remaining := len(d.invoices)
+	_, hasFresh := d.invoices["unpaid-fresh"]
+	_, hasGrace := d.invoices["paid-grace"]
+	d.invoicesMu.RUnlock()
+
+	assert.Equal(t, 2, remaining)
+	assert.True(t, hasFresh)
+	assert.True(t, hasGrace)
+
+	// Check usedTxIDs cleanup.
+	d.usedTxIDsMu.Lock()
+	_, txGraceExists := d.usedTxIDs["tx-grace"]
+	_, txOldExists := d.usedTxIDs["tx-old"]
+	d.usedTxIDsMu.Unlock()
+	assert.True(t, txGraceExists, "tx-grace should survive")
+	assert.False(t, txOldExists, "tx-old should be cleaned up")
+}
+
+func TestServePaidContent_InvoiceCapRejects503(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+	d.config.X402.Enabled = true
+
+	meta.nodes["/premium/capped.dat"] = &NodeInfo{
+		Type:       "file",
+		FileSize:   1024,
+		Access:     "paid",
+		PricePerKB: 10,
+		PNode:      validPnodeBytes(),
+		KeyHash:    make([]byte, 32),
+	}
+
+	// Fill the invoice map to maxInvoices with non-expired, unpaid invoices
+	// that won't be evicted.
+	d.invoicesMu.Lock()
+	for i := 0; i < maxInvoices; i++ {
+		id := fmt.Sprintf("fill-%d", i)
+		d.invoices[id] = &InvoiceRecord{
+			ID:     id,
+			Expiry: time.Now().Add(1 * time.Hour),
+			Paid:   false,
+		}
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("GET", "/premium/capped.dat", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "INVOICE_LIMIT")
+}
+
+func TestServePaidContent_InvoiceCapEvictsAndSucceeds(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+	d.config.X402.Enabled = true
+
+	meta.nodes["/premium/evict-ok.dat"] = &NodeInfo{
+		Type:       "file",
+		FileSize:   1024,
+		Access:     "paid",
+		PricePerKB: 10,
+		PNode:      validPnodeBytes(),
+		KeyHash:    make([]byte, 32),
+	}
+
+	// Fill to maxInvoices, but make all of them expired+unpaid (evictable).
+	d.invoicesMu.Lock()
+	for i := 0; i < maxInvoices; i++ {
+		id := fmt.Sprintf("expired-%d", i)
+		d.invoices[id] = &InvoiceRecord{
+			ID:     id,
+			Expiry: time.Now().Add(-1 * time.Hour),
+			Paid:   false,
+		}
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("GET", "/premium/evict-ok.dat", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	// Should succeed with 402 (not 503) because eviction freed space.
+	assert.Equal(t, http.StatusPaymentRequired, w.Code)
+
+	// All old expired invoices should be gone, only the new one remains.
+	d.invoicesMu.RLock()
+	count := len(d.invoices)
+	d.invoicesMu.RUnlock()
+	assert.Equal(t, 1, count, "only the newly created invoice should remain")
+}
+
+func TestStartInvoiceEviction_StopsOnContextCancel(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Insert an expired invoice.
+	d.invoicesMu.Lock()
+	d.invoices["evict-me"] = &InvoiceRecord{
+		ID:     "evict-me",
+		Expiry: time.Now().Add(-1 * time.Hour),
+		Paid:   false,
+	}
+	d.invoicesMu.Unlock()
+
+	// Start eviction — it won't fire until the ticker interval.
+	d.startInvoiceEviction(ctx)
+
+	// Cancel immediately; the goroutine should exit cleanly without panic.
+	cancel()
+
+	// Give a small window for the goroutine to exit.
+	time.Sleep(50 * time.Millisecond)
+
+	// The invoice may or may not have been evicted (depends on timing),
+	// but the test verifies no goroutine leak or panic.
 }

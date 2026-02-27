@@ -1701,20 +1701,26 @@ func TestDaemon_CleansUpExpiredInvoices(t *testing.T) {
 		Expiry: time.Now().Add(1 * time.Hour),
 		Paid:   false,
 	}
-	d.invoices["paid-expired"] = &InvoiceRecord{
-		ID:     "paid-expired",
+	d.invoices["paid-recent"] = &InvoiceRecord{
+		ID:     "paid-recent",
+		Expiry: time.Now().Add(-5 * time.Minute),
+		Paid:   true, // recently paid — within grace period, should survive
+	}
+	d.invoices["paid-old"] = &InvoiceRecord{
+		ID:     "paid-old",
 		Expiry: time.Now().Add(-1 * time.Hour),
-		Paid:   true, // paid invoices should NOT be cleaned up
+		Paid:   true, // paid but well past grace period — should be evicted
 	}
 	d.invoicesMu.Unlock()
 
-	d.cleanupExpiredInvoices()
+	d.evictExpiredInvoices()
 
 	d.invoicesMu.RLock()
 	defer d.invoicesMu.RUnlock()
 	assert.NotContains(t, d.invoices, "expired-inv")
 	assert.Contains(t, d.invoices, "fresh-inv")
-	assert.Contains(t, d.invoices, "paid-expired", "paid invoices must be preserved")
+	assert.Contains(t, d.invoices, "paid-recent", "recently paid invoices within grace period must be preserved")
+	assert.NotContains(t, d.invoices, "paid-old", "paid invoices past grace period should be evicted")
 }
 
 func TestRateLimiter_CleansUpStaleClients(t *testing.T) {

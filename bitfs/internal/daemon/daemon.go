@@ -78,6 +78,7 @@ type NodeInfo struct {
 	MimeType   string
 	FileSize   uint64
 	KeyHash    []byte
+	FileTxID   []byte // 32-byte file transaction ID (binds capsule hash to file identity)
 	Access     string // "free", "paid", "private"
 	PricePerKB uint64
 	Children   []ChildInfo
@@ -234,7 +235,8 @@ type Daemon struct {
 	rateLimiter *rateLimiter
 
 	// Background cleanup
-	stopCleanup chan struct{}
+	stopCleanup    chan struct{}
+	cancelEviction context.CancelFunc // stops the invoice eviction goroutine
 
 	// Invoice persistence directory (empty = disabled).
 	invoiceDir string
@@ -325,6 +327,11 @@ func (d *Daemon) Start() error {
 	d.stopCleanup = make(chan struct{})
 	go d.runCleanup()
 
+	// Start invoice eviction goroutine (context-based lifecycle).
+	evictCtx, evictCancel := context.WithCancel(context.Background())
+	d.cancelEviction = evictCancel
+	d.startInvoiceEviction(evictCtx)
+
 	// Start in background
 	go func() {
 		var err error
@@ -354,6 +361,9 @@ func (d *Daemon) Stop(ctx context.Context) error {
 
 	if d.stopCleanup != nil {
 		close(d.stopCleanup)
+	}
+	if d.cancelEviction != nil {
+		d.cancelEviction()
 	}
 
 	err := d.server.Shutdown(ctx)
@@ -422,19 +432,6 @@ func (d *Daemon) cleanupExpiredSessions() {
 	for id, session := range d.sessions {
 		if now.After(session.ExpiresAt) {
 			delete(d.sessions, id)
-		}
-	}
-}
-
-// cleanupExpiredInvoices removes invoices that have expired.
-func (d *Daemon) cleanupExpiredInvoices() {
-	d.invoicesMu.Lock()
-	defer d.invoicesMu.Unlock()
-
-	now := time.Now()
-	for id, inv := range d.invoices {
-		if !inv.Paid && now.After(inv.Expiry) {
-			delete(d.invoices, id)
 		}
 	}
 }
@@ -519,7 +516,7 @@ func (d *Daemon) runCleanup() {
 		select {
 		case <-ticker.C:
 			d.cleanupExpiredSessions()
-			d.cleanupExpiredInvoices()
+			d.evictExpiredInvoices()
 			if d.rateLimiter != nil {
 				d.rateLimiter.cleanup()
 			}

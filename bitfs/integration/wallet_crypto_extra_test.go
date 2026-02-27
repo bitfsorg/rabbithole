@@ -545,8 +545,8 @@ func TestCapsuleComputationConsistency(t *testing.T) {
 	assert.Equal(t, plaintext, decResult.Plaintext, "capsule round-trip must recover original plaintext")
 }
 
-// TestCapsuleHashIsSHA256 verifies ComputeCapsuleHash == SHA256(capsule).
-func TestCapsuleHashIsSHA256(t *testing.T) {
+// TestCapsuleHashBindsFileTxID verifies ComputeCapsuleHash == SHA256(fileTxID ‖ capsule).
+func TestCapsuleHashBindsFileTxID(t *testing.T) {
 	w, _, _ := createTestWallet(t, &wallet.MainNet)
 	nodeKey, err := w.DeriveNodeKey(0, []uint32{1}, nil)
 	require.NoError(t, err)
@@ -561,10 +561,13 @@ func TestCapsuleHashIsSHA256(t *testing.T) {
 	capsule, err := method42.ComputeCapsule(nodeKey.PrivateKey, nodeKey.PublicKey, buyerKey.PublicKey, keyHash)
 	require.NoError(t, err)
 
-	capsuleHash := method42.ComputeCapsuleHash(capsule)
+	fileTxID := bytes.Repeat([]byte{0xf0}, 32) // mock file txid
+	capsuleHash := method42.ComputeCapsuleHash(fileTxID, capsule)
 
-	manual := sha256.Sum256(capsule)
-	assert.Equal(t, manual[:], capsuleHash, "ComputeCapsuleHash must equal SHA256(capsule)")
+	manual := sha256.New()
+	manual.Write(fileTxID)
+	manual.Write(capsule)
+	assert.Equal(t, manual.Sum(nil), capsuleHash, "ComputeCapsuleHash must equal SHA256(fileTxID || capsule)")
 }
 
 // TestDecryptWithCapsuleMatchesRegularDecrypt verifies that DecryptWithCapsule

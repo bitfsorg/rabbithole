@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,19 +19,21 @@ import (
 
 // InvoiceRecord tracks a pending or completed content purchase.
 type InvoiceRecord struct {
-	ID           string    `json:"invoice_id"`
-	TotalPrice   uint64    `json:"total_price"`
-	NodePNode    []byte    `json:"-"`
-	KeyHash      []byte    `json:"-"`
-	PricePerKB   uint64    `json:"price_per_kb"`
-	FileSize     uint64    `json:"file_size"`
-	PaymentAddr  string    `json:"payment_addr"`
-	SellerPubKey string    `json:"seller_pubkey"`        // Hex-encoded compressed seller pubkey (for HTLC 2-of-2 multisig)
-	CapsuleHash  string    `json:"capsule_hash"`
-	HTLCScript   []byte    `json:"-"`                    // Precomputed HTLC script for verification
-	Capsule      []byte    `json:"capsule,omitempty"`    // ECDH capsule for buyer (persisted for crash recovery)
-	Expiry       time.Time `json:"expiry"`
-	Paid         bool      `json:"paid"`
+	ID            string    `json:"invoice_id"`
+	TotalPrice    uint64    `json:"total_price"`
+	NodePNode     []byte    `json:"-"`
+	KeyHash       []byte    `json:"-"`
+	FileTxID      []byte    `json:"-"`                       // 32-byte file transaction ID (binds capsule hash to file identity)
+	PricePerKB    uint64    `json:"price_per_kb"`
+	FileSize      uint64    `json:"file_size"`
+	PaymentAddr   string    `json:"payment_addr"`
+	SellerPubKey  string    `json:"seller_pubkey"`           // Hex-encoded compressed seller pubkey (for HTLC 2-of-2 multisig)
+	CapsuleHash   string    `json:"capsule_hash"`
+	HTLCScript    []byte    `json:"-"`                       // Precomputed HTLC script for verification
+	Capsule       []byte    `json:"capsule,omitempty"`       // ECDH capsule for buyer (persisted for crash recovery)
+	CapsuleNonce  []byte    `json:"capsule_nonce,omitempty"` // Per-invoice nonce for capsule unlinkability
+	Expiry        time.Time `json:"expiry"`
+	Paid          bool      `json:"paid"`
 }
 
 // DefaultInvoiceExpiry is the default invoice time-to-live.
@@ -38,6 +41,20 @@ const DefaultInvoiceExpiry = 1 * time.Hour
 
 // maxHTLCBodySize is the maximum size of an HTLC transaction body (1 MB).
 const maxHTLCBodySize = 1 << 20
+
+const (
+	// invoiceEvictionInterval is how often the background eviction loop runs.
+	invoiceEvictionInterval = 5 * time.Minute
+
+	// maxInvoiceAge is the maximum age for any invoice (paid or unpaid) before
+	// it becomes eligible for eviction. Paid invoices are kept for this duration
+	// past their expiry as a grace period for crash recovery and auditing.
+	maxInvoiceAge = 30 * time.Minute
+
+	// maxInvoices is the hard cap on total invoice count. When reached, eviction
+	// runs eagerly; if still at cap, new invoice creation is rejected with 503.
+	maxInvoices = 10000
+)
 
 // servePaidContent returns 402 Payment Required for paid content,
 // generating and storing an invoice for the purchase flow.
@@ -77,12 +94,31 @@ func (d *Daemon) servePaidContent(w http.ResponseWriter, node *NodeInfo) {
 		TotalPrice:   inv.Price,
 		NodePNode:    node.PNode,
 		KeyHash:      node.KeyHash,
+		FileTxID:     node.FileTxID,
 		PricePerKB:   inv.PricePerKB,
 		FileSize:     inv.FileSize,
 		PaymentAddr:  inv.PaymentAddr,
 		SellerPubKey: sellerPubKeyHex,
 		Expiry:       time.Unix(inv.Expiry, 0),
 		Paid:         false,
+	}
+
+	// Enforce invoice cap: eagerly evict if at capacity.
+	d.invoicesMu.RLock()
+	atCap := len(d.invoices) >= maxInvoices
+	d.invoicesMu.RUnlock()
+
+	if atCap {
+		d.evictExpiredInvoices()
+		// Re-check after eviction.
+		d.invoicesMu.RLock()
+		stillAtCap := len(d.invoices) >= maxInvoices
+		d.invoicesMu.RUnlock()
+		if stillAtCap {
+			writeJSONError(w, http.StatusServiceUnavailable, "INVOICE_LIMIT",
+				"Too many active invoices, please try again later")
+			return
+		}
 	}
 
 	// Store the invoice.
@@ -152,9 +188,13 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 				if err == nil {
 					nodePriv, nodePub, err := d.wallet.DeriveNodeKeyPair(invoice.NodePNode)
 					if err == nil {
-						capsule, err := method42.ComputeCapsule(nodePriv, nodePub, buyerPub, invoice.KeyHash)
+						// Use invoice ID bytes as capsule nonce for per-purchase unlinkability.
+						// This ensures each capsule is unique even if the same buyer purchases
+						// the same file multiple times, preventing on-chain linkability.
+						invoiceIDBytes, _ := hex.DecodeString(invoice.ID)
+						capsule, err := method42.ComputeCapsuleWithNonce(nodePriv, nodePub, buyerPub, invoice.KeyHash, invoiceIDBytes)
 						if err == nil {
-							capsuleHash := method42.ComputeCapsuleHash(capsule)
+							capsuleHash := method42.ComputeCapsuleHash(invoice.FileTxID, capsule)
 							// Build HTLC script for payment verification.
 							sellerPriv2, _, kpErr := d.wallet.GetSellerKeyPair()
 							var htlcScript []byte
@@ -167,9 +207,11 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 									CapsuleHash:  capsuleHash,
 									Amount:       invoice.TotalPrice,
 									Timeout:      x402.DefaultHTLCTimeout,
+									InvoiceID:    invoiceIDBytes,
 								})
 							}
 							invoice.Capsule = capsule
+							invoice.CapsuleNonce = invoiceIDBytes
 							invoice.CapsuleHash = hex.EncodeToString(capsuleHash)
 							if len(htlcScript) > 0 {
 								invoice.HTLCScript = htlcScript
@@ -183,7 +225,7 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	buyInfoResp := map[string]interface{}{
 		"invoice_id":    invoice.ID,
 		"total_price":   invoice.TotalPrice,
 		"capsule_hash":  invoice.CapsuleHash,
@@ -192,7 +234,12 @@ func (d *Daemon) handleGetBuyInfo(w http.ResponseWriter, r *http.Request) {
 		"payment_addr":  invoice.PaymentAddr,
 		"seller_pubkey": invoice.SellerPubKey,
 		"paid":          invoice.Paid,
-	})
+	}
+	// Include capsule nonce so the buyer can derive the matching buyer_mask for decryption.
+	if len(invoice.CapsuleNonce) > 0 {
+		buyInfoResp["capsule_nonce"] = hex.EncodeToString(invoice.CapsuleNonce)
+	}
+	_ = json.NewEncoder(w).Encode(buyInfoResp)
 }
 
 // handleSubmitHTLC handles POST /_bitfs/buy/{txid} and accepts an HTLC
@@ -320,11 +367,16 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 	_ = d.persistInvoice(invoice)
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	resp := map[string]interface{}{
 		"invoice_id": invoice.ID,
 		"capsule":    hex.EncodeToString(invoice.Capsule),
 		"paid":       true,
-	})
+	}
+	// Include capsule nonce so the buyer can derive the matching buyer_mask.
+	if len(invoice.CapsuleNonce) > 0 {
+		resp["capsule_nonce"] = hex.EncodeToString(invoice.CapsuleNonce)
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleSales handles GET /_bitfs/sales and returns sales (invoice) records,
@@ -390,4 +442,70 @@ func (d *Daemon) handleSales(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(records)
+}
+
+// evictExpiredInvoices removes stale invoices and their associated usedTxIDs entries.
+//
+// Eviction rules:
+//   - Unpaid invoices past their Expiry are removed immediately.
+//   - Paid invoices are removed only after maxInvoiceAge past their Expiry,
+//     giving a grace period for crash recovery and audit queries.
+//
+// Lock ordering: invoicesMu first, then usedTxIDsMu (never reversed).
+// Returns the number of evicted invoices.
+func (d *Daemon) evictExpiredInvoices() int {
+	now := time.Now()
+
+	// Phase 1: collect eviction candidates under invoicesMu.
+	d.invoicesMu.Lock()
+	var evictedIDs []string
+	var paidEvictedIDs []string // track paid invoices separately for usedTxIDs cleanup
+	for id, inv := range d.invoices {
+		if !inv.Paid && now.After(inv.Expiry) {
+			// Unpaid + expired: evict immediately.
+			evictedIDs = append(evictedIDs, id)
+			delete(d.invoices, id)
+		} else if inv.Paid && now.Sub(inv.Expiry) > maxInvoiceAge {
+			// Paid but well past expiry grace period: evict.
+			evictedIDs = append(evictedIDs, id)
+			paidEvictedIDs = append(paidEvictedIDs, id)
+			delete(d.invoices, id)
+		}
+	}
+	d.invoicesMu.Unlock()
+
+	// Phase 2: clean usedTxIDs for evicted paid invoices.
+	if len(paidEvictedIDs) > 0 {
+		// Build a set for O(1) lookup.
+		evictedSet := make(map[string]struct{}, len(paidEvictedIDs))
+		for _, id := range paidEvictedIDs {
+			evictedSet[id] = struct{}{}
+		}
+		d.usedTxIDsMu.Lock()
+		for txid, invoiceID := range d.usedTxIDs {
+			if _, ok := evictedSet[invoiceID]; ok {
+				delete(d.usedTxIDs, txid)
+			}
+		}
+		d.usedTxIDsMu.Unlock()
+	}
+
+	return len(evictedIDs)
+}
+
+// startInvoiceEviction runs a background goroutine that periodically evicts
+// stale invoices. It stops when ctx is cancelled.
+func (d *Daemon) startInvoiceEviction(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(invoiceEvictionInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				d.evictExpiredInvoices()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }

@@ -414,9 +414,12 @@ func TestFullLifecycle(t *testing.T) {
 		require.NoError(t, err, "seller compute capsule")
 		require.Len(t, sellerCapsule, 32)
 
-		capsuleHash := method42.ComputeCapsuleHash(sellerCapsule)
-		expectedHash := sha256.Sum256(sellerCapsule)
-		assert.Equal(t, expectedHash[:], capsuleHash, "capsule hash = SHA256(capsule)")
+		fileTxID := bytes.Repeat([]byte{0xf0}, 32) // mock file txid for e2e test
+		capsuleHash := method42.ComputeCapsuleHash(fileTxID, sellerCapsule)
+		expectedHasher := sha256.New()
+		expectedHasher.Write(fileTxID)
+		expectedHasher.Write(sellerCapsule)
+		assert.Equal(t, expectedHasher.Sum(nil), capsuleHash, "capsule hash = SHA256(fileTxID || capsule)")
 
 		// Buyer receives the capsule (via HTLC reveal) and decrypts.
 		// DecryptWithCapsule uses ECDH(D_buyer, P_file) to derive the buyer mask,

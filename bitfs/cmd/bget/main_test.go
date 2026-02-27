@@ -358,7 +358,7 @@ func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
 	// Compute XOR-masked capsule for buyer.
 	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
 	require.NoError(t, err)
-	capsuleHash := method42.ComputeCapsuleHash(capsule)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
 
 	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 	capsuleHashHex := hex.EncodeToString(capsuleHash)
@@ -426,7 +426,7 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 	// Compute XOR-masked capsule for buyer.
 	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
 	require.NoError(t, err)
-	capsuleHash := method42.ComputeCapsuleHash(capsule)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
 
 	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 	capsuleHashHex := hex.EncodeToString(capsuleHash)

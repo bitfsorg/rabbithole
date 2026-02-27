@@ -62,12 +62,14 @@ type BuyInfo struct {
 	CapsuleHash  string `json:"capsule_hash"`
 	Price        uint64 `json:"price"`
 	PaymentAddr  string `json:"payment_addr"`
-	SellerPubKey string `json:"seller_pubkey"` // Hex-encoded compressed seller pubkey
+	SellerPubKey string `json:"seller_pubkey"`       // Hex-encoded compressed seller pubkey
+	CapsuleNonce string `json:"capsule_nonce,omitempty"` // Hex-encoded per-invoice nonce for capsule unlinkability
 }
 
 // CapsuleResponse holds the re-encryption capsule returned after HTLC payment.
 type CapsuleResponse struct {
-	Capsule string `json:"capsule"`
+	Capsule      string `json:"capsule"`
+	CapsuleNonce string `json:"capsule_nonce,omitempty"` // Hex-encoded per-invoice nonce for capsule unlinkability
 }
 
 // SaleRecord represents a completed or pending sale.
