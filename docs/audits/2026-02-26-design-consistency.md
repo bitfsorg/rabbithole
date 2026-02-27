@@ -26,7 +26,7 @@
 2. **外部文档 (网站/白皮书) 偏离设计** — Staking 立场、检索费货币、HTLC 流程、三层架构
 3. **TLV 协议格式** — tag 编号偏移、PRIVATE 模式字段未实现
 
-> **2026-02-28 更新**: 12 个不一致项已修复/关闭（H1, C3, L1, L5, L6, L7, M2, M3, M4, M6, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。C3 因设计决策 #10（废弃明文字段，改用 enc_payload 整体加密）已关闭。详见各项末尾的 ✅ 标记。
+> **2026-02-28 更新**: 16 个不一致项已修复/关闭（C2, C3, H1, H2, H3, H4, L1, L5, L6, L7, M2, M3, M4, M6, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。C3 因设计决策 #10（废弃明文字段，改用 enc_payload 整体加密）已关闭。详见各项末尾的 ✅ 标记。
 
 ---
 
@@ -82,6 +82,8 @@ tagPricePerKB = 0x08  // 设计 = 9
 
 **影响**: 第三方按设计文档实现的 TLV parser 将产生不兼容的二进制格式。
 **修复**: 更新设计文档，删除 reserved field 5 并重新编号，以匹配代码实际使用的 tag 值。
+
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 中 `encrypted_hash = 5` 保留字段已删除，`file_size` 重新编号为 field 5，所有后续字段编号与代码 tag 字节一致。
 
 ---
 
@@ -264,6 +266,8 @@ revenue_share: {
 
 **修复**: 更新 `0-OverallDesign.zh.md` 列出全部 11 个包。移除 L1 中对 Rabin 包的引用，或将其标记为 "计划中"。
 
+✅ **已修复** (2026-02-28): `0-OverallDesign.zh.md:60-72` 已列出全部 11 个包（method42, wallet, tx, metanet, spv, storage, paymail, x402, network, config, revshare）。
+
 ---
 
 ### H3. rm 交易数量矛盾 (L2 vs L3)
@@ -277,6 +281,8 @@ revenue_share: {
 L3 解释了为何只需 1 笔：硬链接可能从其他目录引用同一 `P_node`，不能安全花费。
 
 **修复**: 更新 `2-SystemDesign.zh.md:213,834` 为 1 笔交易。
+
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md:205` 已更正为 "1 笔交易: SelfUpdate 父目录移除 ChildEntry"。命令参考 (line 830) 也一致。
 
 ---
 
@@ -292,6 +298,8 @@ L3 解释了为何只需 1 笔：硬链接可能从其他目录引用同一 `P_n
 L4 测试 T9.5.2 与 Section 9-B 一致（SOFT 链接方案）。
 
 **修复**: 更新 Section 4-B 的描述以匹配 Section 9-B 和 L4 测试。
+
+✅ **已修复** (2026-02-28): `3-DetailedDesign.zh.md` Section 4-B (line 798) 和 Section 9-B (line 1488) 现在描述一致：mv 跨目录 = 2 笔 SelfUpdate（源父目录移除 ChildEntry + 目标父目录添加 ChildEntry），无 op=DELETE 或 moved_to。
 
 ---
 
@@ -592,7 +600,7 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 | # | Issue | 工作量 | 修改位置 |
 |---|-------|--------|----------|
 | 1 | **C1** HKDF info | 1 行 | 2-SystemDesign.zh.md:466 |
-| 2 | **C2** TLV tag 编号 | ~20 行 | 2-SystemDesign.zh.md:311-394 |
+| 2 | ~~**C2** TLV tag 编号~~ | ~~20 行~~ | ✅ 已修复 (2026-02-28) |
 | 3 | **C4** Dust limit | 3 处 | 白皮书:143-144, TASKS.md:57, git-remote-bitfs CLAUDE.md:64 |
 | 4 | **C5** Staking 立场 | 产品决策 | 统一网站或统一设计/白皮书 |
 | 5 | **C6** 检索费货币 | 1 处 | metanet.org Website-Content-Outline.md:181 |
@@ -605,8 +613,8 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 | # | Issue | 修改位置 |
 |---|-------|----------|
 | 9 | ~~**H1** revenue_share 类型~~ | ✅ 已修复 (2026-02-28) |
-| 10 | **H3** rm 交易数 | 2-SystemDesign.zh.md:213,834 |
-| 11 | **H4** mv 跨目录 | 3-DetailedDesign.zh.md Section 4-B |
+| 10 | ~~**H3** rm 交易数~~ | ✅ 已修复 (2026-02-28) |
+| 11 | ~~**H4** mv 跨目录~~ | ✅ 已修复 (2026-02-28) |
 | 12 | **H7** Exit codes | spec/10-cmd-bitfs.md:67-76 |
 | 13 | **H9** DNS 记录格式 | 统一 paymail/dns.go 与 engine/publish.go |
 | 14 | **H10** BIP32 路径 | bitfs.org Website-Content-Outline.md:202-207 |
@@ -617,7 +625,7 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 
 | # | Issue | 修改位置 |
 |---|-------|----------|
-| 17 | **H2** libbitfs 包列表 | 0-OverallDesign.zh.md:60-69 |
+| 17 | ~~**H2** libbitfs 包列表~~ | ✅ 已修复 (2026-02-28) |
 | 18 | **M1** 项目结构 | 2-SystemDesign.zh.md:1916-1943 |
 | 19 | ~~**M2/M3** storage/config 命名~~ | ✅ 已修复 (2026-02-28) |
 | 20 | **H8** CLI 命令补齐 | spec/10-cmd-bitfs.md |
@@ -628,4 +636,4 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 
 L1-L8 和其余 MEDIUM 项。可在相关功能开发时顺便修复。
 
-> ✅ 2026-02-28 已修复/关闭: C3, L1, L5, L6, L7, M4, M8。C3 因设计决策 #10 关闭（改用 enc_payload）。`spec/10-cmd-bitfs.md` 中 cobra/viper 依赖描述已替换为标准库 `flag`。
+> ✅ 2026-02-28 已修复/关闭: C2, C3, H2, H3, H4, L1, L5, L6, L7, M4, M8。C2 删除保留字段重新编号; C3 因设计决策 #10 关闭（改用 enc_payload）; H2 包列表已补全; H3 rm 交易数已更正; H4 mv 跨目录描述已统一。`spec/10-cmd-bitfs.md` 中 cobra/viper 依赖描述已替换为标准库 `flag`。
