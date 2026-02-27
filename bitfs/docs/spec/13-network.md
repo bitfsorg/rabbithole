@@ -1,4 +1,4 @@
-# 模块规范：libbitfs/network
+# 模块规范：libbitfs-go/network
 
 ## 目的
 
@@ -125,7 +125,7 @@ RPC 方法映射:
 ### SPVClient（SPV 验证桥接）
 
 ```go
-// SPVClient bridges the network layer with libbitfs/spv verification.
+// SPVClient bridges the network layer with libbitfs-go/spv verification.
 type SPVClient struct { /* unexported fields */ }
 
 // NewSPVClient creates an SPV client backed by a blockchain service and header store.
@@ -186,7 +186,7 @@ func ResolveConfig(flags *RPCConfig, env map[string]string, network string) (*RP
 - `net/http` -- HTTP 客户端（JSON-RPC 传输）
 - `encoding/json` -- JSON-RPC 请求/响应序列化
 - `encoding/hex` -- 十六进制编码/解码
-- `libbitfs/spv` -- SPV 头存储和 Merkle 验证
+- `libbitfs-go/spv` -- SPV 头存储和 Merkle 验证
 
 ## 数据结构
 

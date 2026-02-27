@@ -2932,7 +2932,7 @@ mux.HandleFunc("/handshake", handleHandshake)
 // Paymail 路由 (新增)
 mux.HandleFunc("/.well-known/bsvalias", handleCapabilities)
 mux.HandleFunc("/api/v1/pki/{paymail}", handlePKI)
-mux.HandleFunc("/api/v1/profile/{paymail}", handleProfile)
+mux.HandleFunc("/api/v1/public-profile/{paymail}", handleProfile)
 mux.HandleFunc("/api/v1/verify/{paymail}/{pubkey}", handleVerifyPubKey)
 ```
 
@@ -2945,7 +2945,7 @@ func handleCapabilities(w http.ResponseWriter, r *http.Request) {
         "bsvalias": "1.0",
         "capabilities": map[string]interface{}{
             "pki":            fmt.Sprintf("https://%s/api/v1/pki/{alias}@{domain.tld}", host),
-            "f12f968c92d6":   fmt.Sprintf("https://%s/api/v1/profile/{alias}@{domain.tld}", host),
+            "f12f968c92d6":   fmt.Sprintf("https://%s/api/v1/public-profile/{alias}@{domain.tld}", host),
             "a9f510c16bde":   fmt.Sprintf("https://%s/api/v1/verify/{alias}@{domain.tld}/{pubkey}", host),
         },
     }

@@ -119,13 +119,13 @@ GET  /api/v1/pki/{alias}@{domain}   Paymail PKI 端点
 ## 依赖
 
 - `net/http` -- HTTP 服务器
-- `libbitfs/wallet` -- 密钥管理
-- `libbitfs/storage` -- 内容存储
-- `libbitfs/method42` -- 加密/解密与握手
-- `libbitfs/metanet` -- DAG 遍历
-- `libbitfs/x402` -- 支付协议
-- `libbitfs/paymail` -- Paymail 服务器能力
-- `libbitfs/spv` -- 交易验证
+- `libbitfs-go/wallet` -- 密钥管理
+- `libbitfs-go/storage` -- 内容存储
+- `libbitfs-go/method42` -- 加密/解密与握手
+- `libbitfs-go/metanet` -- DAG 遍历
+- `libbitfs-go/x402` -- 支付协议
+- `libbitfs-go/paymail` -- Paymail 服务器能力
+- `libbitfs-go/spv` -- 交易验证
 
 ## 数据结构
 

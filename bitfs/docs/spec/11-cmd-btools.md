@@ -112,8 +112,8 @@ Output:
 ## 共享实现
 
 所有 b* 工具共享：
-- 通过 `libbitfs/paymail.ParseURI()` 进行 URI 解析
-- 通过 `libbitfs/paymail.ResolveURI()` 进行端点解析
+- 通过 `libbitfs-go/paymail.ParseURI()` 进行 URI 解析
+- 通过 `libbitfs-go/paymail.ResolveURI()` 进行端点解析
 - 通过 HTTP 从守护进程获取元数据
 - `~/.bitfs/cache/meta/` 中的本地缓存（可选）
 - 公共标志：`--json`、`--no-cache`、`--timeout`、`--offline`、`--host`（可选覆盖）
@@ -124,9 +124,9 @@ Output:
 ## 依赖
 
 - `github.com/spf13/cobra` -- CLI 框架
-- `libbitfs/paymail` -- URI 解析
-- `libbitfs/method42` -- 解密（用于免费内容）
-- `libbitfs/x402` -- 支付处理（用于 --buy）
+- `libbitfs-go/paymail` -- URI 解析
+- `libbitfs-go/method42` -- 解密（用于免费内容）
+- `libbitfs-go/x402` -- 支付处理（用于 --buy）
 - `net/http` -- 守护进程 API 客户端
 
 ## 错误处理

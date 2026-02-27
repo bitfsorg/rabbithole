@@ -1,4 +1,4 @@
-# 模块规范：libbitfs/storage
+# 模块规范：libbitfs-go/storage
 
 ## 目的
 

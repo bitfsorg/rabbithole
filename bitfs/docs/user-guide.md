@@ -534,13 +534,22 @@ bitfs:/>
 | `cd [path]` | Change remote working directory |
 | `lcd [path]` | Change (or print) local working directory |
 | `pwd` | Print remote working directory |
+| `cat <path> [--force]` | Display file contents |
 | `mkdir <path>` | Create a directory |
-| `put <local> <remote>` | Upload a file |
-| `rm <path>` | Remove a file or directory |
+| `put <local> <remote> [access]` | Upload a file (access: free/private/paid) |
+| `get <remote> [local]` | Download a file |
+| `mput <dir> [remote-dir]` | Batch upload files |
+| `mget <dir> [local-dir]` | Batch download files |
+| `cp <src> <dst>` | Copy a file |
+| `rm [-r] <path>` | Remove a file or directory (-r recursive) |
 | `mv <src> <dst>` | Move or rename |
-| `link <target> <path> [--soft]` | Create a hard or soft link |
-| `sell <path> <price>` | Set price in sats/KB |
+| `link [-s] <target> <name>` | Create a hard or soft link (-s for soft link) |
+| `sell <path> <price> [--recursive]` | Set price in sats/KB |
 | `encrypt <path>` | Change access from free to private |
+| `decrypt <path>` | Change access from private to free |
+| `publish [domain]` | Publish or list DNSLink bindings |
+| `unpublish <domain>` | Unbind a domain |
+| `sales` | View sales records |
 | `help` | Show command list |
 | `quit` or `exit` | Exit the shell |
 

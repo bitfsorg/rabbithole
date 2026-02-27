@@ -26,6 +26,8 @@
 2. **外部文档 (网站/白皮书) 偏离设计** — Staking 立场、检索费货币、HTLC 流程、三层架构
 3. **TLV 协议格式** — tag 编号偏移、PRIVATE 模式字段未实现
 
+> **2026-02-28 更新**: 11 个不一致项已修复（H1, L1, L5, L6, L7, M2, M3, M4, M6, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。详见各项末尾的 ✅ 标记。
+
 ---
 
 ## CRITICAL — 协议级矛盾 (9)
@@ -245,6 +247,8 @@ revenue_share: {
 **影响**: `uint32` 无法表示结构化对象。TLV 格式只能选择一种编码方式。
 **修复**: 确定一种定义——建议 BitFS 的 `uint32` 用于 TLV 编码，Metanet 的结构化定义用于上层业务逻辑。
 
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 中 revenue_share 类型已更新为匹配 `revshare.RevShareEntry` 二进制格式（address[20] + share[8] = 28 bytes/entry）。
+
 ---
 
 ### H2. libbitfs 包列表过时
@@ -435,6 +439,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 
 **正确值**: `~/.bitfs/storage/` (代码实现)
 
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 中 `~/.bitfs/data` 已更正为 `~/.bitfs/storage`。
+
 ---
 
 ### M3. 配置文件格式：三种不同说法
@@ -447,6 +453,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 
 **正确值**: `~/.bitfs/config`，key=value 格式 (代码实现)
 
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 和 `spec/10-cmd-bitfs.md` 中 `config.toml` 已更正为 `config`（key=value 格式）。
+
 ---
 
 ### M4. Daemon 默认端口：80 vs 8080
@@ -457,6 +465,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 | `:8080` | 代码 daemon.go:168, user-guide.md:482, api-reference.md:7 |
 
 **正确值**: `:8080` (开发默认值)
+
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 和 `spec/10-cmd-bitfs.md` 中 daemon 端口已更正为 `:8080`。
 
 ---
 
@@ -469,6 +479,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 ### M6. 用户指南缺失 7 个 Shell 命令
 
 代码实现了 22 个 shell 命令，用户指南只列 12 个。缺失: `cat`, `get`, `mget`, `mput`, `cp`, `publish`, `unpublish`。
+
+✅ **已修复** (2026-02-28): `user-guide.md` shell 命令表已补充 10 个缺失命令。
 
 ---
 
@@ -486,6 +498,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 | metanet/4-TestDesign.zh.md | line 50 | `k=1..N` (1-based) |
 
 不同起始值会产生完全不同的 challenge hash 序列。
+
+✅ **已修复** (2026-02-28): `metanet/4-TestDesign.zh.md` 中 `k=1..N` 已更正为 `k=0..N-1`（匹配代码 0-based）。
 
 ---
 
@@ -527,6 +541,8 @@ Slides 还引入了 VI 中不存在的 `--accent-pink: #e8b4b8` 和 `--accent-go
 
 设计文档定义 `FILE=0, DIR=1, LINK=2`。代码额外有 `ANCHOR=3`（git-remote-bitfs 用）。
 
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 已添加 `ANCHOR=3`。
+
 ### L2. Anchor TLV Tags (0x20-0x26) 未写入设计文档
 
 `parser.go:42-48` 定义了 7 个 anchor 专用 TLV tag，设计文档中无记载。
@@ -543,13 +559,19 @@ Slides 还引入了 VI 中不存在的 `--accent-pink: #e8b4b8` 和 `--accent-go
 
 设计: `/api/v1/profile/{alias}@{domain.tld}`。代码: `/api/v1/public-profile/...`。且代码中该路径无实际 handler。
 
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 和 `3-DetailedDesign.zh.md` 中 Paymail URL 已更正为 `/api/v1/public-profile/`。
+
 ### L6. Section 编号跳过 19
 
 `2-SystemDesign.zh.md` 从第 18 节跳到第 20 节，第 19 节不存在。
 
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md` 节编号已修正（二十→十九，二十一→二十，二十二→二十一，二十三→二十二）。
+
 ### L7. Spec 包路径用 `libbitfs/` 而非 `libbitfs-go/`
 
 TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module 名和目录名是 `libbitfs-go/`。
+
+✅ **已修复** (2026-02-28): 所有 spec 文件（14 个文件）中 `libbitfs/` 已批量替换为 `libbitfs-go/`。
 
 ### L8. 交叉引用缺失
 
@@ -580,7 +602,7 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 
 | # | Issue | 修改位置 |
 |---|-------|----------|
-| 9 | **H1** revenue_share 类型 | 确定一种定义，统一两个 L2 |
+| 9 | ~~**H1** revenue_share 类型~~ | ✅ 已修复 (2026-02-28) |
 | 10 | **H3** rm 交易数 | 2-SystemDesign.zh.md:213,834 |
 | 11 | **H4** mv 跨目录 | 3-DetailedDesign.zh.md Section 4-B |
 | 12 | **H7** Exit codes | spec/10-cmd-bitfs.md:67-76 |
@@ -595,11 +617,13 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 |---|-------|----------|
 | 17 | **H2** libbitfs 包列表 | 0-OverallDesign.zh.md:60-69 |
 | 18 | **M1** 项目结构 | 2-SystemDesign.zh.md:1916-1943 |
-| 19 | **M2/M3** storage/config 命名 | 多处 |
+| 19 | ~~**M2/M3** storage/config 命名~~ | ✅ 已修复 (2026-02-28) |
 | 20 | **H8** CLI 命令补齐 | spec/10-cmd-bitfs.md |
-| 21 | **M6** Shell 命令文档 | user-guide.md |
+| 21 | ~~**M6** Shell 命令文档~~ | ✅ 已修复 (2026-02-28) |
 | 22 | **C3** PRIVATE TLV 序列化 | 需代码变更: parser.go |
 
 ### P3 — 低优先级
 
 L1-L8 和其余 MEDIUM 项。可在相关功能开发时顺便修复。
+
+> ✅ 2026-02-28 已修复: L1, L5, L6, L7, M4, M8。另外 `spec/10-cmd-bitfs.md` 中 cobra/viper 依赖描述已替换为标准库 `flag`。

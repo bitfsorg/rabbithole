@@ -1,4 +1,4 @@
-# 模块规范：libbitfs/spv
+# 模块规范：libbitfs-go/spv
 
 ## 目的
 

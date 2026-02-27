@@ -1,4 +1,4 @@
-# 模块规范：libbitfs/metanet
+# 模块规范：libbitfs-go/metanet
 
 ## 目的
 
@@ -222,8 +222,8 @@ func InheritPricePerKB(store NodeStore, node *Node) (uint64, error)
 
 ## 依赖
 
-- `libbitfs/tx` -- OP_RETURN 解析，交易格式
-- `libbitfs/metanet/tlv` -- TLV 序列化/反序列化
+- `libbitfs-go/tx` -- OP_RETURN 解析，交易格式
+- `libbitfs-go/metanet/tlv` -- TLV 序列化/反序列化
 - `github.com/bsv-blockchain/go-sdk/primitives/ec` -- 公钥处理
 
 ## 数据结构

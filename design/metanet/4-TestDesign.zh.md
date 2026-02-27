@@ -47,7 +47,7 @@
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
 | T1.1 | 存储合约创建: N 个 UTXO 对应 N 期 | Owner 与 Metanet Node 协商完成 | 创建 StorageDeal 交易 | 合约交易包含 N 个输出, 各含 expected_proof_hash (预计算), 锁定 MNT Token | [unit] |
-| T1.2 | 确定性挑战计算 | 已知 contract_txid | challenge_k = SHA256(contract_txid ‖ k) (k=1..N) | 挑战值确定性可复现, 不同 k 产生不同 challenge, 合约创建时即可预计算所有期 | [property] |
+| T1.2 | 确定性挑战计算 | 已知 contract_txid | challenge_k = SHA256(contract_txid ‖ k) (k=0..N-1) | 挑战值确定性可复现, 不同 k 产生不同 challenge, 合约创建时即可预计算所有期 | [property] |
 
 ---
 

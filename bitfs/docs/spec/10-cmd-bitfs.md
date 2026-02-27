@@ -2,7 +2,7 @@
 
 ## 目的
 
-BitFS 的主 CLI 二进制文件——去中心化加密文件系统的所有者/写入者接口。实现所有文件管理、加密、交易、钱包、发布和守护进程命令。使用 Cobra 进行子命令管理，使用 Viper 进行配置管理。
+BitFS 的主 CLI 二进制文件——去中心化加密文件系统的所有者/写入者接口。实现所有文件管理、加密、交易、钱包、发布和守护进程命令。使用标准库 `flag` 进行参数解析。
 
 设计参考：ConceptDesign #1, #2, #19; SystemDesign 第 9, 10 节; DetailedDesign 第 9-B 节。
 
@@ -111,34 +111,31 @@ Shell 特性：
 
 ## 依赖
 
-- `github.com/spf13/cobra` -- CLI 框架
-- `github.com/spf13/viper` -- 配置管理
-- `libbitfs/wallet` -- HD 钱包操作
-- `libbitfs/method42` -- 加密
-- `libbitfs/tx` -- 交易构建
-- `libbitfs/metanet` -- 文件系统操作
-- `libbitfs/storage` -- 内容存储
-- `libbitfs/spv` -- SPV 验证
+- 标准库 `flag` -- 参数解析
+- `libbitfs-go/wallet` -- HD 钱包操作
+- `libbitfs-go/method42` -- 加密
+- `libbitfs-go/tx` -- 交易构建
+- `libbitfs-go/metanet` -- 文件系统操作
+- `libbitfs-go/storage` -- 内容存储
+- `libbitfs-go/spv` -- SPV 验证
 - `internal/daemon` -- 守护进程管理
-- `libbitfs/paymail` -- URI 解析
-- `libbitfs/x402` -- 支付协议
+- `libbitfs-go/paymail` -- URI 解析
+- `libbitfs-go/x402` -- 支付协议
 
 ## 数据结构
 
-### 配置文件（~/.bitfs/config.toml）
-```toml
-network = "mainnet"
-output = "plain"
+### 配置文件（~/.bitfs/config）
+```
+network = mainnet
+output = plain
 
-[cache]
-enabled = true
-max_size = "5GB"
-meta_ttl = 3600
-data_ttl = 86400
-eviction = "lru"
+cache.enabled = true
+cache.max_size = 5GB
+cache.meta_ttl = 3600
+cache.data_ttl = 86400
+cache.eviction = lru
 
-[daemon]
-listen = "0.0.0.0:80"
+daemon.listen = 0.0.0.0:8080
 ```
 
 ## 错误处理

@@ -1,4 +1,4 @@
-# 模块规范：libbitfs/wallet
+# 模块规范：libbitfs-go/wallet
 
 ## 目的
 

@@ -1,4 +1,4 @@
-# 模块规范：libbitfs/method42
+# 模块规范：libbitfs-go/method42
 
 ## 目的
 

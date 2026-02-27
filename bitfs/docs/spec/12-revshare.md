@@ -1,4 +1,4 @@
-# 模块规范：libbitfs/revshare
+# 模块规范：libbitfs-go/revshare
 
 ## 目的
 

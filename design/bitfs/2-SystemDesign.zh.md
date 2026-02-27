@@ -271,7 +271,7 @@ Outputs:
 ```
 // TLV Schema (field numbers = TLV tags)
 
-enum Type { FILE = 0; DIR = 1; LINK = 2; }
+enum Type { FILE = 0; DIR = 1; LINK = 2; ANCHOR = 3; }
 enum Op { CREATE = 0; UPDATE = 1; DELETE = 2; }
 enum Access { PRIVATE = 0; FREE = 1; PAID = 2; }
 enum LinkType { SOFT = 0; SOFT_REMOTE = 1; }
@@ -286,9 +286,10 @@ message ChildEntry {
 }
 
 message RevShareEntry {
-  bytes   address = 1;    // 20-byte P2PKH hash (收益人地址)
-  uint32  share   = 2;    // 份额数量 (创作者定义总量, Covenant 守恒验证)
-  string  role    = 3;    // 角色标签 (creator/editor/platform/...)
+  // 二进制序列化: address[20] || share[8] = 28 bytes/entry (大端序)
+  // 参见 revshare.SerializeRegistry: header(44) + entries(28×N) + trailer(1)
+  bytes   address = 1;    // 20-byte P2PKH address hash (收益人地址)
+  uint64  share   = 2;    // 份额数量, 8 bytes 大端序 (创作者定义总量, Covenant 守恒验证)
 }
 
 message ISOConfig {
@@ -637,7 +638,7 @@ GET https://example.com/.well-known/bsvalias
   "bsvalias": "1.0",
   "capabilities": {
     "pki": "https://example.com/api/v1/pki/{alias}@{domain.tld}",
-    "f12f968c92d6": "https://example.com/api/v1/profile/{alias}@{domain.tld}",
+    "f12f968c92d6": "https://example.com/api/v1/public-profile/{alias}@{domain.tld}",
     "a9f510c16bde": "https://example.com/api/v1/verify/{alias}@{domain.tld}/{pubkey}"
   }
 }
@@ -1865,40 +1866,31 @@ Client (Agent) → POST /_bitfs/pay/{invoice_id} { "raw_tx": "<hex>", "merkle_pr
 - **CLI Agent** 看到 `bget --buy` 命令 → 自动执行付费
 - **Agent 付费是无感的**: Agent 有钱包，直接完成 HTLC 交换，人类甚至不知道发生了什么
 
-### 配置文件 (~/.bitfs/config.toml)
+### 配置文件 (~/.bitfs/config)
 
-统一配置文件，包含全局设置和 daemon 配置 (以下示例为等效 YAML 格式便于阅读):
+配置文件使用简单的 `key=value` 格式 (每行一个键值对, `#` 开头为注释)。路径: `~/.bitfs/config`。
 
-```yaml
-# 全局设置
-network: mainnet
-output: plain
-cache:
-  enabled: true
-  max_size: "5GB"
-  meta_ttl: 3600
-  data_ttl: 86400
-  eviction: lru
-
-# Daemon 设置
-daemon:
-  listen: "0.0.0.0:80"
-  tls: { enabled: false, cert: "", key: "" }
-  x402:
-    enabled: true
-    price_per_mb: 100      # satoshis (CDN 带宽费)
-    free_quota_mb: 10      # 每 IP 每天
-    invoice_expiry: 300    # 秒
-  security:
-    rate_limit: { rpm: 60, burst: 20 }
-    cors: { origins: ["*"], methods: ["GET", "POST"] }
-    max_request_size: "10MB"
-  storage:
-    data_dir: "~/.bitfs/data"   # 加密文件存储目录
-    db_path: "~/.bitfs/daemon.db"
-    cache_size: "1GB"
-  log: { level: "info", file: "~/.bitfs/daemon.log" }
 ```
+# BitFS Configuration
+
+datadir = ~/.bitfs
+listen = 0.0.0.0:8080
+network = mainnet
+loglevel = info
+logfile =
+```
+
+支持的配置键:
+
+| 键 | 默认值 | 说明 |
+|---|--------|------|
+| `datadir` | `~/.bitfs` | 数据根目录 (含 storage/, vaults/, spv/ 等) |
+| `listen` | `:8080` | Daemon HTTP 监听地址 |
+| `network` | `mainnet` | BSV 网络: mainnet / testnet |
+| `loglevel` | `info` | 日志级别: debug / info / warn / error |
+| `logfile` | (空=stdout) | 日志文件路径 |
+
+参见 `libbitfs-go/config/config.go` 中的 `LoadConfig` / `SaveConfig` 实现。
 
 ---
 
@@ -2055,9 +2047,9 @@ Metanet 协议层面, CreateChild 的 Input 0 可花费锁定到 P_parent 的**�
 
 ---
 
-## 二十、远期功能
+## 十九、远期功能
 
-### 20.1 共享与权限 (远期: 群签名阶段)
+### 19.1 共享与权限 (远期: 群签名阶段)
 
 share/unshare/chown 全部推迟到群签名 (Group Signature) 技术成熟后实现。
 
@@ -2076,13 +2068,13 @@ share/unshare/chown 全部推迟到群签名 (Group Signature) 技术成熟后�
 **更新**: Owner 通过 SelfUpdate 修改列表节点
 **与 ACL 的关系**: Share List 是 ACL 的简化版 (无签名验证, 仅地址列表)
 
-### 20.2 sCrypt 链上验证 (远期)
+### 19.2 sCrypt 链上验证 (远期)
 
 用 sCrypt 在 Bitcoin Script 中实现 EC 运算, 用于**验证** capsule 和签名的链上有效性, 使交易无需 Seller 在线即可自动完成。注意: sCrypt 用于验证而非生成 — 密钥和签名仍在链下计算。当前用 HTLC/Token 方案 (需 Seller daemon 在线)。
 
 ---
 
-## 二十一、会话管理（Lock / Unlock）
+## 二十、会话管理（Lock / Unlock）
 
 ### 问题
 
@@ -2225,7 +2217,7 @@ os.Remove(文件)
 
 ---
 
-## 二十二、权限管理（ACL + 群签名 / 群加密）
+## 二十一、权限管理（ACL + 群签名 / 群加密）
 
 ### 设计目标
 
@@ -2545,7 +2537,7 @@ Alice 的目录                               Bob 的目录
 
 ---
 
-## 二十三、bsync / bput — 同步与上传
+## 二十二、bsync / bput — 同步与上传
 
 bsync 和 bput 是 b\* 工具集中的同步工具，Agent-first 设计（非交互，JSON 输出，可管道组合）。bsync 负责目录级同步，bput 是 bget 的写入对偶。Shell 交互模式中的 put/mput 命令面向人类用户。
 
