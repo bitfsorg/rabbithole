@@ -54,6 +54,8 @@ func (d *Daemon) RegisterRoutes(mux *http.ServeMux) {
 	// Paymail/BSV Alias
 	mux.HandleFunc("GET /.well-known/bsvalias", wrap(d.handleBSVAlias))
 	mux.HandleFunc("GET /api/v1/pki/{handle}", wrap(d.handlePKI))
+	mux.HandleFunc("GET /api/v1/public-profile/{handle}", wrap(d.handlePublicProfile))
+	mux.HandleFunc("GET /api/v1/verify/{handle}/{pubkey}", wrap(d.handleVerifyPubKey))
 
 	// Catch-all for path-based content with content negotiation
 	mux.HandleFunc("GET /", wrap(d.handleRootOrPath))

@@ -209,3 +209,128 @@ func TestHTTPTestServer_PKI_NotFound(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
+
+// --- handlePublicProfile Tests ---
+
+func TestHandlePublicProfile_Success(t *testing.T) {
+	d, wallet, _, _ := newTestDaemon(t)
+
+	expectedPubKey := hex.EncodeToString(wallet.pubKey.Compressed())
+	wallet.vaultKeys["alice"] = expectedPubKey
+
+	req := httptest.NewRequest("GET", "/api/v1/public-profile/alice@bitfs.org", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var resp publicProfileResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "alice", resp.Name)
+	assert.Equal(t, "bitfs.org", resp.Domain)
+	assert.Equal(t, "", resp.Avatar)
+}
+
+func TestHandlePublicProfile_UnknownAlias(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	req := httptest.NewRequest("GET", "/api/v1/public-profile/unknown@bitfs.org", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "NOT_FOUND")
+}
+
+func TestHandlePublicProfile_MalformedHandle(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	req := httptest.NewRequest("GET", "/api/v1/public-profile/nodomain", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "INVALID_HANDLE")
+}
+
+// --- handleVerifyPubKey Tests ---
+
+func TestHandleVerifyPubKey_Match(t *testing.T) {
+	d, wallet, _, _ := newTestDaemon(t)
+
+	expectedPubKey := hex.EncodeToString(wallet.pubKey.Compressed())
+	wallet.vaultKeys["alice"] = expectedPubKey
+
+	req := httptest.NewRequest("GET", "/api/v1/verify/alice@bitfs.org/"+expectedPubKey, nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var resp verifyPubKeyResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "alice@bitfs.org", resp.Handle)
+	assert.Equal(t, expectedPubKey, resp.PubKey)
+	assert.True(t, resp.Match)
+}
+
+func TestHandleVerifyPubKey_NoMatch(t *testing.T) {
+	d, wallet, _, _ := newTestDaemon(t)
+
+	expectedPubKey := hex.EncodeToString(wallet.pubKey.Compressed())
+	wallet.vaultKeys["alice"] = expectedPubKey
+
+	wrongPubKey := "03" + strings.Repeat("ab", 32)
+
+	req := httptest.NewRequest("GET", "/api/v1/verify/alice@bitfs.org/"+wrongPubKey, nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp verifyPubKeyResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "alice@bitfs.org", resp.Handle)
+	assert.Equal(t, wrongPubKey, resp.PubKey)
+	assert.False(t, resp.Match)
+}
+
+func TestHandleVerifyPubKey_UnknownAlias(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	somePubKey := "03" + strings.Repeat("ff", 32)
+
+	req := httptest.NewRequest("GET", "/api/v1/verify/unknown@bitfs.org/"+somePubKey, nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	// Unknown alias returns 200 with match=false (don't reveal alias existence).
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp verifyPubKeyResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	assert.Equal(t, "unknown@bitfs.org", resp.Handle)
+	assert.Equal(t, somePubKey, resp.PubKey)
+	assert.False(t, resp.Match)
+}
+
+func TestHandleVerifyPubKey_MalformedHandle(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	req := httptest.NewRequest("GET", "/api/v1/verify/nodomain/somepubkey", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "INVALID_HANDLE")
+}
