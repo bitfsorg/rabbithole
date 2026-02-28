@@ -65,6 +65,45 @@ func TestMetaCache_Invalidate(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestMetaCache_CorruptEntry(t *testing.T) {
+	dir := t.TempDir()
+	cache := NewMetaCache(dir, 5*time.Minute)
+
+	// Put a valid entry first to create the directory structure.
+	resp := &MetaResponse{PNode: "02abc", Type: "file", Path: "/x"}
+	cache.Put("02abc", "/x", resp)
+
+	// Corrupt the cache file.
+	key := cacheKey("02abc", "/x")
+	fp := cache.cachePath(key)
+	os.WriteFile(fp, []byte(`{corrupt`), 0600)
+
+	// Get should treat corrupt as cache miss (return nil, nil).
+	got, err := cache.Get("02abc", "/x")
+	assert.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+func TestMetaCache_ReadError(t *testing.T) {
+	// Use a directory that's not readable.
+	dir := t.TempDir()
+	cache := NewMetaCache(dir, 5*time.Minute)
+
+	// Put a valid entry, then make the file unreadable.
+	resp := &MetaResponse{PNode: "02abc", Type: "file", Path: "/y"}
+	cache.Put("02abc", "/y", resp)
+
+	key := cacheKey("02abc", "/y")
+	fp := cache.cachePath(key)
+	os.Chmod(fp, 0000)
+	defer os.Chmod(fp, 0600) // restore for cleanup
+
+	got, err := cache.Get("02abc", "/y")
+	// Non-NotExist read error should be returned.
+	assert.Error(t, err)
+	assert.Nil(t, got)
+}
+
 func TestMetaCache_CreatesSubdirs(t *testing.T) {
 	dir := t.TempDir()
 	cache := NewMetaCache(dir, 5*time.Minute)

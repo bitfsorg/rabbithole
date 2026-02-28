@@ -568,3 +568,177 @@ func TestGetData_InvalidHash(t *testing.T) {
 		})
 	}
 }
+
+// --- GetVersions tests ---
+
+func TestGetVersions_Success(t *testing.T) {
+	pnode := testPnode()
+	versions := []VersionEntry{
+		{Version: 1, TxID: "aabb", BlockHeight: 100, Timestamp: 1700000000, FileSize: 512, Access: "free"},
+		{Version: 2, TxID: "ccdd", BlockHeight: 99, Timestamp: 1699999000, FileSize: 256, Access: "paid"},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "GET", r.Method)
+		assert.Contains(t, r.URL.Path, "/_bitfs/versions/"+pnode)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(versions)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	got, err := c.GetVersions(pnode, "docs/readme.txt")
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.Equal(t, 1, got[0].Version)
+	assert.Equal(t, "paid", got[1].Access)
+}
+
+func TestGetVersions_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	_, err := c.GetVersions(testPnode(), "nonexistent")
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetVersions_InvalidPnode(t *testing.T) {
+	c := New("http://localhost:1")
+	_, err := c.GetVersions("short", "path")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "pnode")
+}
+
+func TestGetVersions_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	_, err := c.GetVersions(testPnode(), "path")
+	assert.Error(t, err)
+}
+
+func TestGetVersions_NetworkError(t *testing.T) {
+	c := New("http://127.0.0.1:1")
+	c = c.WithTimeout(100 * time.Millisecond)
+	_, err := c.GetVersions(testPnode(), "path")
+	assert.ErrorIs(t, err, ErrNetwork)
+}
+
+// --- VerifySPV tests ---
+
+func TestVerifySPV_Success(t *testing.T) {
+	proof := SPVProofResponse{
+		TxID:        "deadbeef",
+		Confirmed:   true,
+		BlockHash:   "blockhash123",
+		BlockHeight: 800000,
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "GET", r.Method)
+		assert.Equal(t, "/_bitfs/spv/proof/sometxid", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(proof)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	got, err := c.VerifySPV("sometxid")
+	require.NoError(t, err)
+	assert.True(t, got.Confirmed)
+	assert.Equal(t, uint64(800000), got.BlockHeight)
+}
+
+func TestVerifySPV_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	_, err := c.VerifySPV("nonexistent")
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestVerifySPV_NetworkError(t *testing.T) {
+	c := New("http://127.0.0.1:1")
+	c = c.WithTimeout(100 * time.Millisecond)
+	_, err := c.VerifySPV("txid")
+	assert.ErrorIs(t, err, ErrNetwork)
+}
+
+func TestVerifySPV_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{broken`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	_, err := c.VerifySPV("txid")
+	assert.Error(t, err)
+}
+
+// --- GetSales tests ---
+
+func TestGetSales_Success(t *testing.T) {
+	sales := []SaleRecord{
+		{InvoiceID: "inv1", Price: 1000, KeyHash: "aabb", Timestamp: 1700000000, Paid: true},
+		{InvoiceID: "inv2", Price: 500, KeyHash: "ccdd", Timestamp: 1700001000, Paid: false},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "GET", r.Method)
+		assert.Contains(t, r.URL.String(), "/_bitfs/sales")
+		assert.Equal(t, "completed", r.URL.Query().Get("status"))
+		assert.Equal(t, "10", r.URL.Query().Get("limit"))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(sales)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	got, err := c.GetSales("completed", 10)
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.Equal(t, "inv1", got[0].InvoiceID)
+	assert.True(t, got[0].Paid)
+	assert.False(t, got[1].Paid)
+}
+
+func TestGetSales_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	_, err := c.GetSales("all", 50)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestGetSales_NetworkError(t *testing.T) {
+	c := New("http://127.0.0.1:1")
+	c = c.WithTimeout(100 * time.Millisecond)
+	_, err := c.GetSales("all", 10)
+	assert.ErrorIs(t, err, ErrNetwork)
+}
+
+func TestGetSales_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL)
+	_, err := c.GetSales("all", 10)
+	assert.Error(t, err)
+}

@@ -1445,7 +1445,7 @@ func TestJSON_PaidContent_WithBuy_Success(t *testing.T) {
 
 	// Parse JSON output.
 	var resp buy.GetResponse
-	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &resp))
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &resp))
 	assert.NotNil(t, resp.Payment)
 	assert.Equal(t, outFile, resp.OutputPath)
 }
