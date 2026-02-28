@@ -11,14 +11,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // runCat handles the "bitfs cat" command.
 func runCat(args []string) int {
 	fs := flag.NewFlagSet("cat", flag.ContinueOnError)
-	vault := fs.String("vault", "", "vault name")
+	vaultName := fs.String("vault", "", "vault name")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing)")
 	force := fs.Bool("force", false, "output binary files without warning")
@@ -40,7 +40,7 @@ func runCat(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	eng, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
@@ -48,12 +48,12 @@ func runCat(args []string) int {
 	defer func() { _ = eng.Close() }()
 
 	// Vault resolution kept for CLI flag compatibility; Cat resolves by path.
-	if _, err := eng.ResolveVaultIndex(*vault); err != nil {
+	if _, err := eng.ResolveVaultIndex(*vaultName); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	reader, info, err := eng.Cat(&engine.CatOpts{
+	reader, info, err := eng.Cat(&vault.CatOpts{
 		Path: remotePath,
 	})
 	if err != nil {

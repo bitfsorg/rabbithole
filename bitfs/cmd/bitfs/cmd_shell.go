@@ -17,8 +17,9 @@ import (
 	"github.com/ergochat/readline"
 
 	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/bitfs/internal/publish"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // validAccessModes contains the accepted access mode strings.
@@ -52,7 +53,7 @@ var shellCommands = []string{
 // and tab completion (commands + remote/local paths).
 func runShell(args []string) int {
 	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
-	vault := fs.String("vault", "", "vault name")
+	vaultName := fs.String("vault", "", "vault name")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing)")
 
@@ -66,14 +67,14 @@ func runShell(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	eng, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
 	defer func() { _ = eng.Close() }()
 
-	vaultIdx, err := eng.ResolveVaultIndex(*vault)
+	vaultIdx, err := eng.ResolveVaultIndex(*vaultName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
@@ -192,7 +193,7 @@ func runShell(args []string) int {
 				continue
 			}
 			path := resolvePath(cwd, cmdArgs[0])
-			result, mkErr := eng.Mkdir(&engine.MkdirOpts{VaultIndex: vaultIdx, Path: path})
+			result, mkErr := eng.Mkdir(&vault.MkdirOpts{VaultIndex: vaultIdx, Path: path})
 			if mkErr != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", mkErr)
 			} else {
@@ -212,7 +213,7 @@ func runShell(args []string) int {
 			if len(cmdArgs) > 2 && cmdArgs[2] == "private" {
 				access = "private"
 			}
-			result, putErr := eng.PutFile(&engine.PutOpts{
+			result, putErr := eng.PutFile(&vault.PutOpts{
 				VaultIndex: vaultIdx,
 				LocalFile:  localFile,
 				RemotePath: remotePath,
@@ -249,7 +250,7 @@ func runShell(args []string) int {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				}
 			} else {
-				result, rmErr := eng.Remove(&engine.RemoveOpts{VaultIndex: vaultIdx, Path: rmPath})
+				result, rmErr := eng.Remove(&vault.RemoveOpts{VaultIndex: vaultIdx, Path: rmPath})
 				if rmErr != nil {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", rmErr)
 				} else {
@@ -280,7 +281,7 @@ func runShell(args []string) int {
 				}
 			}
 
-			result, mvErr := eng.Move(&engine.MoveOpts{
+			result, mvErr := eng.Move(&vault.MoveOpts{
 				VaultIndex: vaultIdx,
 				SrcPath:    srcPath,
 				DstPath:    dstPath,
@@ -296,7 +297,7 @@ func runShell(args []string) int {
 				fmt.Println("Usage: cp <src> <dst>")
 				continue
 			}
-			result, cpErr := eng.Copy(&engine.CopyOpts{
+			result, cpErr := eng.Copy(&vault.CopyOpts{
 				VaultIndex: vaultIdx,
 				SrcPath:    resolvePath(cwd, cmdArgs[0]),
 				DstPath:    resolvePath(cwd, cmdArgs[1]),
@@ -324,7 +325,7 @@ func runShell(args []string) int {
 				fmt.Println("Usage: link <target> <link-path> [-s|--soft]")
 				continue
 			}
-			result, lnErr := eng.Link(&engine.LinkOpts{
+			result, lnErr := eng.Link(&vault.LinkOpts{
 				VaultIndex: vaultIdx,
 				TargetPath: resolvePath(cwd, posArgs[0]),
 				LinkPath:   resolvePath(cwd, posArgs[1]),
@@ -364,7 +365,7 @@ func runShell(args []string) int {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				}
 			} else {
-				result, sellErr := eng.Sell(&engine.SellOpts{
+				result, sellErr := eng.Sell(&vault.SellOpts{
 					VaultIndex: vaultIdx,
 					Path:       sellPath,
 					PricePerKB: price,
@@ -382,7 +383,7 @@ func runShell(args []string) int {
 			}
 			remotePath := resolvePath(cwd, cmdArgs[0])
 			force := len(cmdArgs) > 1 && cmdArgs[1] == "--force"
-			reader, info, catErr := eng.Cat(&engine.CatOpts{
+			reader, info, catErr := eng.Cat(&vault.CatOpts{
 				Path: remotePath,
 			})
 			switch {
@@ -408,7 +409,7 @@ func runShell(args []string) int {
 					localPath = filepath.Join(localCwd, localPath)
 				}
 			}
-			result, getErr := eng.Get(&engine.GetOpts{
+			result, getErr := eng.Get(&vault.GetOpts{
 				VaultIndex: vaultIdx,
 				RemotePath: remotePath,
 				LocalDir:   localCwd,
@@ -432,17 +433,13 @@ func runShell(args []string) int {
 					localDir = filepath.Join(localCwd, localDir)
 				}
 			}
-			mgetResult, mgetErr := eng.Mget(&engine.MgetOpts{
-				VaultIndex: vaultIdx,
-				RemotePath: remotePath,
-				LocalDir:   localDir,
-			})
+			mgResult, mgetErr := doMget(eng, vaultIdx, remotePath, localDir)
 			if mgetErr != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", mgetErr)
 			} else {
 				fmt.Printf("Downloaded %d files, created %d directories\n",
-					mgetResult.FilesDownloaded, mgetResult.DirsCreated)
-				for _, e := range mgetResult.Errors {
+					mgResult.FilesDownloaded, mgResult.DirsCreated)
+				for _, e := range mgResult.Errors {
 					fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
 				}
 			}
@@ -467,18 +464,13 @@ func runShell(args []string) int {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				continue
 			}
-			mputResult, mputErr := eng.Mput(&engine.MputOpts{
-				VaultIndex: vaultIdx,
-				LocalDir:   localDir,
-				RemoteDir:  remoteDir,
-				Access:     access,
-			})
+			mpResult, mputErr := doMput(eng, vaultIdx, localDir, remoteDir, access)
 			if mputErr != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", mputErr)
 			} else {
 				fmt.Printf("Uploaded %d files, created %d directories\n",
-					mputResult.FilesUploaded, mputResult.DirsCreated)
-				for _, e := range mputResult.Errors {
+					mpResult.FilesUploaded, mpResult.DirsCreated)
+				for _, e := range mpResult.Errors {
 					fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
 				}
 			}
@@ -499,7 +491,8 @@ func runShell(args []string) int {
 				}
 			} else {
 				domain := cmdArgs[0]
-				result, pubErr := eng.Publish(&engine.PublishOpts{
+				dns := publish.DefaultDNSResolver()
+				result, pubErr := publish.Publish(eng, dns, &publish.PublishOpts{
 					VaultIndex: vaultIdx,
 					Domain:     domain,
 				})
@@ -515,7 +508,7 @@ func runShell(args []string) int {
 				continue
 			}
 			domain := cmdArgs[0]
-			result, unpubErr := eng.Unpublish(&engine.UnpublishOpts{
+			result, unpubErr := publish.Unpublish(eng, &publish.UnpublishOpts{
 				Domain: domain,
 			})
 			if unpubErr != nil {
@@ -528,7 +521,7 @@ func runShell(args []string) int {
 				fmt.Println("Usage: encrypt <path>")
 				continue
 			}
-			result, encErr := eng.EncryptNode(&engine.EncryptOpts{
+			result, encErr := eng.EncryptNode(&vault.EncryptOpts{
 				VaultIndex: vaultIdx,
 				Path:       resolvePath(cwd, cmdArgs[0]),
 			})
@@ -542,7 +535,7 @@ func runShell(args []string) int {
 				fmt.Println("Usage: decrypt <path>")
 				continue
 			}
-			result, decErr := eng.DecryptNode(&engine.DecryptOpts{
+			result, decErr := eng.DecryptNode(&vault.DecryptOpts{
 				Path: resolvePath(cwd, cmdArgs[0]),
 			})
 			if decErr != nil {
@@ -606,7 +599,7 @@ func shellHelp() {
   quit                          Exit shell`)
 }
 
-func shellLs(eng *engine.Engine, dir string) {
+func shellLs(eng *vault.Vault, dir string) {
 	node := eng.State.FindNodeByPath(dir)
 	if node == nil {
 		fmt.Printf("Not found: %s\n", dir)
@@ -656,10 +649,10 @@ func cleanPath(p string) string {
 }
 
 // shellRemoveRecursive removes a path and all its children bottom-up.
-func shellRemoveRecursive(eng *engine.Engine, vaultIdx uint32, path string) error {
+func shellRemoveRecursive(eng *vault.Vault, vaultIdx uint32, path string) error {
 	ns := eng.State.FindNodeByPath(path)
 	if ns == nil {
-		return fmt.Errorf("engine: node %q not found", path)
+		return fmt.Errorf("vault: node %q not found", path)
 	}
 	// Remove children first (depth-first).
 	if ns.Type == "dir" {
@@ -670,7 +663,7 @@ func shellRemoveRecursive(eng *engine.Engine, vaultIdx uint32, path string) erro
 			}
 		}
 	}
-	result, err := eng.Remove(&engine.RemoveOpts{VaultIndex: vaultIdx, Path: path})
+	result, err := eng.Remove(&vault.RemoveOpts{VaultIndex: vaultIdx, Path: path})
 	if err != nil {
 		return err
 	}
@@ -679,10 +672,10 @@ func shellRemoveRecursive(eng *engine.Engine, vaultIdx uint32, path string) erro
 }
 
 // shellSellRecursive applies a price to a path and all file descendants.
-func shellSellRecursive(eng *engine.Engine, vaultIdx uint32, path string, price uint64) error {
+func shellSellRecursive(eng *vault.Vault, vaultIdx uint32, path string, price uint64) error {
 	ns := eng.State.FindNodeByPath(path)
 	if ns == nil {
-		return fmt.Errorf("engine: node %q not found", path)
+		return fmt.Errorf("vault: node %q not found", path)
 	}
 	if ns.Type == "dir" {
 		for _, child := range ns.Children {
@@ -693,7 +686,7 @@ func shellSellRecursive(eng *engine.Engine, vaultIdx uint32, path string, price 
 		}
 		return nil // don't sell directories themselves
 	}
-	result, err := eng.Sell(&engine.SellOpts{
+	result, err := eng.Sell(&vault.SellOpts{
 		VaultIndex: vaultIdx,
 		Path:       path,
 		PricePerKB: price,

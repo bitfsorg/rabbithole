@@ -9,15 +9,15 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // runEncrypt handles the "bitfs encrypt" command.
 // Converts content from FREE access to PRIVATE (encrypted) access.
 func runEncrypt(args []string) int {
 	fs := flag.NewFlagSet("encrypt", flag.ContinueOnError)
-	vault := fs.String("vault", "", "vault name")
+	vaultName := fs.String("vault", "", "vault name")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing)")
 
@@ -38,20 +38,20 @@ func runEncrypt(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	eng, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
 	defer func() { _ = eng.Close() }()
 
-	vaultIdx, err := eng.ResolveVaultIndex(*vault)
+	vaultIdx, err := eng.ResolveVaultIndex(*vaultName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	result, err := eng.EncryptNode(&engine.EncryptOpts{
+	result, err := eng.EncryptNode(&vault.EncryptOpts{
 		VaultIndex: vaultIdx,
 		Path:       remotePath,
 	})

@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // runVerify handles the "bitfs verify" command.
@@ -45,7 +45,7 @@ func runVerify(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	eng, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError

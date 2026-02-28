@@ -627,7 +627,7 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 | 9 | ~~**H1** revenue_share 类型~~ | ✅ 已修复 (2026-02-28) |
 | 10 | ~~**H3** rm 交易数~~ | ✅ 已修复 (2026-02-28) |
 | 11 | ~~**H4** mv 跨目录~~ | ✅ 已修复 (2026-02-28) |
-| 12 | **H7** Exit codes | spec/10-cmd-bitfs.md:67-76 |
+| 12 | ~~**H7** Exit codes~~ | ✅ 已修复 (2026-02-28) |
 | 13 | **H9** DNS 记录格式 | 统一 paymail/dns.go 与 engine/publish.go |
 | 14 | **H10** BIP32 路径 | bitfs.org Website-Content-Outline.md:202-207 |
 | 15 | ~~**H11/H12** 白皮书 KDF~~ | ✅ 已修复 (2026-02-28) |

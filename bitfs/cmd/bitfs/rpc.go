@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/network"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // configureChain resolves RPC configuration and attaches a BlockchainService
-// to the engine. If no RPC URL can be resolved, the engine stays in offline mode.
-func configureChain(eng *engine.Engine, rpcURL, rpcUser, rpcPass, netName string) {
+// to the vault. If no RPC URL can be resolved, the vault stays in offline mode.
+func configureChain(v *vault.Vault, rpcURL, rpcUser, rpcPass, netName string) {
 	flags := &network.RPCConfig{
 		URL:      rpcURL,
 		User:     rpcUser,
@@ -29,7 +29,7 @@ func configureChain(eng *engine.Engine, rpcURL, rpcUser, rpcPass, netName string
 		return
 	}
 
-	eng.Chain = network.NewRPCClient(*cfg)
+	v.Chain = network.NewRPCClient(*cfg)
 }
 
 // envToMap reads BITFS_RPC_* environment variables into a map.

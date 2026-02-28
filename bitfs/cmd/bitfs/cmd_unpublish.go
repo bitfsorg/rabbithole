@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/bitfs/internal/publish"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // runUnpublish handles the "bitfs unpublish" command.
@@ -36,14 +37,14 @@ func runUnpublish(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	v, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer func() { _ = eng.Close() }()
+	defer func() { _ = v.Close() }()
 
-	result, err := eng.Unpublish(&engine.UnpublishOpts{
+	result, err := publish.Unpublish(v, &publish.UnpublishOpts{
 		Domain: domain,
 	})
 	if err != nil {

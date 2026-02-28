@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/bitfs/internal/publish"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // runPublish handles the "bitfs publish" command.
@@ -18,7 +19,7 @@ import (
 // Without arguments, it lists all existing publish bindings with verification status.
 func runPublish(args []string) int {
 	fs := flag.NewFlagSet("publish", flag.ContinueOnError)
-	vault := fs.String("vault", "", "vault name")
+	vaultName := fs.String("vault", "", "vault name")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing)")
 
@@ -32,16 +33,18 @@ func runPublish(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	v, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
-	defer func() { _ = eng.Close() }()
+	defer func() { _ = v.Close() }()
+
+	dns := publish.DefaultDNSResolver()
 
 	// No domain argument: list all bindings.
 	if fs.NArg() < 1 {
-		result, err := eng.Publish(&engine.PublishOpts{})
+		result, err := publish.Publish(v, dns, &publish.PublishOpts{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			return exitError
@@ -52,13 +55,13 @@ func runPublish(args []string) int {
 
 	domain := fs.Arg(0)
 
-	vaultIdx, err := eng.ResolveVaultIndex(*vault)
+	vaultIdx, err := v.ResolveVaultIndex(*vaultName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	result, err := eng.Publish(&engine.PublishOpts{
+	result, err := publish.Publish(v, dns, &publish.PublishOpts{
 		VaultIndex: vaultIdx,
 		Domain:     domain,
 	})

@@ -9,14 +9,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // runMkdir handles the "bitfs mkdir" command.
 func runMkdir(args []string) int {
 	fs := flag.NewFlagSet("mkdir", flag.ContinueOnError)
-	vault := fs.String("vault", "", "vault name")
+	vaultName := fs.String("vault", "", "vault name")
 	dataDir := fs.String("datadir", config.DefaultDataDir(), "data directory")
 	password := fs.String("password", "", "wallet password (for testing)")
 
@@ -37,20 +37,20 @@ func runMkdir(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	eng, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
 	}
 	defer func() { _ = eng.Close() }()
 
-	vaultIdx, err := eng.ResolveVaultIndex(*vault)
+	vaultIdx, err := eng.ResolveVaultIndex(*vaultName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitNotFound
 	}
 
-	result, err := eng.Mkdir(&engine.MkdirOpts{
+	result, err := eng.Mkdir(&vault.MkdirOpts{
 		VaultIndex: vaultIdx,
 		Path:       remotePath,
 	})

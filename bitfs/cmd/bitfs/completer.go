@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // shellCompleter implements readline.AutoCompleter for the BitFS shell.
@@ -18,14 +18,14 @@ const cacheTTL = 500 * time.Millisecond
 
 type shellCompleter struct {
 	commands []string
-	state    *engine.LocalState
+	state    *vault.LocalState
 	cwd      string // remote working directory (mutable, updated by shell loop)
 	localCwd string // local working directory (mutable, updated by shell loop)
 
 	// Per-directory cache to avoid O(n) FindNodeByPath on every keypress.
-	cacheDir    string            // cached directory path
-	cacheNode   *engine.NodeState // cached node
-	cacheExpiry time.Time         // TTL expiry
+	cacheDir    string           // cached directory path
+	cacheNode   *vault.NodeState // cached node
+	cacheExpiry time.Time        // TTL expiry
 }
 
 // Do implements the readline.AutoCompleter interface.
@@ -148,7 +148,7 @@ func (sc *shellCompleter) completeRemotePath(partial string) []string {
 	}
 
 	// Use cached node if the directory matches and TTL hasn't expired.
-	var node *engine.NodeState
+	var node *vault.NodeState
 	now := time.Now()
 	if lookupDir == sc.cacheDir && now.Before(sc.cacheExpiry) {
 		node = sc.cacheNode

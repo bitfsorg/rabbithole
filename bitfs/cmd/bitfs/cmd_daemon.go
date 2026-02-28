@@ -15,8 +15,8 @@ import (
 	"syscall"
 
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // runDaemon dispatches daemon subcommands.
@@ -67,7 +67,7 @@ func runDaemonStart(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	eng, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
@@ -82,28 +82,24 @@ func runDaemonStart(args []string) int {
 		fmt.Fprintf(os.Stderr, "Warning: SPV initialization failed: %v\n", err)
 	}
 
-	// Create daemon with adapter types.
+	// Create daemon with vault adapters.
 	cfg := daemon.DefaultConfig()
 	cfg.ListenAddr = *listen
 	cfg.Mainnet = eng.Wallet.Network().Name == "mainnet"
 
-	walletAdapter := engine.NewWalletAdapter(eng)
-	storeAdapter := engine.NewStoreAdapter(eng)
-	metanetAdapter := engine.NewMetanetAdapter(eng)
-
-	d, err := daemon.New(cfg, walletAdapter, storeAdapter, metanetAdapter)
+	d, err := daemon.New(cfg, newVaultWalletAdapter(eng), newVaultStoreAdapter(eng), newVaultMetanetAdapter(eng))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitError
 	}
 
 	// Attach SPV service if available.
-	if spvAdapter := engine.NewSPVAdapter(eng); spvAdapter != nil {
+	if spvAdapter := newVaultSPVAdapter(eng); spvAdapter != nil {
 		d.SetSPV(spvAdapter)
 	}
 
 	// Attach chain service for payment broadcast verification.
-	if chainAdapter := engine.NewChainAdapter(eng); chainAdapter != nil {
+	if chainAdapter := newVaultChainAdapter(eng); chainAdapter != nil {
 		d.SetChain(chainAdapter)
 	}
 

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // shellCommandsList is the full list of shell command names.
@@ -43,10 +43,10 @@ func TestCompleteCommandNames_NoMatch(t *testing.T) {
 }
 
 func TestCompleteRemotePath_RootChildren(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "docs", Type: "dir"},
 			{Name: "hello.txt", Type: "file"},
 			{Name: "data", Type: "dir"},
@@ -59,10 +59,10 @@ func TestCompleteRemotePath_RootChildren(t *testing.T) {
 }
 
 func TestCompleteRemotePath_Prefix(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "docs", Type: "dir"},
 			{Name: "hello.txt", Type: "file"},
 			{Name: "data", Type: "dir"},
@@ -75,16 +75,16 @@ func TestCompleteRemotePath_Prefix(t *testing.T) {
 }
 
 func TestCompleteRemotePath_NestedDir(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "docs", Type: "dir"},
 		},
 	})
-	state.SetNode("bbb", &engine.NodeState{
+	state.SetNode("bbb", &vault.NodeState{
 		Path: "/docs", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "readme.md", Type: "file"},
 			{Name: "api.md", Type: "file"},
 		},
@@ -96,16 +96,16 @@ func TestCompleteRemotePath_NestedDir(t *testing.T) {
 }
 
 func TestCompleteRemotePath_AbsolutePath(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "docs", Type: "dir"},
 		},
 	})
-	state.SetNode("bbb", &engine.NodeState{
+	state.SetNode("bbb", &vault.NodeState{
 		Path: "/docs", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "readme.md", Type: "file"},
 		},
 	})
@@ -145,10 +145,10 @@ func TestShellCompleterDo_FirstToken(t *testing.T) {
 }
 
 func TestShellCompleterDo_CdArgument(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "docs", Type: "dir"},
 			{Name: "music", Type: "dir"},
 		},
@@ -197,10 +197,10 @@ func TestShellCompleterDo_PutFirstArg_Local(t *testing.T) {
 }
 
 func TestShellCompleterDo_PutSecondArg_Remote(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "uploads", Type: "dir"},
 		},
 	})
@@ -270,10 +270,10 @@ func TestFormatCandidates_FileSuffix(t *testing.T) {
 
 func TestCompleteRemotePath_CacheHit(t *testing.T) {
 	// Set up initial state with one child.
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "alpha", Type: "file"},
 		},
 	})
@@ -285,9 +285,9 @@ func TestCompleteRemotePath_CacheHit(t *testing.T) {
 	assert.Equal(t, []string{"alpha"}, c1)
 
 	// Mutate the underlying state — add a second child.
-	state.SetNode("aaa", &engine.NodeState{
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "alpha", Type: "file"},
 			{Name: "beta", Type: "file"},
 		},
@@ -299,10 +299,10 @@ func TestCompleteRemotePath_CacheHit(t *testing.T) {
 }
 
 func TestCompleteRemotePath_CacheExpiry(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "alpha", Type: "file"},
 		},
 	})
@@ -314,9 +314,9 @@ func TestCompleteRemotePath_CacheExpiry(t *testing.T) {
 	assert.Equal(t, []string{"alpha"}, c1)
 
 	// Mutate state.
-	state.SetNode("aaa", &engine.NodeState{
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "alpha", Type: "file"},
 			{Name: "beta", Type: "file"},
 		},
@@ -331,16 +331,16 @@ func TestCompleteRemotePath_CacheExpiry(t *testing.T) {
 }
 
 func TestCompleteRemotePath_CacheDifferentDir(t *testing.T) {
-	state := engine.NewLocalState("")
-	state.SetNode("aaa", &engine.NodeState{
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
 		Path: "/", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "docs", Type: "dir"},
 		},
 	})
-	state.SetNode("bbb", &engine.NodeState{
+	state.SetNode("bbb", &vault.NodeState{
 		Path: "/docs", Type: "dir",
-		Children: []*engine.ChildState{
+		Children: []*vault.ChildState{
 			{Name: "readme.md", Type: "file"},
 		},
 	})

@@ -15,8 +15,8 @@ import (
 	"github.com/bsv-blockchain/go-sdk/script"
 	qrterminal "github.com/mdp/qrterminal/v3"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
 	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
 
@@ -41,7 +41,7 @@ func runWalletFund(args []string) int {
 		return exitWalletError
 	}
 
-	eng, err := engine.New(*dataDir, pass)
+	eng, err := vault.New(*dataDir, pass)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitWalletError
