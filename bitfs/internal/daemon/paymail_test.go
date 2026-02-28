@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tongxiaofeng/libbitfs-go/paymail"
 )
 
 // --- handlePKI Tests ---
@@ -333,4 +334,64 @@ func TestHandleVerifyPubKey_MalformedHandle(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "INVALID_HANDLE")
+}
+
+// --- BSVAlias Capability Advertising Tests ---
+
+func TestBSVAlias_HasVerifyPubKeyCapability(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	req := httptest.NewRequest("GET", "/.well-known/bsvalias", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	caps, ok := resp["capabilities"].(map[string]interface{})
+	require.True(t, ok, "capabilities must be a map")
+
+	verifyURL, ok := caps["a9f510c16bde"].(string)
+	require.True(t, ok, "a9f510c16bde (VerifyPubKey) capability must be present")
+
+	assert.Contains(t, verifyURL, "/api/v1/verify/")
+	assert.Contains(t, verifyURL, "{pubkey}")
+}
+
+func TestBSVAlias_HasBRFCCapabilities(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	req := httptest.NewRequest("GET", "/.well-known/bsvalias", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	caps, ok := resp["capabilities"].(map[string]interface{})
+	require.True(t, ok, "capabilities must be a map")
+
+	brfcTests := []struct {
+		brfcID   string
+		name     string
+		contains string
+	}{
+		{paymail.BRFCBitFSBrowse, "BRFCBitFSBrowse", "/_bitfs/meta/"},
+		{paymail.BRFCBitFSBuy, "BRFCBitFSBuy", "/_bitfs/buy/"},
+		{paymail.BRFCBitFSSell, "BRFCBitFSSell", "/_bitfs/sales"},
+	}
+
+	for _, tc := range brfcTests {
+		t.Run(tc.name, func(t *testing.T) {
+			url, ok := caps[tc.brfcID].(string)
+			require.True(t, ok, "BRFC %s (%s) must be present in capabilities", tc.name, tc.brfcID)
+			assert.Contains(t, url, tc.contains, "BRFC %s URL must point to %s", tc.name, tc.contains)
+		})
+	}
 }
