@@ -19,6 +19,7 @@ type Config struct {
     Security     SecurityConfig `toml:"security"`
     Storage      StorageConfig  `toml:"storage"`
     Log          LogConfig      `toml:"log"`
+    Mainnet      bool           `toml:"mainnet"` // true = mainnet addresses, false = testnet/regtest
 }
 
 type TLSConfig struct {
@@ -38,6 +39,7 @@ type SecurityConfig struct {
     RateLimit      RateLimitConfig `toml:"rate_limit"`
     CORS           CORSConfig      `toml:"cors"`
     MaxRequestSize string          `toml:"max_request_size"`
+    TrustProxy     bool            `toml:"trust_proxy"` // trust X-Forwarded-For / X-Real-IP
 }
 
 type RateLimitConfig struct {
@@ -64,10 +66,11 @@ type LogConfig struct {
 // Daemon is the main daemon server.
 type Daemon struct {
     config  *Config
-    wallet  *wallet.Wallet
-    store   storage.Store
-    spv     *spv.Client
-    metanet *metanet.Service
+    wallet  WalletService
+    store   ContentStore
+    metanet MetanetService
+    spv     SPVService   // optional; nil = SPV endpoints disabled
+    chain   ChainService // optional; nil = skip broadcast
     server  *http.Server
 }
 
@@ -86,13 +89,19 @@ type Session struct {
 
 ```go
 // New creates a new Daemon instance.
-func New(config *Config, w *wallet.Wallet, store storage.Store) (*Daemon, error)
+func New(config *Config, wallet WalletService, store ContentStore, metanet MetanetService) (*Daemon, error)
 
 // Start starts the daemon HTTP server.
 func (d *Daemon) Start() error
 
 // Stop gracefully shuts down the daemon.
 func (d *Daemon) Stop(ctx context.Context) error
+
+// SetSPV attaches an SPV verification service. Must be called before Start.
+func (d *Daemon) SetSPV(spv SPVService)
+
+// SetChain attaches a blockchain service for payment broadcast. Must be called before Start.
+func (d *Daemon) SetChain(c ChainService)
 
 // RegisterRoutes registers all HTTP handlers on the provided mux.
 func (d *Daemon) RegisterRoutes(mux *http.ServeMux)
@@ -101,31 +110,46 @@ func (d *Daemon) RegisterRoutes(mux *http.ServeMux)
 ### HTTP 端点
 
 ```
-GET  /                              根路径（内容协商：HTML/Markdown/JSON）
-GET  /{path}                        路径访问（内容协商）
-GET  /_bitfs/data/{hash}            加密数据检索（可能触发 x402）
-GET  /_bitfs/meta/{pnode}/{path}    Metanet 元数据查询
-GET  /_bitfs/health                 健康检查
+GET  /                                      根路径（内容协商：HTML/Markdown/JSON）
+GET  /{path}                                路径访问（内容协商）
+GET  /_bitfs/health                         健康检查
 
-POST /_bitfs/handshake              Method 42 ECDH 握手
-GET  /_bitfs/buy/{txid}             获取购买信息（capsule_hash，价格）
-POST /_bitfs/buy/{txid}             提交 HTLC，接收胶囊（Capsule）
-GET  /_bitfs/spv/proof/{txid}       SPV Merkle 证明检索
+GET  /_bitfs/data/{hash}                    加密数据检索（可能触发 x402）
+GET  /_bitfs/meta/{pnode}/{path...}         Metanet 元数据查询
+GET  /_bitfs/versions/{pnode}/{path...}     版本历史查询
 
-GET  /.well-known/bsvalias          Paymail 能力发现
-GET  /api/v1/pki/{alias}@{domain}   Paymail PKI 端点
+POST /_bitfs/handshake                      Method 42 ECDH 握手
+GET  /_bitfs/buy/{txid}                     获取购买信息（capsule_hash，价格）
+POST /_bitfs/buy/{txid}                     提交 HTLC，接收胶囊（Capsule）
+POST /_bitfs/pay/{invoice_id}               带宽支付（x402 发票结算）
+GET  /_bitfs/sales                          发票/销售记录列表
+GET  /_bitfs/spv/proof/{txid}               SPV Merkle 证明检索
+
+GET  /_bitfs/dashboard/status               仪表盘：守护进程状态
+GET  /_bitfs/dashboard/storage              仪表盘：存储统计
+GET  /_bitfs/dashboard/wallet               仪表盘：钱包信息
+GET  /_bitfs/dashboard/network              仪表盘：网络配置
+GET  /_bitfs/dashboard/logs                 仪表盘：最近日志（?limit=N&level=L）
+
+GET  /.well-known/bsvalias                  BSV Alias 能力发现
+GET  /api/v1/pki/{handle}                   BSV Alias PKI 端点（handle = alias@domain）
+GET  /api/v1/public-profile/{handle}        BSV Alias 公开资料
+GET  /api/v1/verify/{handle}/{pubkey}       BSV Alias 公钥验证
 ```
+
+所有 POST 端点和部分 GET 端点均注册对应的 `OPTIONS` 处理器以支持 CORS 预检请求。中间件自动设置 `Access-Control-Allow-Origin`、`Access-Control-Allow-Methods`、`Access-Control-Allow-Headers` 响应头。
 
 ## 依赖
 
 - `net/http` -- HTTP 服务器
-- `libbitfs-go/wallet` -- 密钥管理
-- `libbitfs-go/storage` -- 内容存储
-- `libbitfs-go/method42` -- 加密/解密与握手
-- `libbitfs-go/metanet` -- DAG 遍历
-- `libbitfs-go/x402` -- 支付协议
-- `libbitfs-go/paymail` -- Paymail 服务器能力
-- `libbitfs-go/spv` -- 交易验证
+- `go-sdk/primitives/ec` -- ECDH 计算与公钥解析
+- `go-sdk/script` -- 地址派生（P2PKH）
+- `go-sdk/transaction` -- 交易解析（HTLC 验证、重放保护）
+- `libbitfs-go/method42` -- 胶囊计算（ComputeCapsuleWithNonce, ComputeCapsuleHash）
+- `libbitfs-go/x402` -- 支付协议（发票、HTLC 构建/验证、Payment Headers）
+- `libbitfs-go/paymail` -- BRFC 常量（BRFCBitFSBrowse, BRFCBitFSBuy, BRFCBitFSSell）
+
+外部服务通过接口注入（WalletService, ContentStore, MetanetService, SPVService, ChainService），不直接依赖 `libbitfs-go/wallet`、`libbitfs-go/storage`、`libbitfs-go/spv` 的具体类型。
 
 ## 数据结构
 
@@ -153,10 +177,12 @@ HTTP 错误码：
 - 402 Payment Required（需要支付，x402）
 - 404 Not Found（未找到）
 - 408 Timeout（超时）
-- 409 Transaction Conflict（交易冲突）
+- 409 Transaction Conflict（交易冲突 / HTLC 重放）
+- 410 Gone（发票已过期）
 - 429 Rate Limited（速率限制）
 - 500 Internal Error（内部错误）
-- 503 Storage Unavailable（存储不可用）
+- 502 Bad Gateway（SPV 验证失败）
+- 503 Service Unavailable（存储不可用 / 发票数量上限）
 
 JSON 错误格式：
 ```json

@@ -8,19 +8,14 @@ BitFS 的内容存储抽象层。提供扁平键值存储，其中 `key_hash`（
 
 ## 公共 API
 
-### 类型（压缩）
+### 常量
 
 ```go
-// CompressionScheme identifies the compression algorithm.
-type CompressionScheme int32
-
-const (
-    CompressNone CompressionScheme = 0 // No compression
-    CompressLZW  CompressionScheme = 1 // compress/lzw (LSB byte order)
-    CompressGZIP CompressionScheme = 2 // compress/gzip
-    CompressZSTD CompressionScheme = 3 // [PLANNED] Zstandard
-)
+// KeyHashSize is the required length of a key hash (SHA256 output = 32 bytes).
+const KeyHashSize = 32
 ```
+
+压缩方案常量定义在 `metanet` 包中（`metanet.CompressNone` = 0, `CompressLZW` = 1, `CompressGZIP` = 2, `CompressZSTD` = 3），类型为 `int32`。`Compress`/`Decompress` 直接接受 `int32` 参数。
 
 ### 接口
 
@@ -52,16 +47,11 @@ type Store interface {
 
 ```go
 // FileStore implements Store using the local filesystem.
-// Files stored at: {baseDir}/{hex(keyHash[:2])}/{hex(keyHash)}
+// Files stored at: {baseDir}/{hex(keyHash[:1])}/{hex(keyHash)}
+// The first byte (2 hex chars) is used as a subdirectory for sharding.
 type FileStore struct {
     baseDir string
-}
-
-// OnChainRef tracks content stored on-chain in data transactions.
-type OnChainRef struct {
-    KeyHash      []byte   // Content key hash
-    ContentTxIDs [][]byte // Data transaction TxIDs (ordered chunks)
-    TotalChunks  uint32   // Number of chunks (0 = single tx)
+    mu      sync.RWMutex
 }
 ```
 
@@ -73,19 +63,19 @@ type OnChainRef struct {
 func NewFileStore(baseDir string) (*FileStore, error)
 
 // KeyHashToPath converts a key_hash to its filesystem path.
-// Uses first 2 bytes as subdirectory for sharding: {base}/{ab}/{abcdef...}
+// Uses first byte (2 hex chars) as subdirectory for sharding: {base}/{ab}/{abcdef...}
 func KeyHashToPath(baseDir string, keyHash []byte) string
 
 // --- Content Processing ---
 
-// Compress compresses data using the specified scheme.
+// Compress compresses data using the specified scheme (metanet.Compress* int32 constants).
 // CompressNone returns data unchanged.
 // CompressZSTD is defined but not yet implemented (returns ErrUnsupportedCompression).
-func Compress(data []byte, scheme CompressionScheme) ([]byte, error)
+func Compress(data []byte, scheme int32) ([]byte, error)
 
 // Decompress decompresses data using the specified scheme.
 // Mirrors Compress: CompressNone returns data unchanged.
-func Decompress(data []byte, scheme CompressionScheme) ([]byte, error)
+func Decompress(data []byte, scheme int32) ([]byte, error)
 
 // --- Content Chunking ---
 
@@ -104,14 +94,48 @@ func ComputeRecombinationHash(chunks [][]byte) []byte
 func RecombineChunks(chunks [][]byte, expectedHash []byte) ([]byte, error)
 ```
 
+### ContentResolver
+
+```go
+// MaxContentResponseSize is the maximum allowed response body size for content
+// fetches (1 GB). Prevents memory exhaustion from malicious endpoints.
+const MaxContentResponseSize = 1 << 30
+
+// ContentResolver fetches encrypted content by key_hash from multiple sources
+// in priority order: local FileStore -> daemon HTTP endpoints.
+// Returns ciphertext only; the caller is responsible for decryption.
+type ContentResolver struct {
+    Store     *FileStore   // local content-addressed storage
+    Endpoints []string     // daemon/CDN base URLs (e.g. "http://localhost:8080")
+    Client    *http.Client // HTTP client for remote fetches; nil uses default
+}
+
+// NewContentResolver creates a ContentResolver with the given local store.
+// Endpoints and Client can be set after creation.
+// Default HTTP client timeout: 30s.
+func NewContentResolver(store *FileStore) *ContentResolver
+
+// Fetch retrieves ciphertext for the given key_hash, trying sources in order:
+//  1. Local FileStore
+//  2. Daemon HTTP endpoints (GET {baseURL}/_bitfs/data/{hex(keyHash)})
+// Returns the first successful result. Caches remote content locally on success.
+// Returns ErrNotFound if all sources fail.
+func (r *ContentResolver) Fetch(keyHash []byte) ([]byte, error)
+```
+
 ## 依赖
 
 - `os` -- 文件 I/O
+- `sync` -- FileStore 读写锁
 - `encoding/hex` -- 密钥哈希到文件名的转换
 - `path/filepath` -- 路径构建
 - `compress/lzw` -- LZW 压缩
 - `compress/gzip` -- GZIP 压缩
 - `crypto/sha256` -- 重组哈希计算
+- `net/http` -- ContentResolver 远程获取
+- `io` -- 响应体限制读取
+- `time` -- HTTP 客户端超时
+- `github.com/tongxiaofeng/libbitfs-go/metanet` -- 压缩方案常量
 
 ## 数据结构
 
@@ -123,7 +147,7 @@ func RecombineChunks(chunks [][]byte, expectedHash []byte) ([]byte, error)
   cd/
     cdef...
 ```
-使用 key_hash 的第一个字节作为子目录前缀，避免单个目录中文件过多。
+使用 key_hash 的第一个字节（2 个十六进制字符）作为子目录前缀，避免单个目录中文件过多。共 256 个分片桶。
 
 ### 内容分片模型
 
@@ -153,10 +177,11 @@ Node fields:
 |------|------|
 | `ErrNotFound` | 给定 key_hash 无对应内容 |
 | `ErrInvalidKeyHash` | 密钥哈希不是 32 字节 |
-| `ErrStoreFull` | 磁盘空间耗尽 |
+| `ErrEmptyContent` | 尝试存储空内容 |
+| `ErrInvalidBaseDir` | 基础目录路径无效（空字符串） |
+| `ErrStoreFull` | 磁盘空间耗尽（已定义，当前未使用） |
 | `ErrIOFailure` | 文件读写错误 |
-| `ErrUnsupportedCompression` | 不支持的压缩方案 (ZSTD) |
-| `ErrDecompressionFailed` | 解压缩失败 (损坏数据) |
+| `ErrUnsupportedCompression` | 不支持的压缩方案 (如 ZSTD) |
 | `ErrRecombinationHashMismatch` | 分片重组后哈希不匹配 |
 
 ## 安全考量

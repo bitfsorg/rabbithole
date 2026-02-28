@@ -12,8 +12,8 @@ BitFS 的主 CLI 二进制文件——去中心化加密文件系统的所有者
 
 ```
 # 文件操作
-bitfs put <local> <remote>             上传文件（创建或更新）
-bitfs put --encrypt <local> <remote>   上传加密文件（私有模式）
+bitfs put <local> <remote>             上传文件（创建或更新，默认 free 模式）
+bitfs put --access private <local> <remote>  上传私有文件
 bitfs mkdir <path>                     创建目录
 bitfs rm <path>                        删除文件（从父目录移除 ChildEntry, 1 笔交易）
 bitfs rm -r <path>                     递归删除
@@ -22,15 +22,14 @@ bitfs mv <src> <dst>                   移动/重命名
   跨目录: SelfUpdate 源父 + SelfUpdate 目标父 (2 笔交易, P_node 不变)
 bitfs cp <src> <dst>                   复制（创建独立新节点, 新密钥）
 bitfs link <target> <name>             硬链接
-bitfs link -s <target> <name>          软链接（本地）
-bitfs link -s <domain/path> <name>     软链接（远程）
+bitfs link --soft <target> <name>      软链接（本地）
+bitfs link --soft <domain/path> <name> 软链接（远程）
 bitfs cat <path>                       输出文件内容到 stdout
 bitfs get <remote> [local]             下载文件到本地
 bitfs mget <dir> [local-dir]           批量下载目录
 bitfs mput <dir> [remote-dir]          批量上传目录
 bitfs encrypt <path>                   免费 -> 私有
 bitfs sell <path> --price <sat/KB>     设置价格（付费模式）
-bitfs sell <path> --recursive          递归定价
 bitfs verify <txid>                    SPV 验证交易
 bitfs publish <domain> [path]          通过 DNSLink 绑定域名
 bitfs unpublish <domain>               解绑域名
@@ -56,6 +55,9 @@ bitfs shell                            FTP 风格交互式 REPL
 
 > **Shell-only 命令**: 以下命令仅在 `bitfs shell` REPL 中可用，不作为顶层 CLI 子命令：
 > `rmdir`, `decrypt`, `sales`。
+>
+> **Shell-only 标志**: `sell --recursive`（递归定价）仅在 shell 中可用，CLI `sell` 命令不支持 `--recursive`。
+> `link` 在 CLI 中仅支持 `--soft`；shell 中同时支持 `-s` 和 `--soft`。
 >
 > **计划中**: 以下命令已设计但尚未实现：
 > `vault use <name>`, `vault info [name]`, `wallet restore`, `daemon status`, `daemon config`。
@@ -96,14 +98,15 @@ Shell 特性：
 
 ### 全局标志
 
+每个写入命令均支持以下标志（通过各自的 `flag.FlagSet` 定义）：
+
 ```
---json              JSON 输出（代理友好）
---no-cache          禁用本地缓存
---timeout N         请求超时（秒）
---offline           强制仅缓存模式
---home <path>       覆盖 BITFS_HOME（默认 ~/.bitfs）
+--datadir <path>    覆盖数据目录（默认 ~/.bitfs）
+--password <pass>   钱包密码（仅用于测试，生产环境从终端提示输入）
 --vault <name>      为此命令覆盖活跃保险库
 ```
+
+> **注意**: `--json`、`--no-cache`、`--timeout`、`--offline` 尚未在 CLI 中实现。`--datadir` 对应设计文档中的 `--home`。
 
 ### 退出码
 
@@ -153,7 +156,7 @@ daemon.listen = 0.0.0.0:8080
 1. 解析参数，验证输入
 2. 加载钱包（如需要），用密码解锁
 3. 执行操作
-4. 输出结果（根据 --json 标志选择纯文本或 JSON）
+4. 输出结果（纯文本格式）
 5. 返回适当的退出码
 
 网络错误：使用指数退避重试 3 次（1秒/2秒/4秒）。
