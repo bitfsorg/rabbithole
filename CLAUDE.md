@@ -19,13 +19,17 @@
 
 ```
 RabbitHole/
-├── design/            ← 设计文档 (md 源文件 + HTML→PDF)
-├── whitepaper/        ← 白皮书 (md 大纲 → LaTeX → PDF)
+├── docs/              ← 统一文档中心
+│   ├── design/        ← 设计文档 (md 源文件 + HTML→PDF)
+│   ├── whitepaper/    ← 白皮书 (md 大纲 → LaTeX → PDF)
+│   ├── slides/        ← 演示文稿 (HTML5)
+│   ├── references/    ← 研究论文 (6 篇 PDF)
+│   ├── vi/            ← 视觉识别系统
+│   ├── plans/         ← 设计与实施计划 (按项目分子目录)
+│   ├── specs/         ← 模块规格说明 (按项目分子目录)
+│   ├── audits/        ← 审查报告
+│   └── tasks/         ← 任务追踪
 ├── websites/          ← 官网 (bitfs.org + metanet.org)
-├── slides/            ← 演示文稿 (HTML5)
-├── references/        ← 研究论文 (6 篇 PDF)
-├── vi/                ← 视觉识别系统
-├── docs/              ← 统一文档中心 (plans/specs/audits/tasks)
 ├── bitfs/             ← BitFS Go 实现 (CLI + daemon)
 ├── metanet/           ← Metanet Go 实现 (CDN 节点)
 ├── libbitfs-go/       ← 共享核心库 Go (独立 repo)
@@ -128,7 +132,7 @@ BSV 区块链浏览器，支持 BitFS/Metanet 协议解码。用于 regtest/test
 libbitfs-go 的 TypeScript 镜像，目标: 浏览器 + Node.js 环境。ESM 优先，依赖 @bsv/sdk。
 **状态**: 仅有 README.md 占位，10 个包与 libbitfs-go 对应，尚未实现。
 
-### design/ — 设计文档
+### docs/design/ — 设计文档
 
 四层设计文档体系，每个产品各 4 章：
 
@@ -141,7 +145,7 @@ libbitfs-go 的 TypeScript 镜像，目标: 浏览器 + Node.js 环境。ESM 优
 
 **其他**: `0-OverallDesign.zh.md`（总体设计）、`diagrams/`（8 个 Mermaid .mmd + 7 个 SVG）、`pdf/`（9 个生成的 PDF + HTML 模板）
 
-### whitepaper/ — 白皮书
+### docs/whitepaper/ — 白皮书
 
 两篇学术论文，中英文双语：
 - **BitFS**: "A Peer-to-Peer Encrypted File System on Blockchain" — Unix 映射、HD 密钥派生、Method 42、HTLC 原子交换
@@ -158,18 +162,18 @@ libbitfs-go 的 TypeScript 镜像，目标: 浏览器 + Node.js 环境。ESM 优
 
 **管线**: `Website-Content-Outline.md`（大纲）→ `index.html` + `index.zh.html`
 
-### slides/ — 演示文稿
+### docs/slides/ — 演示文稿
 
-BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 vi/ 一致）。
+BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 docs/vi/ 一致）。
 6 个部分: 范式革命 → 所有权与密码学 → 交易 → 核心功能 → Token 经济 → 网络骨干
 
 **管线**: `Slides-Outline.md`（大纲）→ `BitFS-presentation.html`
 
-### references/ — 参考论文
+### docs/references/ — 参考论文
 
-6 篇研究论文和专利，详见 `references/CLAUDE.md`。核心参考: Paper #0（Metanet 专利）和 Paper #5（分布式存储验证）。
+6 篇研究论文和专利，详见 `docs/references/CLAUDE.md`。核心参考: Paper #0（Metanet 专利）和 Paper #5（分布式存储验证）。
 
-### vi/ — 视觉识别系统
+### docs/vi/ — 视觉识别系统
 
 `vi-system.html` — 两产品完整 VI 规范：
 - **BitFS Dark Botanical**: 金铜色调（`--b-gold: #c9956b`），Cormorant Garamond + Inter + JetBrains Mono
@@ -188,10 +192,10 @@ BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 vi/ 一致）。
 
 | 目录 | 源文件 | 生成管线 | 输出 |
 |------|--------|----------|------|
-| design/ | `.zh.md` | pandoc + HTML 模板 + weasyprint | 内部设计 PDF |
-| whitepaper/ | `*-Outline.md` | 大纲 → `.tex` → tectonic (XeTeX) | 学术论文 PDF |
+| docs/design/ | `.zh.md` | pandoc + HTML 模板 + weasyprint | 内部设计 PDF |
+| docs/whitepaper/ | `*-Outline.md` | 大纲 → `.tex` → tectonic (XeTeX) | 学术论文 PDF |
 | websites/ | `Website-Content-Outline.md` | 大纲 → `index.html` + `index.zh.html` | 单页官网 |
-| slides/ | `Slides-Outline.md` | 大纲 → `*-presentation.html` | HTML 幻灯片 |
+| docs/slides/ | `Slides-Outline.md` | 大纲 → `*-presentation.html` | HTML 幻灯片 |
 
 **关键原则**：修改大纲/源文件，然后重新生成输出物。不要直接编辑生成的文件。
 
@@ -214,7 +218,7 @@ BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 vi/ 一致）。
 ## 许可证
 
 - 源代码: OpenBSV License
-- websites/, whitepaper/, design/: 单独许可
+- websites/, docs/whitepaper/, docs/design/: 单独许可
 
 ## 技术栈
 - Go 1.25.6 + `github.com/bsv-blockchain/go-sdk` v1.2.18 (唯一 BSV 依赖)
