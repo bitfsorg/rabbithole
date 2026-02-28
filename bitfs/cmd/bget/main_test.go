@@ -1329,3 +1329,1110 @@ func TestJSON_DirectoryError(t *testing.T) {
 
 	assert.Contains(t, resp.Error, "directory")
 }
+
+// ---------------------------------------------------------------------------
+// deriveFilename edge cases
+// ---------------------------------------------------------------------------
+
+func TestDeriveFilename_DotPath(t *testing.T) {
+	assert.Equal(t, "download.dat", deriveFilename("."))
+}
+
+func TestDeriveFilename_Empty(t *testing.T) {
+	assert.Equal(t, "download.dat", deriveFilename(""))
+}
+
+// ---------------------------------------------------------------------------
+// JSON error paths for free content
+// ---------------------------------------------------------------------------
+
+func TestJSON_FreeContent_MissingKeyHash(t *testing.T) {
+	// Meta returns Access="free" but KeyHash=""
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/file.txt",
+			Access: "free", KeyHash: "",
+		})
+	}, nil)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/file.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "no content hash")
+}
+
+func TestJSON_FreeContent_DataServerError(t *testing.T) {
+	// Meta succeeds, data endpoint returns 500
+	keyHash := testKeyHash("ff")
+	srv := newMockDaemon(t, func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/file.txt",
+			Access: "free", KeyHash: keyHash,
+		})
+	}, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	})
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/file.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "error")
+}
+
+// ---------------------------------------------------------------------------
+// JSON paid content with --buy
+// ---------------------------------------------------------------------------
+
+func TestJSON_PaidContent_WithBuy_Success(t *testing.T) {
+	// Full paid+JSON flow: --json --buy
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("Paid JSON content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "paid.txt")
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: nodePubHex, Type: "file", Path: "/paid.txt",
+				MimeType: "text/plain", FileSize: uint64(len(plaintext)),
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "stderr: %s", stderr.String())
+
+	// Parse JSON output.
+	var resp buy.GetResponse
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &resp))
+	assert.NotNil(t, resp.Payment)
+	assert.Equal(t, outFile, resp.OutputPath)
+}
+
+func TestJSON_PaidContent_WithBuy_DataFetchError(t *testing.T) {
+	// Purchase succeeds but data endpoint fails
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "paid.txt")
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: nodePubHex, Type: "file", Path: "/paid.txt",
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusInternalServerError)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+}
+
+// ---------------------------------------------------------------------------
+// Unknown access mode
+// ---------------------------------------------------------------------------
+
+func TestUnknownAccessMode(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:  testPubKey,
+				Type:   "file",
+				Path:   "/weird.txt",
+				Access: "restricted",
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/weird.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 1, code, "unknown access mode should exit 1")
+	assert.Contains(t, stderr.String(), "unknown access mode")
+	assert.Contains(t, stderr.String(), "restricted")
+}
+
+func TestJSON_UnknownAccessMode(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:  testPubKey,
+				Type:   "file",
+				Path:   "/weird.txt",
+				Access: "restricted",
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/weird.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "unknown access mode")
+}
+
+// ---------------------------------------------------------------------------
+// downloadContent without -o flag (uses deriveFilename)
+// ---------------------------------------------------------------------------
+
+func TestFreeContent_NoOutputFlag_DeriveFilename(t *testing.T) {
+	plaintext := []byte("auto name content")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:   testPubKey,
+				Type:    "file",
+				Path:    "/subdir/autoname.txt",
+				KeyHash: keyHashHex,
+				Access:  "free",
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+	)
+	defer srv.Close()
+
+	// Run in a temp directory to avoid polluting the working directory.
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { _ = os.Chdir(origDir) }()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--host", srv.URL, makeURI("/subdir/autoname.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+	assert.Contains(t, stdout.String(), "autoname.txt")
+
+	// Verify the file was created with the derived name.
+	data, err := os.ReadFile(filepath.Join(tmpDir, "autoname.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, data)
+}
+
+// ---------------------------------------------------------------------------
+// JSON downloadContentJSON with auto-derived filename (no -o)
+// ---------------------------------------------------------------------------
+
+func TestJSON_FreeContent_NoOutputFlag_DeriveFilename(t *testing.T) {
+	plaintext := []byte("json auto name")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:   testPubKey,
+				Type:    "file",
+				Path:    "/jsonauto.dat",
+				KeyHash: keyHashHex,
+				Access:  "free",
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+	)
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { _ = os.Chdir(origDir) }()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--host", srv.URL, makeURI("/jsonauto.dat")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
+
+	var resp buy.GetResponse
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &resp))
+	assert.Contains(t, resp.OutputPath, "jsonauto.dat")
+}
+
+// ---------------------------------------------------------------------------
+// JSON paid config error paths
+// ---------------------------------------------------------------------------
+
+func TestJSON_PaidContent_WithBuy_MissingWalletKey(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      testPubKey,
+				Type:       "file",
+				Path:       "/premium.pdf",
+				FileSize:   5242880,
+				Access:     "paid",
+				PricePerKB: 100,
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--buy", "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "error")
+}
+
+func TestJSON_PaidContent_WithBuy_PurchaseFails(t *testing.T) {
+	// Valid wallet key but missing TxID causes purchase to fail.
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:      testPubKey,
+				Type:       "file",
+				Path:       "/premium.pdf",
+				FileSize:   5242880,
+				Access:     "paid",
+				PricePerKB: 100,
+				TxID:       "", // No TxID
+			})
+		},
+		nil,
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "--host", srv.URL, makeURI("/premium.pdf")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "error")
+}
+
+// ---------------------------------------------------------------------------
+// Paid content: non-JSON data fetch error (downloadPaidContent non-JSON branch)
+// ---------------------------------------------------------------------------
+
+func TestPaid_WithBuy_DataFetchError(t *testing.T) {
+	// Purchase succeeds but data endpoint returns 500 (non-JSON mode).
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: nodePubHex, Type: "file", Path: "/paid.txt",
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusInternalServerError)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr.String(), "server error")
+}
+
+// ---------------------------------------------------------------------------
+// Paid content: no -o flag derives filename
+// ---------------------------------------------------------------------------
+
+func TestPaid_WithBuy_NoOutputFlag(t *testing.T) {
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("paid no -o flag content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: nodePubHex, Type: "file", Path: "/autoname-paid.txt",
+				MimeType: "text/plain", FileSize: uint64(len(plaintext)),
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	// Run in temp dir to avoid polluting cwd.
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(tmpDir))
+	defer func() { _ = os.Chdir(origDir) }()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "--host", srv.URL, makeURI("/autoname-paid.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "stderr: %s", stderr.String())
+	assert.Contains(t, stdout.String(), "autoname-paid.txt")
+
+	data, err := os.ReadFile(filepath.Join(tmpDir, "autoname-paid.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, data)
+}
+
+// ---------------------------------------------------------------------------
+// Paid content: decrypt failure (garbage ciphertext)
+// ---------------------------------------------------------------------------
+
+func TestPaid_WithBuy_DecryptFailure(t *testing.T) {
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("content to encrypt")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "paid.txt")
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: nodePubHex, Type: "file", Path: "/paid.txt",
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			// Return garbage ciphertext that will fail decryption.
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write([]byte("this is not valid ciphertext"))
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 5, code, "decrypt failure should exit 5")
+	assert.Contains(t, stderr.String(), "decrypt")
+}
+
+func TestJSON_PaidContent_WithBuy_DecryptFailure(t *testing.T) {
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("content to encrypt")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "paid.txt")
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: nodePubHex, Type: "file", Path: "/paid.txt",
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write([]byte("this is not valid ciphertext"))
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "decrypt")
+}
+
+// ---------------------------------------------------------------------------
+// JSON: decrypt failure for free content
+// ---------------------------------------------------------------------------
+
+func TestJSON_FreeContent_DecryptFailure(t *testing.T) {
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode:   testPubKey,
+				Type:    "file",
+				Path:    "/corrupt.bin",
+				KeyHash: testKeyHash("44"),
+				Access:  "free",
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write([]byte("this is not valid ciphertext at all"))
+		},
+	)
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "corrupt.bin")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "-o", outFile, "--host", srv.URL, makeURI("/corrupt.bin")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "decrypt")
+}
+
+// ---------------------------------------------------------------------------
+// Paid content: invalid PNode key bytes (valid hex but not a valid EC point)
+// ---------------------------------------------------------------------------
+
+func TestPaid_WithBuy_InvalidPNodeKey(t *testing.T) {
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	// Use valid hex that is 33 bytes but not a valid compressed pubkey.
+	badPNodeHex := "02" + strings.Repeat("ff", 32) // valid hex, invalid EC point
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "paid.txt")
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: badPNodeHex, Type: "file", Path: "/paid.txt",
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+
+	t.Run("non-JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+		assert.NotEqual(t, 0, code)
+	})
+
+	t.Run("JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--json", "--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+		assert.NotEqual(t, 0, code)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// SPV verification (--verify flag)
+// ---------------------------------------------------------------------------
+
+func TestVerifyFlag_SPVSuccess_Confirmed(t *testing.T) {
+	plaintext := []byte("verified content")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/verified.txt",
+			KeyHash: keyHashHex, Access: "free", TxID: "abc123txid",
+		})
+	})
+	mux.HandleFunc("/_bitfs/spv/proof/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.SPVProofResponse{
+			TxID: "abc123txid", Confirmed: true, BlockHeight: 12345,
+		})
+	})
+	mux.HandleFunc("/_bitfs/data/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(encResult.Ciphertext)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "verified.txt")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--verify", "-o", outFile, "--host", srv.URL, makeURI("/verified.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "verified tx")
+	assert.Contains(t, stderr.String(), "12345")
+}
+
+func TestVerifyFlag_SPVSuccess_Unconfirmed(t *testing.T) {
+	plaintext := []byte("unconfirmed content")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/unconfirmed.txt",
+			KeyHash: keyHashHex, Access: "free", TxID: "pending-txid",
+		})
+	})
+	mux.HandleFunc("/_bitfs/spv/proof/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.SPVProofResponse{
+			TxID: "pending-txid", Confirmed: false,
+		})
+	})
+	mux.HandleFunc("/_bitfs/data/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(encResult.Ciphertext)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "unconfirmed.txt")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--verify", "-o", outFile, "--host", srv.URL, makeURI("/unconfirmed.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 0, code, "stderr: %s", stderr.String())
+	assert.Contains(t, stderr.String(), "unconfirmed")
+}
+
+func TestVerifyFlag_SPVFailure(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/bad-spv.txt",
+			KeyHash: testKeyHash("aa"), Access: "free", TxID: "bad-txid",
+		})
+	})
+	mux.HandleFunc("/_bitfs/spv/proof/", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "verification failed", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--verify", "--host", srv.URL, makeURI("/bad-spv.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 4, code, "SPV failure should exit 4")
+	assert.Contains(t, stderr.String(), "SPV verification failed")
+}
+
+// ---------------------------------------------------------------------------
+// Version error with JSON output
+// ---------------------------------------------------------------------------
+
+func TestJSON_VersionOutOfRange(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/hello.txt",
+			KeyHash: testKeyHash("aa"), Access: "free",
+		})
+	})
+	mux.HandleFunc("/_bitfs/versions/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, []client.VersionEntry{
+			{Version: 1, TxID: "only-txid", FileSize: 10, Access: "free"},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--version", "5", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "version 5 not found")
+}
+
+func TestJSON_VersionEndpointError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/hello.txt",
+			KeyHash: testKeyHash("aa"), Access: "free",
+		})
+	})
+	mux.HandleFunc("/_bitfs/versions/", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "--version", "1", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "error")
+}
+
+// ---------------------------------------------------------------------------
+// File creation error (output path in non-existent directory)
+// ---------------------------------------------------------------------------
+
+func TestFreeContent_CreateFileError(t *testing.T) {
+	plaintext := []byte("content")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: testPubKey, Type: "file", Path: "/file.txt",
+				KeyHash: keyHashHex, Access: "free",
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+	)
+	defer srv.Close()
+
+	// Output path points to non-existent directory — os.Create will fail.
+	badPath := filepath.Join(t.TempDir(), "nonexistent", "subdir", "file.txt")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-o", badPath, "--host", srv.URL, makeURI("/file.txt")}, &stdout, &stderr)
+
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr.String(), "cannot create file")
+}
+
+func TestJSON_FreeContent_CreateFileError(t *testing.T) {
+	plaintext := []byte("content")
+
+	pubKeyBytes, err := hex.DecodeString(testPubKey)
+	require.NoError(t, err)
+	pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
+	require.NoError(t, err)
+
+	encResult, err := method42.Encrypt(plaintext, nil, pubKey, method42.AccessFree)
+	require.NoError(t, err)
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+
+	srv := newMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: testPubKey, Type: "file", Path: "/file.txt",
+				KeyHash: keyHashHex, Access: "free",
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+	)
+	defer srv.Close()
+
+	badPath := filepath.Join(t.TempDir(), "nonexistent", "subdir", "file.txt")
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--json", "-o", badPath, "--host", srv.URL, makeURI("/file.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stdout.String(), "cannot create file")
+}
+
+func TestPaid_WithBuy_CreateFileError(t *testing.T) {
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("paid content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: nodePubHex, Type: "file", Path: "/paid.txt",
+				MimeType: "text/plain", FileSize: uint64(len(plaintext)),
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	badPath := filepath.Join(t.TempDir(), "nonexistent", "subdir", "paid.txt")
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+
+	t.Run("non-JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", badPath, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+		assert.Equal(t, 1, code)
+		assert.Contains(t, stderr.String(), "cannot create file")
+	})
+
+	t.Run("JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--json", "--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", badPath, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+		assert.NotEqual(t, 0, code)
+		assert.Contains(t, stdout.String(), "error")
+	})
+}
+
+func TestVersionEndpointError_NonJSON(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/_bitfs/meta/", func(w http.ResponseWriter, r *http.Request) {
+		serveJSON(w, client.MetaResponse{
+			PNode: testPubKey, Type: "file", Path: "/hello.txt",
+			KeyHash: testKeyHash("aa"), Access: "free",
+		})
+	})
+	mux.HandleFunc("/_bitfs/versions/", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--version", "1", "--host", srv.URL, makeURI("/hello.txt")}, &stdout, &stderr)
+
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr.String(), "server error")
+}
+
+// ---------------------------------------------------------------------------
+// Paid content: invalid PNode hex (non-JSON and JSON)
+// ---------------------------------------------------------------------------
+
+func TestPaid_WithBuy_InvalidPNodeHex(t *testing.T) {
+	nodePriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerPriv, err := ec.NewPrivateKey()
+	require.NoError(t, err)
+	buyerKeyHex := hex.EncodeToString(buyerPriv.Serialize())
+
+	plaintext := []byte("content")
+	encResult, err := method42.Encrypt(plaintext, nodePriv, nodePriv.PubKey(), method42.AccessPaid)
+	require.NoError(t, err)
+
+	capsule, err := method42.ComputeCapsule(nodePriv, nodePriv.PubKey(), buyerPriv.PubKey(), encResult.KeyHash)
+	require.NoError(t, err)
+	capsuleHash := method42.ComputeCapsuleHash(make([]byte, 32), capsule)
+
+	keyHashHex := hex.EncodeToString(encResult.KeyHash)
+	capsuleHashHex := hex.EncodeToString(capsuleHash)
+	capsuleHex := hex.EncodeToString(capsule)
+	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
+
+	tmpDir := t.TempDir()
+	outFile := filepath.Join(tmpDir, "paid.txt")
+
+	srv := newFullMockDaemon(t,
+		func(w http.ResponseWriter, r *http.Request) {
+			serveJSON(w, client.MetaResponse{
+				PNode: "zzzz-bad-hex", Type: "file", Path: "/paid.txt",
+				Access: "paid", PricePerKB: 50, TxID: "invoice123", KeyHash: keyHashHex,
+			})
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(encResult.Ciphertext)
+		},
+		func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "GET" {
+				serveJSON(w, client.BuyInfo{
+					CapsuleHash: capsuleHashHex, Price: 1000,
+					PaymentAddr: sellerAddr, SellerPubKey: nodePubHex,
+				})
+				return
+			}
+			serveJSON(w, client.CapsuleResponse{Capsule: capsuleHex})
+		},
+	)
+	defer srv.Close()
+
+	fakeUTXO := strings.Repeat("00", 32) + ":0:100000"
+
+	t.Run("non-JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+		assert.Equal(t, 5, code)
+		assert.Contains(t, stderr.String(), "invalid pnode hex")
+	})
+
+	t.Run("JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"--json", "--buy", "--wallet-key", buyerKeyHex, "--utxo", fakeUTXO, "-o", outFile, "--host", srv.URL, makeURI("/paid.txt")}, &stdout, &stderr)
+		assert.NotEqual(t, 0, code)
+		assert.Contains(t, stdout.String(), "invalid pnode hex")
+	})
+}
