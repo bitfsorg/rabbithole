@@ -1397,12 +1397,13 @@ img { max-width: 100%; display: block; }
       <div class="feature-visual">
         <div class="feature-visual-label">Key Hierarchy</div>
         <div class="key-tree">
-<span class="key-highlight">m</span> <span class="key-dim">&mdash; master key</span>
-<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/0'</span> <span class="key-dim">&mdash; identity</span>
-<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/1'</span> <span class="key-dim">&mdash; filesystem root</span>
-<span class="key-dim"> &boxv;   &boxvr;&mdash;</span> <span class="key-highlight">m/1'/0</span> <span class="key-dim">&mdash; /home/</span>
-<span class="key-dim"> &boxv;   &boxvr;&mdash;</span> <span class="key-highlight">m/1'/1</span> <span class="key-dim">&mdash; /shared/</span>
-<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/2'</span> <span class="key-dim">&mdash; payment</span>
+<span class="key-highlight">m</span> <span class="key-dim">&mdash; 主密钥 (BIP44: m/44'/236'/...)</span>
+<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/44'/236'/0'</span> <span class="key-dim">&mdash; 保险库 0 (文件系统根)</span>
+<span class="key-dim"> &boxv;   &boxvr;&mdash;</span> <span class="key-highlight">m/44'/236'/0'/0/0</span> <span class="key-dim">&mdash; 根目录</span>
+<span class="key-dim"> &boxv;   &boxvr;&mdash;</span> <span class="key-highlight">m/44'/236'/0'/0/1</span> <span class="key-dim">&mdash; /home/</span>
+<span class="key-dim"> &boxv;   &boxvr;&mdash;</span> <span class="key-highlight">m/44'/236'/0'/0/2</span> <span class="key-dim">&mdash; /shared/</span>
+<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/44'/236'/1'</span> <span class="key-dim">&mdash; 保险库 1</span>
+<span class="key-dim"> &boxvr;&mdash;</span> <span class="key-highlight">m/44'/236'/2'</span> <span class="key-dim">&mdash; 支付密钥</span>
         </div>
       </div>
     </div>

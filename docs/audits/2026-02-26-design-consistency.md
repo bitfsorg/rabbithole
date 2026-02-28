@@ -569,9 +569,13 @@ Slides 还引入了 VI 中不存在的 `--accent-pink: #e8b4b8` 和 `--accent-go
 
 `parser.go:42-48` 定义了 7 个 anchor 专用 TLV tag，设计文档中无记载。
 
+✅ **已修复** (2026-02-28): `2-SystemDesign.zh.md:366-369` 已记载 0x20-0x26 范围的 7 个 Anchor 专用 tag（TreeRootPNode/TreeRootTxID/ParentAnchorTxID/Author/CommitMessage/GitCommitSHA/FileMode），并交叉引用到 `3-DetailedDesign §十二-B.E` 和 `docs/spec/03-metanet.md §Anchor`。
+
 ### L3. CLI 命令列表：L0 混淆 bitfs 和 b-tools
 
 `0-OverallDesign.zh.md:76` 将 `get/ls/cat` 列为 bitfs 子命令。实际 `ls/cat/get` 是 b* 工具和 shell 命令，不是 bitfs 顶层子命令（虽然最近 cat/get 也作为 bitfs 子命令添加了）。
+
+✅ **已关闭** (2026-02-28): `cat` 和 `get` 已作为 bitfs 顶层子命令实现，`ls` 在 shell 中可用。L0 作为高层概要文档，列出用户可通过 bitfs 使用的核心功能是合理的。
 
 ### L4. bitfs put 默认 FREE vs bput 继承父目录
 
@@ -601,6 +605,8 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 - `revshare/` 在 L0 整体设计中列出但无任何描述或链接
 - L4 TestDesign 中的测试文件路径引用 pre-extraction 结构（如 `src/internal/method42/encrypt_test.go`）
 
+✅ **已修复** (2026-02-28): `revshare/` 已在 L0 中有描述（`0-OverallDesign.zh.md:72`）。`4-TestDesign.zh.md` 中 50 处 `src/internal/` 旧路径已批量更新为正确位置（libbitfs-go/、bitfs/internal/、bitfs/cmd/bitfs/、bitfs/integration/）。Metanet x402 交叉引用属低优先级，留待 Metanet 文档更新时处理。
+
 ---
 
 ## 修复优先级建议
@@ -628,8 +634,8 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 | 10 | ~~**H3** rm 交易数~~ | ✅ 已修复 (2026-02-28) |
 | 11 | ~~**H4** mv 跨目录~~ | ✅ 已修复 (2026-02-28) |
 | 12 | ~~**H7** Exit codes~~ | ✅ 已修复 (2026-02-28) |
-| 13 | **H9** DNS 记录格式 | 统一 paymail/dns.go 与 engine/publish.go |
-| 14 | **H10** BIP32 路径 | bitfs.org Website-Content-Outline.md:202-207 |
+| 13 | ~~**H9** DNS 记录格式~~ | ✅ 已修复 (2026-02-28) |
+| 14 | ~~**H10** BIP32 路径~~ | ✅ 已修复 (2026-02-28) |
 | 15 | ~~**H11/H12** 白皮书 KDF~~ | ✅ 已修复 (2026-02-28) |
 | 16 | ~~**M5** 失败测试~~ | ✅ 已修复 (2026-02-28) |
 
