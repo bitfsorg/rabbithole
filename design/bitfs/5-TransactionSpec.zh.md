@@ -83,7 +83,7 @@ derived_key = HKDF-SHA256(ikm, salt, info, length=32)
 |------|---------|------|
 | 文件内容加密 | `SHA256(SHA256(plaintext))` | 文件内容的双重哈希 |
 | 买家掩码 | `SHA256(SHA256(plaintext))` | 同上 |
-| 元数据信封加密 | `SHA256(P_node)` | 节点公钥哈希（始终可从 OP_RETURN 获取） |
+| 元数据信封加密 | `random(16B)` | 随机盐，由 `crypto/rand` 生成，存储为 EncPayload 前缀 |
 
 > **设计决策 #5**: info 使用 `"bitfs-file-encryption"` 而非 `"bitfs-method42"`，
 > 因为域分隔符应标识密钥用途而非协议名称，便于未来扩展新用途。
@@ -614,16 +614,18 @@ PRIVATE 模式使用**两层密钥**：元数据加密密钥（解密 TLV payloa
 **元数据加密密钥**：
 
 ```
+salt = random(16B)                            // 由 crypto/rand 生成
 metadata_key = HKDF-SHA256(
     ikm  = ECDH(D_node, P_node).x,          // 自身密钥对 ECDH，32 bytes
-    salt = SHA256(P_node),                    // 节点公钥哈希，32 bytes
+    salt = salt,                              // 随机盐，16 bytes
     info = "bitfs-metadata-encryption"        // 元数据域分隔符
 )
 ```
 
-盐使用 `SHA256(P_node)` 而非 `key_hash`，因为：
+盐使用随机 16 字节而非 `key_hash` 或确定性值，因为：
 - `key_hash` 位于加密 payload 内部，加密前不可知
-- `P_node` 始终在 OP_RETURN 中以明文存在，加密和恢复时均可获取
+- 随机盐避免了确定性加密（同一节点每次更新产生不同密文），提高安全性
+- 随机盐作为 EncPayload 的前缀存储，owner 解密时先读取 salt 再派生密钥
 
 #### 4.3.2 信封格式
 
@@ -633,7 +635,7 @@ metadata_key = HKDF-SHA256(
 
 加密后的 OP_RETURN Payload（仅 2 个 TLV 字段）:
   tag 0x13: encrypted = true
-  tag 0x1B: enc_payload = nonce(12B) || AES-GCM(原始 Payload, metadata_key) || tag(16B)
+  tag 0x1B: enc_payload = salt(16B) || nonce(12B) || AES-GCM(原始 Payload, metadata_key) || tag(16B)
 ```
 
 **链上可见信息**：
@@ -653,8 +655,9 @@ Owner 解密 PRIVATE 文件的完整流程：
 
 ```
 步骤 1: 解密元数据
-  metadata_key = HKDF(ECDH(D_node, P_node).x, SHA256(P_node), "bitfs-metadata-encryption")
-  raw_payload  = AES-GCM.Open(enc_payload, metadata_key)
+  salt         = enc_payload[:16]               // 读取前 16 字节随机盐
+  metadata_key = HKDF(ECDH(D_node, P_node).x, salt, "bitfs-metadata-encryption")
+  raw_payload  = AES-GCM.Open(enc_payload[16:], metadata_key)
 
 步骤 2: 从解密后的 TLV 中提取 key_hash
   key_hash = raw_payload.KeyHash                  // tag 0x06
@@ -705,8 +708,9 @@ for each discovered vault (account):
     root_tx = 查找 P_root 的最新 Metanet 交易
 
     // 解密根节点元数据
-    metadata_key = HKDF(ECDH(D_root, P_root).x, SHA256(P_root), "bitfs-metadata-encryption")
-    root_payload = AES-GCM.Open(root_tx.enc_payload, metadata_key)
+    salt = root_tx.enc_payload[:16]               // 读取前 16 字节随机盐
+    metadata_key = HKDF(ECDH(D_root, P_root).x, salt, "bitfs-metadata-encryption")
+    root_payload = AES-GCM.Open(root_tx.enc_payload[16:], metadata_key)
 
     // 从 ChildEntry 列表递归恢复
     for each child in root_payload.Children:
@@ -737,8 +741,8 @@ for each discovered vault (account):
 | UTXO 状态 | 可通过扫描恢复后的交易重建 |
 
 > **设计决策 #10** (已解决): 不存储明文 `key_hash` / `file_index`。
-> 通过独立的元数据加密密钥（`info="bitfs-metadata-encryption"`, `salt=SHA256(P_node)`）
-> 实现 PRIVATE 信封加密，配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密实现恢复。
+> 通过独立的元数据加密密钥（`info="bitfs-metadata-encryption"`, `salt=random(16B)`）
+> 实现 PRIVATE 信封加密，随机盐存储为 EncPayload 前缀。配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密实现恢复。
 
 ### 4.4 Capsule 交换 (Paid 模式)
 
@@ -1284,9 +1288,9 @@ Buyer Refund (ELSE branch, after timeout):
 | 7 | HTLC 发起方 | 待定 | 支付模型需单独设计 |
 | 8 | Hard Link | 删除 | Metanet DAG 是严格树，不支持多父节点 |
 | 9 | NodeType | File/Dir/Link (移除 Anchor) | Anchor 是扩展类型，不属于核心规范 |
-| 10 | PRIVATE 恢复 | 两层密钥 + 递归解密（已解决） | 元数据用独立密钥（salt=SHA256(P_node)），通过目录 ChildEntry 递归恢复 |
+| 10 | PRIVATE 恢复 | 两层密钥 + 递归解密（已解决） | 元数据用独立密钥（salt=random(16B)，存储为 EncPayload 前缀），通过目录 ChildEntry 递归恢复 |
 | 11 | DNS TXT 格式 | `_bitfs.{domain}`, 值 `bitfs=<hex_pubkey>` | 可扩展格式，类似 DKIM |
-| 12 | 元数据加密密钥 | `HKDF(ECDH.x, SHA256(P_node), "bitfs-metadata-encryption")` | 与文件加密密钥隔离，P_node 始终可用 |
+| 12 | 元数据加密密钥 | `HKDF(ECDH.x, random(16B), "bitfs-metadata-encryption")` | 与文件加密密钥隔离，随机盐存储为 EncPayload 前缀 |
 | 13 | 子索引不重用 | 删除后 NextChildIndex 不递减 | 防止密钥碰撞：重用索引会派生相同 BIP32 密钥对 |
 
 ---

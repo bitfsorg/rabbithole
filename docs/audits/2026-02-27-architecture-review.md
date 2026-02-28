@@ -98,6 +98,9 @@ meta_key = HKDF-SHA256(
 
 **影响范围**: libbitfs-go/method42/encrypt.go
 
+**修复状态**: 已修复。采用方案 A — `salt = random(16B)`，存储为 EncPayload 前缀。
+EncPayload 新格式: `salt(16B) || nonce(12B) || AES-GCM(TLV) || tag(16B)`。
+
 #### 3.3 SPV 不验证 PoW 难度
 
 **风险**: 攻击者可构造低难度假区块头（几毫秒即可生成），SPV 客户端会接受其中的虚假交易。

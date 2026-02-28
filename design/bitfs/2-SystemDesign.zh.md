@@ -360,15 +360,16 @@ message BitFSPayload {
   bytes merkle_root = 26;                  // 目录 Merkle root (子节点哈希树根)
 
   // PRIVATE 模式加密载荷
-  bytes enc_payload = 27;                  // nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
+  bytes enc_payload = 27;                  // salt(16B) || nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
 
   // === 以下字段已实现。fields 30-31 保持自然 tag 映射 (0x1E, 0x1F);
   // fields 32+ tag 跳过 0x20-0x26 (Anchor 专用范围), 从 0x27 起连续分配。
   // 完整映射见 libbitfs-go/metanet/parser.go tag 常量。 ===
 
   // PRIVATE 模式钱包恢复: 不存储明文 key_hash / file_index (设计决策 #10)。
-  // 恢复方案: 元数据加密密钥 HKDF(ECDH.x, SHA256(P_node), "bitfs-metadata-encryption")
-  // 解密 enc_payload → 恢复完整 TLV。配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密。
+  // 恢复方案: 元数据加密密钥 HKDF(ECDH.x, random(16B), "bitfs-metadata-encryption")
+  // 随机盐存储为 enc_payload 前缀。解密时先读取 salt 再派生密钥。
+  // 配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密。
   // 原 field 28-29 (private_key_hash, private_file_index) 已废弃。
 
   // 元信息扩展 (待实现)
@@ -410,8 +411,9 @@ message BitFSPayload {
 - **FREE**: ECDH(D_node=1, P_node) trick → S_k = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) 可公开计算, AES-GCM(content, S_k), P_node 通过 DNSLink 公开
 - **PAID**: aes_key = KDF(ECDH(D_node, P_node).x, key_hash) — 与 PRIVATE 同密钥基础, 买家通过 HTLC/Token 获取 capsule → 还原 aes_key, AES-GCM(content, aes_key); CDN 带宽费另行通过 x402 收取
 - **PRIVATE**: ECDH(D_node, P_node) → 仅 Owner 可解密, TLV 内部加密 (encrypted=true, enc_payload 加密, 不存储明文 key_hash/file_index — 设计决策 #10)
-  - 元数据加密密钥: meta_key = HKDF(ECDH(D_node, P_node).x, SHA256(P_node), "bitfs-metadata-encryption")
-  - 钱包恢复: P_node 始终明文, D_node 从 BIP32 派生 → meta_key → 解密 enc_payload → 恢复完整 TLV
+  - 元数据加密密钥: salt = random(16B), meta_key = HKDF(ECDH(D_node, P_node).x, salt, "bitfs-metadata-encryption")
+  - EncPayload 格式: salt(16B) || nonce(12B) || AES-GCM(TLV) || tag(16B)
+  - 钱包恢复: P_node 始终明文, D_node 从 BIP32 派生, salt 从 enc_payload 前缀读取 → meta_key → 解密 → 恢复完整 TLV
 
 ### 价格继承
 

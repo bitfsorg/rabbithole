@@ -247,15 +247,16 @@ PRIVATE / PAID:
 #### PRIVATE 模式 Payload Envelope
 
 > **设计决策 #10** (交易规范): 不存储明文 key_hash / file_index。通过独立的元数据加密密钥
-> (`info="bitfs-metadata-encryption"`, `salt=SHA256(P_node)`) 实现 PRIVATE 信封加密,
-> 配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密实现恢复。
+> (`info="bitfs-metadata-encryption"`, `salt=random(16B)`) 实现 PRIVATE 信封加密,
+> 随机盐存储为 EncPayload 前缀。配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密实现恢复。
 
 ```
 加密 (EncryptPrivatePayload):
   1. data = proto.Marshal(完整 BitFSPayload)
   2. S_node = ECDH(D_node, P_node).x
-  3. meta_key = HKDF-SHA256(ikm=S_node, salt=SHA256(P_node), info="bitfs-metadata-encryption")
-  4. enc_payload = nonce(12B) || AES-256-GCM(data, meta_key) || tag
+  3. salt = random(16B)                          // 由 crypto/rand 生成
+  4. meta_key = HKDF-SHA256(ikm=S_node, salt=salt, info="bitfs-metadata-encryption")
+  5. enc_payload = salt(16B) || nonce(12B) || AES-256-GCM(data, meta_key) || tag(16B)
 
   返回 envelope:
     BitFSPayload {
@@ -266,15 +267,17 @@ PRIVATE / PAID:
 
 解密 (DecryptPrivatePayload):
   1. S_node = ECDH(D_node, P_node).x
-  2. meta_key = HKDF-SHA256(ikm=S_node, salt=SHA256(P_node), info="bitfs-metadata-encryption")
-  3. data = AES-256-GCM.Open(enc_payload, meta_key)
-  4. payload = proto.Unmarshal(data)
+  2. salt = enc_payload[:16]                     // 读取前 16 字节随机盐
+  3. meta_key = HKDF-SHA256(ikm=S_node, salt=salt, info="bitfs-metadata-encryption")
+  4. data = AES-256-GCM.Open(enc_payload[16:], meta_key)
+  5. payload = proto.Unmarshal(data)
 
 钱包恢复:
   - P_node: 始终明文 (OP_RETURN 中)
   - D_node: 从 HD 种子 + BIP32 路径确定性派生
-  - meta_key: HKDF(ECDH(D_node, P_node).x, SHA256(P_node), "bitfs-metadata-encryption")
-  - 解密 enc_payload → 恢复完整 TLV (含 key_hash, file_index 等)
+  - salt: 从 enc_payload 前 16 字节读取
+  - meta_key: HKDF(ECDH(D_node, P_node).x, salt, "bitfs-metadata-encryption")
+  - 解密 enc_payload[16:] → 恢复完整 TLV (含 key_hash, file_index 等)
   - 目录节点解密后, ChildEntry 包含子节点 P_node + BIP32 索引 → 递归恢复
   → 仅凭助记词即可恢复整棵树
 ```
@@ -408,8 +411,9 @@ bitfs wallet restore:
 
 给定 PRIVATE envelope (encrypted=true, enc_payload):
   → D_node 从路径派生, P_node 从 OP_RETURN 明文获取
-  → meta_key = HKDF-SHA256(ikm=ECDH(D_node, P_node).x, salt=SHA256(P_node), info="bitfs-metadata-encryption")
-  → 可解密 enc_payload → 恢复完整 TLV 元数据 (含 key_hash, file_index 等)
+  → salt = enc_payload[:16] (随机盐, 存储为 EncPayload 前缀)
+  → meta_key = HKDF-SHA256(ikm=ECDH(D_node, P_node).x, salt=salt, info="bitfs-metadata-encryption")
+  → 可解密 enc_payload[16:] → 恢复完整 TLV 元数据 (含 key_hash, file_index 等)
 ```
 
 ### G. 网络配置
