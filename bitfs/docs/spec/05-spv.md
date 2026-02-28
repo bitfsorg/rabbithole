@@ -8,27 +8,39 @@ BitFS 的 SPV（简易支付验证，Simplified Payment Verification）轻客户
 
 ## 公共 API
 
+### 常量
+
+```go
+const (
+    // BlockHeaderSize is the size of a serialized BSV block header in bytes.
+    BlockHeaderSize = 80
+
+    // HashSize is the size of a SHA256 hash in bytes.
+    HashSize = 32
+)
+```
+
 ### 类型
 
 ```go
-// BlockHeader represents a BSV block header (80 bytes).
+// BlockHeader represents a BSV block header (80 bytes serialized).
 type BlockHeader struct {
-    Version       int32
-    PrevBlock     []byte  // 32 bytes
-    MerkleRoot    []byte  // 32 bytes
-    Timestamp     uint32
-    Bits          uint32
-    Nonce         uint32
-    Height        uint32  // Not in raw header; tracked separately
-    Hash          []byte  // Computed: double-SHA256 of 80-byte header
+    Version    int32  // 4 bytes, little-endian
+    PrevBlock  []byte // 32 bytes
+    MerkleRoot []byte // 32 bytes
+    Timestamp  uint32 // 4 bytes, little-endian (Unix timestamp)
+    Bits       uint32 // 4 bytes, little-endian (compact target)
+    Nonce      uint32 // 4 bytes, little-endian
+    Height     uint32 // Not in raw header; tracked separately
+    Hash       []byte // Computed: double-SHA256 of 80-byte header
 }
 
 // MerkleProof represents a Merkle inclusion proof for a transaction.
 type MerkleProof struct {
-    TxID       []byte     // Transaction hash (32 bytes)
-    Index      uint32     // Position in the block's transaction list
-    Nodes      [][]byte   // Merkle branch hashes, bottom-up
-    BlockHash  []byte     // Block header hash this proof is for
+    TxID      []byte   // Transaction hash (32 bytes)
+    Index     uint32   // Position in the block's transaction list
+    Nodes     [][]byte // Merkle branch hashes, bottom-up
+    BlockHash []byte   // Block header hash this proof is for
 }
 
 // StoredTx represents a transaction stored with its Merkle proof.
@@ -38,6 +50,28 @@ type StoredTx struct {
     Proof       *MerkleProof // Merkle proof (nil = unconfirmed)
     BlockHeight uint32       // 0 = unconfirmed
     Timestamp   uint64       // Time added to store
+}
+
+// Network identifies the BSV network for difficulty validation.
+type Network int
+
+const (
+    Mainnet Network = iota // BSV production network
+    Testnet                // BSV test network
+    Regtest                // BSV regression test network
+)
+
+// Minimum difficulty (nBits) for each network.
+const (
+    MainnetMinBits uint32 = 0x1d00ffff // Genesis difficulty
+    TestnetMinBits uint32 = 0x1d00ffff // Mirrors mainnet genesis
+    RegtestMinBits uint32 = 0x207fffff // Standard regtest minimum
+)
+
+// ChainVerificationResult holds the output of VerifyHeaderChainWithWork.
+type ChainVerificationResult struct {
+    // CumulativeWork is the total chain work across all verified headers.
+    CumulativeWork *big.Int
 }
 ```
 
@@ -81,43 +115,137 @@ type TxStore interface {
 }
 ```
 
-### 函数
+注意：具体实现（`MemTxStore`、`BoltTxStore`）还提供以下不属于接口的方法：
 
 ```go
+// PutTxWithPubKey stores a transaction and indexes it by a P_node public key.
+// Available on MemTxStore and BoltTxStore (not part of TxStore interface).
+func (*MemTxStore) PutTxWithPubKey(tx *StoredTx, pNode []byte) error
+func (*BoltTxStore) PutTxWithPubKey(tx *StoredTx, pNode []byte) error
+```
+
+### 函数
+
+#### 哈希与序列化
+
+```go
+// DoubleHash computes SHA256(SHA256(data)), matching Bitcoin's hash function.
+func DoubleHash(data []byte) []byte
+
+// ComputeHeaderHash computes and returns the double-SHA256 hash of a block header.
+func ComputeHeaderHash(h *BlockHeader) []byte
+
+// SerializeHeader serializes a BlockHeader to 80 bytes in BSV wire format.
+// Layout: version(4) | prevBlock(32) | merkleRoot(32) | timestamp(4) | bits(4) | nonce(4)
+func SerializeHeader(h *BlockHeader) []byte
+
+// DeserializeHeader deserializes 80 bytes into a BlockHeader.
+// The Hash field is computed from the serialized data.
+func DeserializeHeader(data []byte) (*BlockHeader, error)
+```
+
+#### Merkle 树
+
+```go
+// ComputeMerkleRoot computes the Merkle root from a transaction hash,
+// its index position in the block, and the proof branch nodes (bottom-up).
+func ComputeMerkleRoot(txHash []byte, index uint32, proofNodes [][]byte) []byte
+
 // VerifyMerkleProof verifies that a transaction is included in a block.
 // Recomputes the Merkle path from TxID + proof nodes and checks against
 // the expected Merkle root from the block header.
 func VerifyMerkleProof(proof *MerkleProof, expectedMerkleRoot []byte) (bool, error)
 
+// BuildMerkleTree builds a full Merkle tree from a list of transaction hashes.
+// Returns all tree levels, where level 0 is leaves and the last level is the root.
+// Each level is padded by duplicating the last element if odd.
+func BuildMerkleTree(txHashes [][]byte) [][]byte
+
+// ComputeMerkleRootFromTxList computes the Merkle root from a list of transaction IDs.
+// This is used when you have all transactions in a block and want to verify
+// the block header's Merkle root.
+func ComputeMerkleRootFromTxList(txIDs [][]byte) []byte
+```
+
+#### 难度与工作量
+
+```go
+// CompactToTarget converts a Bitcoin "compact" (nBits) representation to a 32-byte
+// big-endian target value. Format: 0xEEMMMMMM where EE=exponent, MMMMMM=mantissa.
+func CompactToTarget(bits uint32) []byte
+
+// CompactToBig converts a Bitcoin compact (nBits) representation to a big.Int target value.
+func CompactToBig(bits uint32) *big.Int
+
+// WorkForTarget computes the expected number of hashes to find a block
+// at the given compact difficulty: work = 2^256 / (target + 1).
+// Returns zero work for a zero or negative target.
+func WorkForTarget(bits uint32) *big.Int
+
+// CumulativeWork computes the total chain work for a sequence of headers.
+// Each header contributes WorkForTarget(header.Bits) to the sum.
+func CumulativeWork(headers []*BlockHeader) *big.Int
+
+// MinBitsForNetwork returns the minimum nBits (easiest target) for the given network.
+func MinBitsForNetwork(net Network) uint32
+```
+
+#### PoW 验证
+
+```go
+// VerifyPoW checks that a block header's hash meets its stated difficulty target.
+// The header hash (interpreted as a big-endian 256-bit integer) must be
+// numerically <= the target derived from Bits.
+func VerifyPoW(h *BlockHeader) error
+
+// ValidateMinDifficulty checks that a header's nBits meets the minimum
+// difficulty for the given network. Higher nBits target value = less work = less security.
+func ValidateMinDifficulty(header *BlockHeader, net Network) error
+
+// ValidateDifficultyTransition checks that the difficulty change between two
+// consecutive headers does not exceed the allowed bounds (factor of 4).
+// This is a simplified check for a light client.
+func ValidateDifficultyTransition(prev, curr *BlockHeader) error
+```
+
+#### SPV 验证
+
+```go
 // VerifyTransaction performs the full SPV verification chain:
-//   1. Transaction integrity: raw tx deserializes correctly
+//   1. Transaction integrity: TxID is valid (32 bytes), RawTx hash matches TxID
 //   2. Merkle proof: tx is included in a block (via VerifyMerkleProof)
-//   3. Block header: Merkle root matches the stored block header
-//   4. Chain verification: block header is on the longest chain
+//   3. Block header: PoW meets stated difficulty, Merkle root matches
+//   4. Chain verification: block header exists in the header store
+//
+// Note: This function does not check minimum network difficulty. Use
+// VerifyTransactionWithNetwork for network-aware difficulty validation.
 func VerifyTransaction(tx *StoredTx, headers HeaderStore) error
 
-// VerifyHeaderChain checks that a sequence of headers forms a valid chain
-// (each header's PrevBlock matches the previous header's hash).
+// VerifyTransactionWithNetwork performs the full SPV verification chain with
+// network-aware minimum difficulty validation:
+//   1. Transaction integrity: TxID is valid (32 bytes), RawTx hash matches TxID
+//   2. Merkle proof: tx is included in a block (via VerifyMerkleProof)
+//   3. Block header: PoW meets stated difficulty AND minimum network difficulty
+//   4. Merkle root verification: proof matches the header's Merkle root
+func VerifyTransactionWithNetwork(tx *StoredTx, headers HeaderStore, net Network) error
+
+// VerifyHeaderChain checks that a sequence of headers forms a valid chain.
+// Each header's PrevBlock must match the previous header's Hash, and each
+// header's PoW is verified. Headers must be in ascending order (index 0 is earliest).
 func VerifyHeaderChain(headers []*BlockHeader) error
 
-// ComputeMerkleRoot computes the Merkle root from a transaction hash
-// and its proof branch.
-func ComputeMerkleRoot(txHash []byte, index uint32, proofNodes [][]byte) []byte
-
-// SerializeHeader serializes a BlockHeader to 80 bytes.
-func SerializeHeader(h *BlockHeader) []byte
-
-// DeserializeHeader deserializes 80 bytes into a BlockHeader.
-func DeserializeHeader(data []byte) (*BlockHeader, error)
-
-// DoubleHash computes SHA256(SHA256(data)), used for block/tx hashing.
-func DoubleHash(data []byte) []byte
+// VerifyHeaderChainWithWork verifies a header chain (PoW + linkage + difficulty)
+// and returns the cumulative work. Validates PoW, minimum network difficulty,
+// difficulty transitions, and PrevBlock linkage for each header.
+func VerifyHeaderChainWithWork(headers []*BlockHeader, net Network) (*ChainVerificationResult, error)
 ```
 
 ## 依赖
 
 - `crypto/sha256` -- 双重 SHA-256 哈希
 - `encoding/binary` -- 区块头序列化
+- `math/big` -- 大整数运算（难度目标、累积工作量）
+- `go.etcd.io/bbolt` -- BoltDB 持久化存储（BoltStore 实现）
 
 ## 数据结构
 
@@ -154,6 +282,13 @@ verify: hash == block.MerkleRoot
 | `ErrUnconfirmed` | 交易尚无 Merkle 证明 |
 | `ErrChainBroken` | 区块头未形成有效链 |
 | `ErrInvalidHeader` | 区块头反序列化或哈希检查失败 |
+| `ErrNilParam` | 必需参数为 nil |
+| `ErrInvalidTxID` | 交易 ID 不是 32 字节 |
+| `ErrDuplicateHeader` | 具有相同哈希的区块头已存在 |
+| `ErrDuplicateTx` | 具有相同 TxID 的交易已存在 |
+| `ErrInsufficientPoW` | 区块头哈希未达到目标难度 |
+| `ErrDifficultyTooLow` | 区块头 nBits 低于网络最低难度 |
+| `ErrDifficultyChange` | 相邻区块头难度变化超过允许范围（4 倍） |
 
 ## 安全考量
 

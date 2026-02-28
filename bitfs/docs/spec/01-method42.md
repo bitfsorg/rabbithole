@@ -14,13 +14,13 @@ BitFS 的 Method 42 ECDH 加密引擎。基于 secp256k1 椭圆曲线 Diffie-Hel
 ### 类型
 
 ```go
-// AccessLevel represents the three access control modes for encrypted content.
-type AccessLevel int32
+// Access represents the three access control modes for encrypted content.
+type Access int
 
 const (
-    AccessPrivate AccessLevel = 0 // Only owner can decrypt (ECDH with BIP32 D_node)
-    AccessFree    AccessLevel = 1 // Anyone can decrypt (D_node = scalar 1, trivial ECDH)
-    AccessPaid    AccessLevel = 2 // Buyer decrypts via HTLC-obtained capsule
+    AccessPrivate Access = 0 // Only owner can decrypt (ECDH with BIP32 D_node)
+    AccessFree    Access = 1 // Anyone can decrypt (D_node = scalar 1, trivial ECDH)
+    AccessPaid    Access = 2 // Buyer decrypts via HTLC-obtained capsule
 )
 
 // EncryptResult holds the output of an encryption operation.
@@ -41,6 +41,22 @@ type RabinKeyPair struct {
     Q *big.Int // Private Blum prime q ≡ 3 (mod 4)
     N *big.Int // Public modulus n = p * q
 }
+```
+
+### 常量
+
+```go
+const (
+    HKDFInfo         = "bitfs-file-encryption"   // HKDF info for AES key derivation
+    HKDFBuyerMaskInfo = "bitfs-buyer-mask"        // HKDF info for buyer mask derivation
+    HKDFMetadataInfo = "bitfs-metadata-encryption" // HKDF info for PRIVATE metadata key
+    AESKeyLen        = 32                         // AES-256 key length in bytes
+    MetadataSaltLen  = 16                         // Random salt length for metadata key derivation
+    NonceLen         = 12                         // AES-GCM nonce length in bytes
+    GCMTagLen        = 16                         // GCM authentication tag length in bytes
+    MinCiphertextLen = NonceLen + GCMTagLen        // 28 — minimum valid ciphertext length
+    MinEncPayloadLen = MetadataSaltLen + NonceLen + GCMTagLen // 44 — minimum valid EncPayload length
+)
 ```
 
 ### 函数
@@ -70,31 +86,88 @@ func DeriveAESKey(sharedSecretX []byte, keyHash []byte) ([]byte, error)
 //
 // For AccessFree: D_node is scalar 1 (anyone can reproduce).
 // For AccessPrivate/AccessPaid: D_node is the BIP32-derived private key.
-func Encrypt(plaintext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, access AccessLevel) (*EncryptResult, error)
+func Encrypt(plaintext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, access Access) (*EncryptResult, error)
 
 // Decrypt decrypts ciphertext using Method 42.
 //   - Performs ECDH to recover shared secret
 //   - Derives AES key using provided key_hash
 //   - Decrypts with AES-256-GCM
 //   - Verifies SHA256(SHA256(plaintext)) == key_hash
-func Decrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, access AccessLevel) (*DecryptResult, error)
+func Decrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, access Access) (*DecryptResult, error)
 
-// DecryptWithCapsule decrypts using a pre-computed ECDH shared secret (capsule).
-// Used by buyers who obtained the capsule via HTLC atomic swap.
-func DecryptWithCapsule(ciphertext []byte, capsule []byte, keyHash []byte) (*DecryptResult, error)
+// DecryptWithCapsule decrypts using an XOR-masked capsule obtained via HTLC
+// (legacy deterministic version without nonce).
+// The buyer recovers the AES key as:
+//   buyer_mask = HKDF(ECDH(D_buyer, P_node).x, key_hash, "bitfs-buyer-mask")
+//   aes_key    = capsule XOR buyer_mask
+// For capsules generated with ComputeCapsuleWithNonce, use DecryptWithCapsuleNonce.
+func DecryptWithCapsule(ciphertext []byte, capsule []byte, keyHash []byte, buyerPrivateKey *ec.PrivateKey, nodePublicKey *ec.PublicKey) (*DecryptResult, error)
+
+// DecryptWithCapsuleNonce decrypts using an XOR-masked capsule obtained via HTLC,
+// with an optional per-invoice nonce for capsule unlinkability.
+// The nonce must match the one used by the seller in ComputeCapsuleWithNonce.
+// When nonce is nil, equivalent to DecryptWithCapsule.
+func DecryptWithCapsuleNonce(ciphertext []byte, capsule []byte, keyHash []byte, buyerPrivateKey *ec.PrivateKey, nodePublicKey *ec.PublicKey, nonce []byte) (*DecryptResult, error)
+
+// ComputeCapsuleWithNonce computes the XOR-masked capsule for a buyer with an
+// optional per-invoice nonce for capsule unlinkability.
+//   capsule = aes_key XOR buyer_mask
+// When nonce is non-nil, it is included in the buyer mask derivation salt
+// (keyHash || nonce), making each capsule unique per purchase even for the
+// same (buyer, file) pair. When nonce is nil, equivalent to ComputeCapsule.
+func ComputeCapsuleWithNonce(nodePrivateKey *ec.PrivateKey, nodePublicKey *ec.PublicKey, buyerPublicKey *ec.PublicKey, keyHash []byte, nonce []byte) ([]byte, error)
+
+// DeriveBuyerMask derives a 32-byte buyer mask using HKDF-SHA256.
+// Used in the paid content flow: capsule = aes_key XOR buyer_mask.
+// Legacy deterministic version; for per-purchase unlinkability use
+// DeriveBuyerMaskWithNonce.
+func DeriveBuyerMask(sharedSecretX, keyHash []byte) ([]byte, error)
+
+// DeriveBuyerMaskWithNonce derives a 32-byte buyer mask using HKDF-SHA256,
+// with an optional per-invoice nonce for capsule unlinkability.
+// When nonce is non-nil, HKDF salt = keyHash || nonce.
+// When nonce is nil, equivalent to DeriveBuyerMask.
+func DeriveBuyerMaskWithNonce(sharedSecretX, keyHash, nonce []byte) ([]byte, error)
+
+// DeriveMetadataKey derives a 32-byte AES-256 key for PRIVATE mode metadata
+// encryption, using a random 16-byte salt (P0 §3.2 fix).
+// Returns (key, salt, error). The salt MUST be stored as a prefix of EncPayload.
+func DeriveMetadataKey(sharedSecretX []byte) (key []byte, salt []byte, err error)
+
+// DeriveMetadataKeyWithSalt derives a 32-byte AES-256 key for PRIVATE mode
+// metadata encryption using a provided salt. Used during decryption when the
+// salt is read from the EncPayload prefix.
+func DeriveMetadataKeyWithSalt(sharedSecretX, salt []byte) ([]byte, error)
+
+// EncryptMetadata encrypts a TLV metadata payload for PRIVATE mode.
+// Uses a random 16-byte salt for HKDF key derivation.
+// Output format: salt(16B) || nonce(12B) || AES-GCM(tlvPayload) || tag(16B).
+func EncryptMetadata(tlvPayload []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey) ([]byte, error)
+
+// DecryptMetadata decrypts a PRIVATE mode EncPayload back to TLV bytes.
+// Input format: salt(16B) || nonce(12B) || AES-GCM(tlvPayload) || tag(16B).
+func DecryptMetadata(encPayload []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey) ([]byte, error)
 
 // ReEncrypt re-encrypts content from one access mode to another.
 // Decrypts with fromAccess parameters, then encrypts with toAccess parameters.
 // Returns new ciphertext and new key_hash.
-func ReEncrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, fromAccess, toAccess AccessLevel) (*EncryptResult, error)
+func ReEncrypt(ciphertext []byte, privateKey *ec.PrivateKey, publicKey *ec.PublicKey, keyHash []byte, fromAccess, toAccess Access) (*EncryptResult, error)
 
-// ComputeCapsule computes the ECDH capsule for a buyer.
-// capsule = ECDH(D_node, P_buyer).x
-// Used by seller during HTLC flow.
+// ComputeCapsule computes the XOR-masked capsule for a buyer (legacy deterministic version).
+//   capsule = aes_key XOR buyer_mask
+// where:
+//   aes_key    = HKDF(ECDH(D_node, P_node).x, key_hash, "bitfs-file-encryption")
+//   buyer_mask = HKDF(ECDH(D_node, P_buyer).x, key_hash, "bitfs-buyer-mask")
+// The buyer recovers aes_key by computing buyer_mask from ECDH(D_buyer, P_node)
+// and XORing with the capsule. Deterministic: same (D_node, P_buyer, key_hash)
+// always produces the same capsule. For per-purchase unlinkability, use
+// ComputeCapsuleWithNonce instead.
 func ComputeCapsule(nodePrivateKey *ec.PrivateKey, nodePublicKey *ec.PublicKey, buyerPublicKey *ec.PublicKey, keyHash []byte) ([]byte, error)
 
-// ComputeCapsuleHash computes SHA256(capsule) for HTLC hash lock.
-func ComputeCapsuleHash(capsule []byte) []byte
+// ComputeCapsuleHash computes SHA256(fileTxID ‖ capsule) for the HTLC hash lock.
+// Binding the capsule hash to the file's transaction ID prevents a malicious
+// seller from reusing a valid capsule across different files.
+func ComputeCapsuleHash(fileTxID, capsule []byte) []byte
 
 // FreePrivateKey returns a private key with scalar value 1.
 // Used for AccessFree mode where ECDH(1, P_node) = P_node.
@@ -146,6 +219,14 @@ func aesGCMEncrypt(plaintext, key []byte) ([]byte, error)
 // aesGCMDecrypt decrypts AES-256-GCM ciphertext.
 // Input format: nonce(12B) || ciphertext || tag(16B).
 func aesGCMDecrypt(ciphertext, key []byte) ([]byte, error)
+
+// xorBytes XORs two byte slices of equal length.
+func xorBytes(a, b []byte) []byte
+
+// effectivePrivateKey returns the private key to use for ECDH based on access mode.
+// For AccessFree, returns FreePrivateKey() (scalar 1).
+// For AccessPrivate and AccessPaid, returns the provided nodePrivateKey.
+func effectivePrivateKey(access Access, nodePrivateKey *ec.PrivateKey) (*ec.PrivateKey, error)
 ```
 
 ## 依赖
@@ -177,6 +258,11 @@ Info = "bitfs-file-encryption"    // constant string
 Len  = 32                         // AES-256 key length
 ```
 
+### PRIVATE 模式 EncPayload 格式
+```
+[salt: 16 bytes] [nonce: 12 bytes] [AES-GCM(TLV payload): variable] [GCM tag: 16 bytes]
+```
+
 ### Rabin 签名方案
 
 Rabin 签名基于二次剩余的计算困难性。无需椭圆曲线——安全性归约到整数分解。
@@ -187,7 +273,7 @@ Rabin 签名基于二次剩余的计算困难性。无需椭圆曲线——安�
 - 私钥: (p, q)
 
 #### 签名
-1. 尝试随机填充 U (最多 256 次)
+1. 遍历计数器 U = 0, 1, 2, ... (4 字节 big-endian)
 2. 计算 h = SHA256(message || U) mod n
 3. 检查 h 是否为模 p 和模 q 的二次剩余 (Legendre 符号)
 4. 若是，通过 CRT 计算平方根: S = sqrt(h) mod n
@@ -213,9 +299,6 @@ Rabin 签名基于二次剩余的计算困难性。无需椭圆曲线——安�
 | `ErrKeyHashMismatch` | SHA256(SHA256(decrypted)) != 期望的 key_hash |
 | `ErrInvalidAccess` | 未知的访问模式值 |
 | `ErrHKDFFailure` | HKDF 密钥推导失败 |
-| `ErrRabinKeyGeneration` | 素数生成失败 |
-| `ErrRabinNoQuadraticResidue` | 256 次填充尝试均未找到二次剩余 |
-| `ErrInvalidRabinSignature` | 签名反序列化失败 |
 
 ## 安全考量
 
@@ -232,4 +315,4 @@ Rabin 签名基于二次剩余的计算困难性。无需椭圆曲线——安�
 6. **无密钥存储**：AES 密钥从 (D_node, P_node, key_hash) 确定性推导，永远不会存储。只需备份 HD 种子。
 
 7. **Rabin 安全性**：2048-bit 模数 (1024-bit 素数) 提供 ~112-bit 安全强度。签名伪造等价于分解 n。
-8. **填充重试**：签名需要找到使哈希为二次剩余的填充。期望值约 4 次尝试，最坏 256 次。
+8. **填充重试**：签名需要找到使哈希为二次剩余的填充。期望值约 4 次尝试（每次 ~1/4 概率成功）。计数器为 uint32，理论上无上限。

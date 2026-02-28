@@ -2,7 +2,7 @@
 
 ## 目的
 
-为 BitFS 实现 BIP32/BIP39 密钥派生的 HD 钱包。管理镜像文件系统结构的确定性密钥层次：`m/44'/236'/{account}'/{chain}/{index}`。提供种子生成、Argon2id 加密、保险库（Vault）管理和 UTXO 追踪。
+为 BitFS 实现 BIP32/BIP39 密钥派生的 HD 钱包。管理镜像文件系统结构的确定性密钥层次：`m/44'/236'/{account}'/{chain}/{index}`。提供种子生成、Argon2id 加密和保险库（Vault）管理。
 
 设计参考：ConceptDesign #5, #7, #30, #64, #65, #81; SystemDesign 第 2 节; DetailedDesign 第 2-B 节。
 
@@ -20,6 +20,7 @@ const (
     InternalChain       = 1      // Change addresses
     MaxFileIndex        = 1<<31 - 1  // BIP32 non-hardened max (2^31 - 1)
     MaxPathDepth        = 64     // Maximum filesystem nesting depth
+    Hardened            = 0x80000000 // BIP32 hardened offset
 
     Mnemonic12Words = 128  // 12-word mnemonic entropy bits
     Mnemonic24Words = 256  // 24-word mnemonic entropy bits
@@ -49,6 +50,7 @@ type Vault struct {
     Name         string `json:"name"`
     AccountIndex uint32 `json:"account_index"` // BIP44 account number (1-based for vaults)
     RootTxID     []byte `json:"root_txid"`     // Root node transaction ID (nil if not published)
+    Deleted      bool   `json:"deleted"`       // Soft-deleted flag
 }
 
 // KeyPair holds a derived public/private key pair.
@@ -60,19 +62,10 @@ type KeyPair struct {
 
 // WalletState holds persisted wallet metadata.
 type WalletState struct {
-    NextReceiveIndex uint32  `json:"next_receive_index"`
-    NextChangeIndex  uint32  `json:"next_change_index"`
+    NextReceiveIndex uint32  `json:"next_receive_index"` // Fee chain next receive address
+    NextChangeIndex  uint32  `json:"next_change_index"`  // Fee chain next change address
     Vaults           []Vault `json:"vaults"`
-}
-
-// UTXOEntry represents a tracked unspent output.
-type UTXOEntry struct {
-    TxID         []byte `json:"txid"`
-    Vout         uint32 `json:"vout"`
-    Amount       uint64 `json:"amount"`
-    Spent        bool   `json:"spent"`
-    Chain        uint32 `json:"chain"`        // 0=external, 1=internal
-    AddressIndex uint32 `json:"address_index"`
+    NextVaultIndex   uint32  `json:"next_vault_index"`   // Next available vault account index
 }
 
 // NetworkConfig defines network parameters.
@@ -141,16 +134,28 @@ func (w *Wallet) DeriveFeeKey(chain, index uint32) (*KeyPair, error)
 //   Path: m/44'/236'/(vaultIndex+1)'/0/0
 func (w *Wallet) DeriveVaultRootKey(vaultIndex uint32) (*KeyPair, error)
 
-// DeriveKeyCacheKey derives the encryption key for key cache files.
-// Used to encrypt cached AES keys in ~/.bitfs/cache/keys/.
-func (w *Wallet) DeriveKeyCacheKey() (*KeyPair, error)
+// Network returns the wallet's network configuration.
+func (w *Wallet) Network() *NetworkConfig
+```
+
+### 函数 -- 钱包状态
+
+```go
+// NewWalletState creates a new empty WalletState.
+func NewWalletState() *WalletState
+
+// Validate checks the integrity of a deserialized WalletState.
+// Verifies account indices are within BIP32 range, no duplicates among active vaults,
+// and NextVaultIndex >= max account index + 1.
+func (ws *WalletState) Validate() error
 ```
 
 ### 函数 -- 保险库管理
 
 ```go
 // CreateVault creates a new vault with the given name.
-// Allocates the next available account index.
+// Allocates the next available account index (0-based vault index,
+// which maps to BIP44 account index = vaultIndex + 1).
 func (w *Wallet) CreateVault(state *WalletState, name string) (*Vault, error)
 
 // GetVault retrieves a vault by name.
@@ -226,6 +231,8 @@ m/44'/236'/N'          Vault #(N-1)
 |------|------|
 | `ErrInvalidMnemonic` | 助记词未通过 BIP39 验证 |
 | `ErrInvalidEntropy` | 熵值位数不是 128 或 256 |
+| `ErrInvalidSeed` | 种子为空或无效 |
+| `ErrDerivationFailed` | BIP32 密钥派生失败 |
 | `ErrFileIndexOutOfRange` | 索引超过 MaxFileIndex (2^31-1) |
 | `ErrPathTooDeep` | 路径超过 MaxPathDepth (64) |
 | `ErrVaultNotFound` | 指定名称的保险库不存在 |
@@ -242,6 +249,6 @@ m/44'/236'/N'          Vault #(N-1)
 
 3. **默认硬化派生**：子密钥派生默认使用硬化模式（设计决策 #82）。这防止子胶囊（Capsule）泄露父胶囊。非硬化派生仅用于显式的目录购买场景。
 
-4. **密钥缓存加密**：`~/.bitfs/cache/keys/` 中缓存的 AES 密钥使用钱包派生的密钥加密，永远不会以明文 JSON 存储。
+4. **密钥缓存加密**：`~/.bitfs/cache/keys/` 中缓存的 AES 密钥在应用层（vault）使用钱包派生的密钥加密，永远不会以明文 JSON 存储。
 
 5. **确定性恢复**：给定（助记词，口令），所有密钥均可重新计算。交易数据需要单独备份。

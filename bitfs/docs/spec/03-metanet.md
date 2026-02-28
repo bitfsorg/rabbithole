@@ -97,6 +97,7 @@ type Node struct {
     Parent          []byte        // Parent P_node
     Index           uint32        // File index within parent
     Children        []ChildEntry
+    MerkleRoot      []byte        // Merkle root of Children (32 bytes, nil for non-dir or empty dir)
     NextChildIndex  uint32
     Domain          string
     Keywords        string
@@ -177,9 +178,10 @@ type NodeStore interface {
 ### 函数
 
 ```go
-// ParseNode parses a raw BSV transaction into a Metanet Node.
-// Extracts OP_RETURN fields and deserializes the TLV payload.
-func ParseNode(txBytes []byte) (*Node, error)
+// ParseNode parses OP_RETURN push data (as produced by tx.ParseOPReturnData)
+// into a Metanet Node. The pushes should be the 4-element array:
+// [MetaFlag, P_node, TxID_parent, Payload].
+func ParseNode(pushes [][]byte) (*Node, error)
 
 // ResolvePath resolves a filesystem path starting from a root node.
 // Handles directory traversal, soft link following (max depth 10),
@@ -218,6 +220,31 @@ func LatestVersion(nodes []*Node) *Node
 // Checks current node, then parent, then grandparent, etc. until root.
 // Returns 0 if no price is set anywhere in the ancestry.
 func InheritPricePerKB(store NodeStore, node *Node) (uint64, error)
+
+// SerializePayload serializes Node fields into the simple TLV binary format
+// that can be used as the payload in OP_RETURN.
+func SerializePayload(node *Node) ([]byte, error)
+
+// CheckCLTVAccess checks if content is accessible at the given block height.
+// Returns CLTVAllowed if cltv_height is 0 (no restriction) or currentHeight >= cltv_height.
+func CheckCLTVAccess(node *Node, currentHeight uint32) CLTVResult
+
+// ComputeDirectoryMerkleRoot computes the Merkle root from a directory's
+// children list. Returns nil for empty or nil children slice.
+// Algorithm: Bitcoin-style double-SHA256 Merkle tree over serialized ChildEntry leaves.
+func ComputeDirectoryMerkleRoot(children []ChildEntry) []byte
+
+// BuildDirectoryMerkleProof builds a Merkle proof for a child at the given
+// position index. Returns the sibling hashes needed to recompute the root.
+func BuildDirectoryMerkleProof(children []ChildEntry, childIndex int) ([][]byte, error)
+
+// VerifyChildMembership verifies that a ChildEntry belongs to a directory
+// with the given MerkleRoot, using the provided proof path and position index.
+func VerifyChildMembership(entry *ChildEntry, proof [][]byte, index int, merkleRoot []byte) bool
+
+// ComputeChildLeafHash computes the Merkle leaf hash for a single ChildEntry.
+// The leaf hash is DoubleHash(serialize(entry)).
+func ComputeChildLeafHash(entry *ChildEntry) []byte
 ```
 
 ## 依赖
@@ -256,8 +283,8 @@ func InheritPricePerKB(store NodeStore, node *Node) (uint64, error)
 | 0x10 | Domain | string | var | DNSLink 绑定域名 |
 | 0x11 | Keywords | string | var | 搜索关键字 |
 | 0x12 | Description | string | var | 描述文本 |
-| 0x13 | Encrypted | bool | 1 | true = EncPayload 已加密 |
-| 0x14 | OnChain | bool | 1 | true = 内容在链上 |
+| 0x13 | Encrypted | uint32 | 4 | 非零 = EncPayload 已加密 (小端序) |
+| 0x14 | OnChain | uint32 | 4 | 非零 = 内容在链上 (小端序) |
 | 0x15 | ContentTxID | bytes | 32 | 数据交易 TxID (可重复) |
 | 0x16 | Compression | int32 | 4 | 压缩方案 (NONE=0, LZW=1, GZIP=2, ZSTD=3) |
 | 0x17 | CltvHeight | uint32 | 4 | CLTV 时间锁区块高度 |
@@ -347,11 +374,9 @@ ResolvePath(root, ["docs", "report.pdf"]):
 | `ErrRemoteLinkNotSupported` | SOFT_REMOTE 链接需要外部解析 |
 | `ErrInvalidPath` | 路径包含无效字符或为空 |
 | `ErrNodeNotFound` | 未找到给定 P_node 或 TxID 对应的节点 |
-| `ErrInvalidTLV` | 载荷无法反序列化 |
+| `ErrInvalidPayload` | 载荷无法反序列化 |
 | `ErrHardLinkToDirectory` | 尝试对目录创建硬链接 |
-| `ErrInvalidAnchor` | Anchor 节点缺少必需字段 (TreeRootPNode) |
-| `ErrISOInactive` | ISO 操作但 ISO 未激活 |
-| `ErrACLDenied` | ACL 检查拒绝访问 |
+| `ErrAboveRoot` | ".." 导航尝试越过根节点之上 |
 
 ## 安全考量
 
