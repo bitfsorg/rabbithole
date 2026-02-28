@@ -1,12 +1,20 @@
 package buy
 
 import (
+	"context"
 	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/tongxiaofeng/libbitfs-go/network"
+	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
 
 func TestBuyParams_Validate(t *testing.T) {
@@ -55,4 +63,354 @@ func testPrivKey(t *testing.T) *ec.PrivateKey {
 	pk, _ := ec.PrivateKeyFromBytes(keyBytes)
 	require.NotNil(t, pk)
 	return pk
+}
+
+// --- Buy() error path tests ---
+
+func TestBuy_ValidationError(t *testing.T) {
+	_, err := Buy(&BuyParams{TxID: "abc", Config: &BuyerConfig{}})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "wallet key is required")
+}
+
+func TestBuy_GetBuyInfoError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{PrivKey: testPrivKey(t)},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "get buy info")
+}
+
+func TestBuy_InvalidCapsuleHashHex(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(client.BuyInfo{
+			CapsuleHash:  "not-valid-hex",
+			Price:        100,
+			PaymentAddr:  strings.Repeat("aa", 20),
+			SellerPubKey: strings.Repeat("bb", 33),
+		})
+	}))
+	defer srv.Close()
+
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{PrivKey: testPrivKey(t)},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid capsule hash hex")
+}
+
+func TestBuy_InvalidPaymentAddrHex(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(client.BuyInfo{
+			CapsuleHash:  strings.Repeat("aa", 32),
+			Price:        100,
+			PaymentAddr:  "not-hex!",
+			SellerPubKey: strings.Repeat("bb", 33),
+		})
+	}))
+	defer srv.Close()
+
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{PrivKey: testPrivKey(t)},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid payment address hex")
+}
+
+func TestBuy_InvalidSellerPubKeyHex(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(client.BuyInfo{
+			CapsuleHash:  strings.Repeat("aa", 32),
+			Price:        100,
+			PaymentAddr:  strings.Repeat("aa", 20),
+			SellerPubKey: "not-hex!",
+		})
+	}))
+	defer srv.Close()
+
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{PrivKey: testPrivKey(t)},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid seller pubkey hex")
+}
+
+func TestBuy_ResolveUTXOsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(client.BuyInfo{
+			CapsuleHash:  strings.Repeat("aa", 32),
+			Price:        100,
+			PaymentAddr:  strings.Repeat("aa", 20),
+			SellerPubKey: strings.Repeat("bb", 33),
+		})
+	}))
+	defer srv.Close()
+
+	// No manual UTXOs and no blockchain → resolveUTXOs error
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{PrivKey: testPrivKey(t)},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no UTXOs available")
+}
+
+func TestBuy_SubmitHTLCError(t *testing.T) {
+	pk := testPrivKey(t)
+	buyerPKH := pk.PubKey().Hash()
+	p2pkh := BuildP2PKHScript(buyerPKH)
+
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if r.Method == "GET" {
+			// GetBuyInfo — return valid info with the buyer's own pubkey as seller
+			// so BuildHTLCFundingTx can construct a valid tx.
+			json.NewEncoder(w).Encode(client.BuyInfo{
+				CapsuleHash:  strings.Repeat("aa", 32),
+				Price:        100,
+				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
+			})
+		} else {
+			// SubmitHTLC — return server error
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{
+			PrivKey: pk,
+			ManualUTXOs: []*x402.HTLCUTXO{
+				{TxID: make([]byte, 32), Vout: 0, Amount: 100000, ScriptPubKey: p2pkh},
+			},
+		},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "submit HTLC")
+}
+
+func TestBuy_SuccessFlow(t *testing.T) {
+	pk := testPrivKey(t)
+	buyerPKH := pk.PubKey().Hash()
+	p2pkh := BuildP2PKHScript(buyerPKH)
+
+	capsuleHex := strings.Repeat("cc", 16)
+	nonceHex := strings.Repeat("dd", 16)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			json.NewEncoder(w).Encode(client.BuyInfo{
+				CapsuleHash:  strings.Repeat("aa", 32),
+				Price:        100,
+				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
+			})
+		} else {
+			json.NewEncoder(w).Encode(client.CapsuleResponse{
+				Capsule:      capsuleHex,
+				CapsuleNonce: nonceHex,
+			})
+		}
+	}))
+	defer srv.Close()
+
+	result, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{
+			PrivKey: pk,
+			ManualUTXOs: []*x402.HTLCUTXO{
+				{TxID: make([]byte, 32), Vout: 0, Amount: 100000, ScriptPubKey: p2pkh},
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Capsule)
+	assert.NotEmpty(t, result.CapsuleNonce)
+	assert.NotEmpty(t, result.HTLCTxID)
+	assert.Equal(t, uint64(100000), result.CostSatoshis)
+}
+
+func TestBuy_SuccessWithoutNonce(t *testing.T) {
+	pk := testPrivKey(t)
+	buyerPKH := pk.PubKey().Hash()
+	p2pkh := BuildP2PKHScript(buyerPKH)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			json.NewEncoder(w).Encode(client.BuyInfo{
+				CapsuleHash:  strings.Repeat("aa", 32),
+				Price:        100,
+				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
+			})
+		} else {
+			json.NewEncoder(w).Encode(client.CapsuleResponse{
+				Capsule: strings.Repeat("cc", 16),
+			})
+		}
+	}))
+	defer srv.Close()
+
+	result, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{
+			PrivKey: pk,
+			ManualUTXOs: []*x402.HTLCUTXO{
+				{TxID: make([]byte, 32), Vout: 0, Amount: 100000, ScriptPubKey: p2pkh},
+			},
+		},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, result.CapsuleNonce)
+}
+
+func TestBuy_InvalidCapsuleHexInResponse(t *testing.T) {
+	pk := testPrivKey(t)
+	buyerPKH := pk.PubKey().Hash()
+	p2pkh := BuildP2PKHScript(buyerPKH)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			json.NewEncoder(w).Encode(client.BuyInfo{
+				CapsuleHash:  strings.Repeat("aa", 32),
+				Price:        100,
+				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
+			})
+		} else {
+			json.NewEncoder(w).Encode(client.CapsuleResponse{
+				Capsule: "not-hex!",
+			})
+		}
+	}))
+	defer srv.Close()
+
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{
+			PrivKey: pk,
+			ManualUTXOs: []*x402.HTLCUTXO{
+				{TxID: make([]byte, 32), Vout: 0, Amount: 100000, ScriptPubKey: p2pkh},
+			},
+		},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid capsule hex in response")
+}
+
+func TestBuy_InvalidNonceHexInResponse(t *testing.T) {
+	pk := testPrivKey(t)
+	buyerPKH := pk.PubKey().Hash()
+	p2pkh := BuildP2PKHScript(buyerPKH)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			json.NewEncoder(w).Encode(client.BuyInfo{
+				CapsuleHash:  strings.Repeat("aa", 32),
+				Price:        100,
+				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
+			})
+		} else {
+			json.NewEncoder(w).Encode(client.CapsuleResponse{
+				Capsule:      strings.Repeat("cc", 16),
+				CapsuleNonce: "not-hex!",
+			})
+		}
+	}))
+	defer srv.Close()
+
+	_, err := Buy(&BuyParams{
+		Client: client.New(srv.URL),
+		TxID:   "deadbeef",
+		Config: &BuyerConfig{
+			PrivKey: pk,
+			ManualUTXOs: []*x402.HTLCUTXO{
+				{TxID: make([]byte, 32), Vout: 0, Amount: 100000, ScriptPubKey: p2pkh},
+			},
+		},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid capsule nonce hex in response")
+}
+
+// --- resolveUTXOs tests ---
+
+func TestResolveUTXOs_ManualSufficient(t *testing.T) {
+	pk := testPrivKey(t)
+	utxos, err := resolveUTXOs(&BuyParams{
+		Config: &BuyerConfig{
+			PrivKey: pk,
+			ManualUTXOs: []*x402.HTLCUTXO{
+				{TxID: make([]byte, 32), Vout: 0, Amount: 100000},
+			},
+		},
+	}, 100)
+	require.NoError(t, err)
+	assert.Len(t, utxos, 1)
+}
+
+func TestResolveUTXOs_ManualInsufficient(t *testing.T) {
+	pk := testPrivKey(t)
+	_, err := resolveUTXOs(&BuyParams{
+		Config: &BuyerConfig{
+			PrivKey: pk,
+			ManualUTXOs: []*x402.HTLCUTXO{
+				{TxID: make([]byte, 32), Vout: 0, Amount: 10},
+			},
+		},
+	}, 100000)
+	assert.ErrorIs(t, err, ErrInsufficientBalance)
+}
+
+func TestResolveUTXOs_NoBlockchainNoManual(t *testing.T) {
+	pk := testPrivKey(t)
+	_, err := resolveUTXOs(&BuyParams{
+		Config: &BuyerConfig{PrivKey: pk},
+	}, 100)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no UTXOs available")
+}
+
+func TestResolveUTXOs_BlockchainAutoSelect(t *testing.T) {
+	pk := testPrivKey(t)
+	mock := &network.MockBlockchainService{
+		ListUnspentFn: func(_ context.Context, _ string) ([]*network.UTXO, error) {
+			return []*network.UTXO{
+				{
+					TxID:         strings.Repeat("aa", 32),
+					Vout:         0,
+					Amount:       100000,
+					ScriptPubKey: "76a914" + strings.Repeat("00", 20) + "88ac",
+				},
+			}, nil
+		},
+	}
+	utxos, err := resolveUTXOs(&BuyParams{
+		Config:     &BuyerConfig{PrivKey: pk},
+		Blockchain: mock,
+	}, 100)
+	require.NoError(t, err)
+	assert.NotEmpty(t, utxos)
 }

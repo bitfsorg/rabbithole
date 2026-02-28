@@ -62,4 +62,38 @@ func TestErrorResponse(t *testing.T) {
 	assert.JSONEq(t, `{"error":"not found","code":2}`, string(data))
 }
 
+func TestBatchGetResponse(t *testing.T) {
+	resp := BatchGetResponse{
+		Total:     3,
+		Succeeded: 2,
+		Failed:    1,
+		Files: []BatchFileEntry{
+			{Path: "/a.txt", OutputPath: "/tmp/a.txt", BytesWritten: 100},
+			{Path: "/b.txt", OutputPath: "/tmp/b.txt", BytesWritten: 200},
+			{Path: "/c.txt", Error: "not found", Code: 2},
+		},
+	}
+	data, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	var out BatchGetResponse
+	require.NoError(t, json.Unmarshal(data, &out))
+	assert.Equal(t, resp, out)
+}
+
+func TestGetResponse_WithPayment(t *testing.T) {
+	resp := GetResponse{
+		Meta:            &client.MetaResponse{PNode: "02ab", Path: "/paid.bin", Access: "paid"},
+		PaymentRequired: true,
+		PaymentInfo:     &PaymentInfo{Price: 500, PricePerKB: 50, SellerPubKey: "03ff", PaymentAddr: "aabb"},
+		Payment:         &PaymentResult{CostSatoshis: 500, HTLCTxID: "deadbeef"},
+		OutputPath:      "/tmp/paid.bin",
+		BytesWritten:    256,
+	}
+	data, err := json.Marshal(resp)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"cost_satoshis":500`)
+	assert.Contains(t, string(data), `"htlc_txid":"deadbeef"`)
+}
+
 func strPtr(s string) *string { return &s }
