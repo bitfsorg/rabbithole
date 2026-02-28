@@ -144,9 +144,9 @@ func (d *Daemon) handleBSVAlias(w http.ResponseWriter, r *http.Request) {
 	caps := map[string]interface{}{
 		"bsvalias": "1.0",
 		"capabilities": map[string]interface{}{
-			"pki":                base + "/api/v1/pki/{alias}@{domain.tld}",
-			"f12f968c92d6":       base + "/api/v1/public-profile/{alias}@{domain.tld}",
-			"a9f510c16bde":       base + "/api/v1/verify/{alias}@{domain.tld}/{pubkey}",
+			"pki":                   base + "/api/v1/pki/{alias}@{domain.tld}",
+			"f12f968c92d6":          base + "/api/v1/public-profile/{alias}@{domain.tld}",
+			"a9f510c16bde":          base + "/api/v1/verify/{alias}@{domain.tld}/{pubkey}",
 			paymail.BRFCBitFSBrowse: base + "/_bitfs/meta/{pnode}/{path}",
 			paymail.BRFCBitFSBuy:    base + "/_bitfs/buy/{txid}",
 			paymail.BRFCBitFSSell:   base + "/_bitfs/sales",
