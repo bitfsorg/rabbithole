@@ -514,4 +514,3 @@ func writeJSON(v interface{}, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, string(data))
 	return 0
 }
-

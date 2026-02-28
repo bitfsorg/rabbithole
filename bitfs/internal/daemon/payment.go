@@ -19,21 +19,21 @@ import (
 
 // InvoiceRecord tracks a pending or completed content purchase.
 type InvoiceRecord struct {
-	ID            string    `json:"invoice_id"`
-	TotalPrice    uint64    `json:"total_price"`
-	NodePNode     []byte    `json:"-"`
-	KeyHash       []byte    `json:"-"`
-	FileTxID      []byte    `json:"-"`                       // 32-byte file transaction ID (binds capsule hash to file identity)
-	PricePerKB    uint64    `json:"price_per_kb"`
-	FileSize      uint64    `json:"file_size"`
-	PaymentAddr   string    `json:"payment_addr"`
-	SellerPubKey  string    `json:"seller_pubkey"`           // Hex-encoded compressed seller pubkey (for HTLC 2-of-2 multisig)
-	CapsuleHash   string    `json:"capsule_hash"`
-	HTLCScript    []byte    `json:"-"`                       // Precomputed HTLC script for verification
-	Capsule       []byte    `json:"capsule,omitempty"`       // ECDH capsule for buyer (persisted for crash recovery)
-	CapsuleNonce  []byte    `json:"capsule_nonce,omitempty"` // Per-invoice nonce for capsule unlinkability
-	Expiry        time.Time `json:"expiry"`
-	Paid          bool      `json:"paid"`
+	ID           string    `json:"invoice_id"`
+	TotalPrice   uint64    `json:"total_price"`
+	NodePNode    []byte    `json:"-"`
+	KeyHash      []byte    `json:"-"`
+	FileTxID     []byte    `json:"-"` // 32-byte file transaction ID (binds capsule hash to file identity)
+	PricePerKB   uint64    `json:"price_per_kb"`
+	FileSize     uint64    `json:"file_size"`
+	PaymentAddr  string    `json:"payment_addr"`
+	SellerPubKey string    `json:"seller_pubkey"` // Hex-encoded compressed seller pubkey (for HTLC 2-of-2 multisig)
+	CapsuleHash  string    `json:"capsule_hash"`
+	HTLCScript   []byte    `json:"-"`                       // Precomputed HTLC script for verification
+	Capsule      []byte    `json:"capsule,omitempty"`       // ECDH capsule for buyer (persisted for crash recovery)
+	CapsuleNonce []byte    `json:"capsule_nonce,omitempty"` // Per-invoice nonce for capsule unlinkability
+	Expiry       time.Time `json:"expiry"`
+	Paid         bool      `json:"paid"`
 }
 
 // DefaultInvoiceExpiry is the default invoice time-to-live.
@@ -494,7 +494,7 @@ func (d *Daemon) evictExpiredInvoices() int {
 }
 
 // startInvoiceEviction runs a background goroutine that periodically evicts
-// stale invoices. It stops when ctx is cancelled.
+// stale invoices. It stops when ctx is canceled.
 func (d *Daemon) startInvoiceEviction(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(invoiceEvictionInterval)

@@ -233,7 +233,9 @@ func runShell(args []string) int {
 			for i, a := range cmdArgs {
 				if a == "-r" || a == "--recursive" {
 					recursive = true
-					pathArgs = append(cmdArgs[:i], cmdArgs[i+1:]...)
+					pathArgs = make([]string, 0, len(cmdArgs)-1)
+					pathArgs = append(pathArgs, cmdArgs[:i]...)
+					pathArgs = append(pathArgs, cmdArgs[i+1:]...)
 					break
 				}
 			}

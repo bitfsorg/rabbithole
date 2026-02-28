@@ -62,7 +62,7 @@ type BuyInfo struct {
 	CapsuleHash  string `json:"capsule_hash"`
 	Price        uint64 `json:"price"`
 	PaymentAddr  string `json:"payment_addr"`
-	SellerPubKey string `json:"seller_pubkey"`       // Hex-encoded compressed seller pubkey
+	SellerPubKey string `json:"seller_pubkey"`           // Hex-encoded compressed seller pubkey
 	CapsuleNonce string `json:"capsule_nonce,omitempty"` // Hex-encoded per-invoice nonce for capsule unlinkability
 }
 

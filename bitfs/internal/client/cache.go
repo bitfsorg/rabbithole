@@ -52,7 +52,8 @@ func (c *MetaCache) Get(pnode, path string) (*MetaResponse, error) {
 
 	var entry cacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil, nil // corrupt cache, treat as miss
+		_ = os.Remove(c.cachePath(key)) // remove corrupt entry
+		return nil, nil                 //nolint:nilerr // corrupt cache file, treat as miss
 	}
 
 	if time.Since(entry.CachedAt) > c.ttl {
