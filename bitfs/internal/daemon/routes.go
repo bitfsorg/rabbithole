@@ -40,6 +40,13 @@ func (d *Daemon) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /_bitfs/spv/proof/{txid}", wrap(d.handleSPVProof))
 	mux.HandleFunc("OPTIONS /_bitfs/spv/proof/{txid}", wrap(d.handleOptions))
 
+	// Dashboard API
+	mux.HandleFunc("GET /_bitfs/dashboard/status", wrap(d.handleDashboardStatus))
+	mux.HandleFunc("GET /_bitfs/dashboard/storage", wrap(d.handleDashboardStorage))
+	mux.HandleFunc("GET /_bitfs/dashboard/wallet", wrap(d.handleDashboardWallet))
+	mux.HandleFunc("GET /_bitfs/dashboard/network", wrap(d.handleDashboardNetwork))
+	mux.HandleFunc("GET /_bitfs/dashboard/logs", wrap(d.handleDashboardLogs))
+
 	// Paymail/BSV Alias
 	mux.HandleFunc("GET /.well-known/bsvalias", wrap(d.handleBSVAlias))
 	mux.HandleFunc("GET /api/v1/pki/{handle}", wrap(d.handlePKI))

@@ -240,6 +240,11 @@ type Daemon struct {
 
 	// Invoice persistence directory (empty = disabled).
 	invoiceDir string
+
+	// Dashboard support
+	startedAt  time.Time
+	logBuf     *logBuffer
+	StorageDir string
 }
 
 // New creates a new Daemon instance.
@@ -263,6 +268,9 @@ func New(config *Config, wallet WalletService, store ContentStore, metanet Metan
 		invoices:  make(map[string]*InvoiceRecord),
 		usedTxIDs: make(map[string]string),
 	}
+
+	d.startedAt = time.Now()
+	d.logBuf = newLogBuffer(200)
 
 	// Initialize rate limiter
 	if config.Security.RateLimit.RPM > 0 {
@@ -439,6 +447,13 @@ func (d *Daemon) cleanupExpiredSessions() {
 // SetInvoiceDir configures the directory for invoice persistence. Must be called before Start.
 func (d *Daemon) SetInvoiceDir(dir string) {
 	d.invoiceDir = dir
+}
+
+// LogInfo adds a log entry to the dashboard ring buffer.
+func (d *Daemon) LogInfo(level, message string) {
+	if d.logBuf != nil {
+		d.logBuf.Add(level, message)
+	}
 }
 
 // persistInvoice writes an invoice to disk atomically (write-to-tmp then rename).
