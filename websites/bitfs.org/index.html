@@ -1334,21 +1334,16 @@ img { max-width: 100%; display: block; }
         <div class="flow-steps">
           <div class="flow-step">
             <span class="flow-step-num">1</span>
-            <span class="flow-step-text">Seller publishes HTLC with file hash</span>
+            <span class="flow-step-text">Buyer creates HTLC, locking payment to file hash</span>
           </div>
           <div class="flow-connector-v"></div>
           <div class="flow-step">
             <span class="flow-step-num">2</span>
-            <span class="flow-step-text">Buyer locks payment to hash lock</span>
+            <span class="flow-step-text">Seller reveals preimage (decryption key), claims payment</span>
           </div>
           <div class="flow-connector-v"></div>
           <div class="flow-step">
             <span class="flow-step-num">3</span>
-            <span class="flow-step-text">Seller reveals preimage, claims payment</span>
-          </div>
-          <div class="flow-connector-v"></div>
-          <div class="flow-step">
-            <span class="flow-step-num">4</span>
             <span class="flow-step-text">Buyer uses preimage to decrypt file</span>
           </div>
         </div>

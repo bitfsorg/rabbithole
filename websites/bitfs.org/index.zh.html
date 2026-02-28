@@ -1332,21 +1332,16 @@ img { max-width: 100%; display: block; }
         <div class="flow-steps">
           <div class="flow-step">
             <span class="flow-step-num">1</span>
-            <span class="flow-step-text">卖方发布包含文件哈希的 HTLC</span>
+            <span class="flow-step-text">买方创建 HTLC，将付款锁定到文件哈希</span>
           </div>
           <div class="flow-connector-v"></div>
           <div class="flow-step">
             <span class="flow-step-num">2</span>
-            <span class="flow-step-text">买方将付款锁定到哈希锁</span>
+            <span class="flow-step-text">卖方揭示原像（解密密钥），领取付款</span>
           </div>
           <div class="flow-connector-v"></div>
           <div class="flow-step">
             <span class="flow-step-num">3</span>
-            <span class="flow-step-text">卖方揭示原像，领取付款</span>
-          </div>
-          <div class="flow-connector-v"></div>
-          <div class="flow-step">
-            <span class="flow-step-num">4</span>
             <span class="flow-step-text">买方使用原像解密文件</span>
           </div>
         </div>
