@@ -7,38 +7,16 @@ node_modules/
 .sisyphus/
 .specify/
 
-# Go build artifacts
-bitfs/bitfs
-bitfs/bls
-bitfs/bcat
-bitfs/bget
-bitfs/bstat
-bitfs/btree
-bitfs/bmget
-metanet/metanet
-
 # Git worktrees
 .worktrees/
 
-# Docker volume data
-bitfs/e2e/bsv-data/
-
-# BitFS App (Flutter) build artifacts
-bitfs-app/build/
-bitfs-app/.dart_tool/
-
-# BitFS Extension build artifacts
-bitfs-extension/node_modules/
-bitfs-extension/dist/
-
 # Independent git repos (subprojects)
+bitfs/
+metanet/
+den-explorer/
+websites/
 bitfs-app/
 bitfs-extension/
 git-remote-bitfs/
 libbitfs-go/
 libbitfs-ts/
-
-
-# Dashboard build output
-bitfs/dashboard/dist/
-bitfs/dashboard/node_modules/
