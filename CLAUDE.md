@@ -25,7 +25,7 @@ RabbitHole/
 ├── slides/            ← 演示文稿 (HTML5)
 ├── references/        ← 研究论文 (6 篇 PDF)
 ├── vi/                ← 视觉识别系统
-├── docs/              ← 跨产品文档 (审查报告、任务追踪)
+├── docs/              ← 统一文档中心 (plans/specs/audits/tasks)
 ├── bitfs/             ← BitFS Go 实现 (CLI + daemon)
 ├── metanet/           ← Metanet Go 实现 (CDN 节点)
 ├── libbitfs-go/       ← 共享核心库 Go (独立 repo)
@@ -51,8 +51,7 @@ Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/t
 - `internal/client/` — b-tools 的 HTTP 客户端
 
 **其他目录**:
-- `docs/spec/` — 11 个模块规格说明（01-method42 到 11-cmd-btools），TASKS.md 含 ~938 测试用例
-- `docs/plans/` — 设计与实施计划文档
+- `docs/` — 用户文档 (api-reference, user-guide, CLI-MANUAL-TEST-GUIDE)
 - `integration/` — 276 个集成测试（19 文件，`-tags=integration`）
 - `e2e/` — Docker regtest 端到端测试（`-tags e2e`，需要 Docker Desktop）
 - `dashboard/` — React SPA，通过 embed.go 嵌入 daemon 的 `/_dashboard/*`
@@ -93,7 +92,7 @@ Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/t
 - `overlay/` — BRC Overlay 网络
 - `config/` — 配置管理
 
-**状态**: Phase 1（chain/mining）完成，Phase 2（contract）进行中。`docs/spec/` 下 7 个模块规格说明。
+**状态**: Phase 1（chain/mining）完成，Phase 2（contract）进行中。规格说明见 `docs/specs/metanet/`。
 
 ### den-explorer/ — 区块链浏览器
 
