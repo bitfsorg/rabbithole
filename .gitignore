@@ -37,8 +37,6 @@ bitfs-extension/
 git-remote-bitfs/
 libbitfs-go/
 
-# Reference PDFs (large binary files)
-docs/references/*.pdf
 
 # Dashboard build output
 bitfs/dashboard/dist/
