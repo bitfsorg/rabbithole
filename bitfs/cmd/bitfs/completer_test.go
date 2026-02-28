@@ -330,6 +330,113 @@ func TestCompleteRemotePath_CacheExpiry(t *testing.T) {
 	assert.Equal(t, []string{"alpha", "beta"}, c3, "expected fresh result after cache expiry")
 }
 
+// ---------------------------------------------------------------------------
+// Do function — additional switch branch coverage
+// ---------------------------------------------------------------------------
+
+func newCompleterWithState(t *testing.T) *shellCompleter {
+	t.Helper()
+	state := vault.NewLocalState("")
+	state.SetNode("aaa", &vault.NodeState{
+		Path: "/", Type: "dir",
+		Children: []*vault.ChildState{
+			{Name: "docs", Type: "dir"},
+			{Name: "file.txt", Type: "file"},
+		},
+	})
+	return &shellCompleter{
+		commands: shellCommands, // use real shellCommands
+		state:    state,
+		cwd:      "/",
+		localCwd: t.TempDir(),
+	}
+}
+
+func TestCompleterDo_MvArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("mv "), 3)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_CpArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("cp "), 3)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_LinkArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("link "), 5)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_CatArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("cat "), 4)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_GetArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("get "), 4)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_MgetArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("mget "), 5)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_MputFirstArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	os.MkdirAll(filepath.Join(sc.localCwd, "up"), 0755)
+	candidates, _ := sc.Do([]rune("mput "), 5)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_MputSecondArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("mput localdir "), 14)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_RmArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("rm "), 3)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_MkdirArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("mkdir "), 6)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_EncryptArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("encrypt "), 8)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_SellArg(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("sell "), 5)
+	assert.NotNil(t, candidates)
+}
+
+func TestCompleterDo_UnknownCmd(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune("unknown "), 8)
+	assert.Nil(t, candidates)
+}
+
+func TestCompleterDo_EmptyInput(t *testing.T) {
+	sc := newCompleterWithState(t)
+	candidates, _ := sc.Do([]rune(""), 0)
+	assert.NotNil(t, candidates)
+}
+
 func TestCompleteRemotePath_CacheDifferentDir(t *testing.T) {
 	state := vault.NewLocalState("")
 	state.SetNode("aaa", &vault.NodeState{

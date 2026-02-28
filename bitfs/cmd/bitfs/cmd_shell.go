@@ -48,6 +48,464 @@ var shellCommands = []string{
 	"link", "sell", "encrypt", "decrypt", "sales", "publish", "unpublish", "help", "quit", "exit",
 }
 
+// shellAction signals the REPL loop how to proceed after a command.
+type shellAction int
+
+const (
+	shellContinue shellAction = iota // continue the REPL loop
+	shellExit                        // break out of the REPL loop (quit/exit)
+)
+
+// shellCtx holds mutable state shared between the REPL loop and command dispatch.
+type shellCtx struct {
+	eng      *vault.Vault
+	vaultIdx uint32
+	cwd      string
+	localCwd string
+}
+
+// shellExecCmd dispatches a single shell command and returns a shellAction.
+// Extracted from runShell to enable direct unit testing of every command.
+func shellExecCmd(ctx *shellCtx, cmd string, args []string) shellAction {
+	switch cmd {
+	case "help":
+		shellHelp()
+	case "quit", "exit":
+		fmt.Println("Bye.")
+		return shellExit
+	case "pwd":
+		fmt.Println(ctx.cwd)
+	case "cd":
+		if len(args) == 0 {
+			ctx.cwd = "/"
+		} else {
+			target := args[0]
+			if !strings.HasPrefix(target, "/") {
+				target = ctx.cwd + "/" + target
+			}
+			target = cleanPath(target)
+			if target != "/" {
+				node := ctx.eng.State.FindNodeByPath(target)
+				if node == nil {
+					fmt.Fprintf(os.Stderr, "cd: %s: no such directory\n", target)
+					return shellContinue
+				}
+				if node.Type != "dir" {
+					fmt.Fprintf(os.Stderr, "cd: %s: not a directory\n", target)
+					return shellContinue
+				}
+			}
+			ctx.cwd = target
+		}
+	case "lcd":
+		if len(args) == 0 {
+			fmt.Println(ctx.localCwd)
+		} else {
+			target := args[0]
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(ctx.localCwd, target)
+			}
+			target = filepath.Clean(target)
+			info, statErr := os.Stat(target)
+			if statErr != nil || !info.IsDir() {
+				fmt.Fprintf(os.Stderr, "Error: %s is not a directory\n", target)
+				return shellContinue
+			}
+			ctx.localCwd = target
+			fmt.Printf("Local directory: %s\n", ctx.localCwd)
+		}
+	case "ls":
+		dir := ctx.cwd
+		if len(args) > 0 {
+			dir = resolvePath(ctx.cwd, args[0])
+		}
+		shellLs(ctx.eng, dir)
+	case "mkdir":
+		if len(args) < 1 {
+			fmt.Println("Usage: mkdir <path>")
+			return shellContinue
+		}
+		path := resolvePath(ctx.cwd, args[0])
+		result, mkErr := ctx.eng.Mkdir(&vault.MkdirOpts{VaultIndex: ctx.vaultIdx, Path: path})
+		if mkErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", mkErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "put":
+		if len(args) < 2 {
+			fmt.Println("Usage: put <local-file> <remote-path> [free|private]")
+			return shellContinue
+		}
+		localFile := args[0]
+		if !filepath.IsAbs(localFile) {
+			localFile = filepath.Join(ctx.localCwd, localFile)
+		}
+		remotePath := resolvePath(ctx.cwd, args[1])
+		access := "free"
+		if len(args) > 2 && args[2] == "private" {
+			access = "private"
+		}
+		result, putErr := ctx.eng.PutFile(&vault.PutOpts{
+			VaultIndex: ctx.vaultIdx,
+			LocalFile:  localFile,
+			RemotePath: remotePath,
+			Access:     access,
+		})
+		if putErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", putErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "rm":
+		if len(args) < 1 {
+			fmt.Println("Usage: rm [-r] <path>")
+			return shellContinue
+		}
+		recursive := false
+		pathArgs := args
+		for i, a := range args {
+			if a == "-r" || a == "--recursive" {
+				recursive = true
+				pathArgs = make([]string, 0, len(args)-1)
+				pathArgs = append(pathArgs, args[:i]...)
+				pathArgs = append(pathArgs, args[i+1:]...)
+				break
+			}
+		}
+		if len(pathArgs) < 1 {
+			fmt.Println("Usage: rm [-r] <path>")
+			return shellContinue
+		}
+		rmPath := resolvePath(ctx.cwd, pathArgs[0])
+		if recursive {
+			if err := shellRemoveRecursive(ctx.eng, ctx.vaultIdx, rmPath); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			}
+		} else {
+			result, rmErr := ctx.eng.Remove(&vault.RemoveOpts{VaultIndex: ctx.vaultIdx, Path: rmPath})
+			if rmErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", rmErr)
+			} else {
+				fmt.Println(result.Message)
+			}
+		}
+	case "mv":
+		if len(args) < 2 {
+			fmt.Println("Usage: mv <src> <dst>")
+			return shellContinue
+		}
+		srcPath := resolvePath(ctx.cwd, args[0])
+		dstPath := resolvePath(ctx.cwd, args[1])
+
+		// Warn about capsule invalidation on cross-directory mv of paid files.
+		if path.Dir(srcPath) != path.Dir(dstPath) {
+			srcNode := ctx.eng.State.FindNodeByPath(srcPath)
+			if srcNode != nil && srcNode.Access == "paid" {
+				fmt.Println("WARNING: Moving this paid file will invalidate existing capsules.")
+				fmt.Println("Buyers will need to re-purchase access at the new location.")
+				fmt.Print("Continue? [y/N] ")
+				var confirm string
+				_, _ = fmt.Scanln(&confirm)
+				if confirm != "y" && confirm != "Y" {
+					fmt.Println("Move canceled.")
+					return shellContinue
+				}
+			}
+		}
+
+		result, mvErr := ctx.eng.Move(&vault.MoveOpts{
+			VaultIndex: ctx.vaultIdx,
+			SrcPath:    srcPath,
+			DstPath:    dstPath,
+			Force:      true,
+		})
+		if mvErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", mvErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "cp":
+		if len(args) < 2 {
+			fmt.Println("Usage: cp <src> <dst>")
+			return shellContinue
+		}
+		result, cpErr := ctx.eng.Copy(&vault.CopyOpts{
+			VaultIndex: ctx.vaultIdx,
+			SrcPath:    resolvePath(ctx.cwd, args[0]),
+			DstPath:    resolvePath(ctx.cwd, args[1]),
+		})
+		if cpErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", cpErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "link":
+		if len(args) < 2 {
+			fmt.Println("Usage: link <target> <link-path> [-s|--soft]")
+			return shellContinue
+		}
+		soft := false
+		posArgs := make([]string, 0, len(args))
+		for _, a := range args {
+			if a == "-s" || a == "--soft" {
+				soft = true
+			} else {
+				posArgs = append(posArgs, a)
+			}
+		}
+		if len(posArgs) < 2 {
+			fmt.Println("Usage: link <target> <link-path> [-s|--soft]")
+			return shellContinue
+		}
+		result, lnErr := ctx.eng.Link(&vault.LinkOpts{
+			VaultIndex: ctx.vaultIdx,
+			TargetPath: resolvePath(ctx.cwd, posArgs[0]),
+			LinkPath:   resolvePath(ctx.cwd, posArgs[1]),
+			Soft:       soft,
+		})
+		if lnErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", lnErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "sell":
+		if len(args) < 2 {
+			fmt.Println("Usage: sell <path> <price-sats-per-kb> [--recursive]")
+			return shellContinue
+		}
+		recursive := false
+		cleanArgs := make([]string, 0, len(args))
+		for _, a := range args {
+			if a == "-r" || a == "--recursive" {
+				recursive = true
+			} else {
+				cleanArgs = append(cleanArgs, a)
+			}
+		}
+		if len(cleanArgs) < 2 {
+			fmt.Println("Usage: sell <path> <price-sats-per-kb> [--recursive]")
+			return shellContinue
+		}
+		var price uint64
+		if _, err := fmt.Sscanf(cleanArgs[1], "%d", &price); err != nil || price == 0 {
+			fmt.Println("Error: price must be a positive integer")
+			return shellContinue
+		}
+		sellPath := resolvePath(ctx.cwd, cleanArgs[0])
+		if recursive {
+			if err := shellSellRecursive(ctx.eng, ctx.vaultIdx, sellPath, price); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			}
+		} else {
+			result, sellErr := ctx.eng.Sell(&vault.SellOpts{
+				VaultIndex: ctx.vaultIdx,
+				Path:       sellPath,
+				PricePerKB: price,
+			})
+			if sellErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", sellErr)
+			} else {
+				fmt.Println(result.Message)
+			}
+		}
+	case "cat":
+		if len(args) < 1 {
+			fmt.Println("Usage: cat <path>")
+			return shellContinue
+		}
+		remotePath := resolvePath(ctx.cwd, args[0])
+		force := len(args) > 1 && args[1] == "--force"
+		reader, info, catErr := ctx.eng.Cat(&vault.CatOpts{
+			Path: remotePath,
+		})
+		switch {
+		case catErr != nil:
+			fmt.Fprintf(os.Stderr, "Error: %v\n", catErr)
+		case !force && !isTextMime(info.MimeType):
+			fmt.Fprintf(os.Stderr, "Binary file (%s, %d bytes). Use 'cat <path> --force' or 'get' to download.\n", info.MimeType, info.FileSize)
+		default:
+			if _, cpErr := io.Copy(os.Stdout, reader); cpErr != nil {
+				fmt.Fprintf(os.Stderr, "Error writing output: %v\n", cpErr)
+			}
+		}
+	case "get":
+		if len(args) < 1 {
+			fmt.Println("Usage: get <remote> [local]")
+			return shellContinue
+		}
+		remotePath := resolvePath(ctx.cwd, args[0])
+		localPath := ""
+		if len(args) > 1 {
+			localPath = args[1]
+			if !filepath.IsAbs(localPath) {
+				localPath = filepath.Join(ctx.localCwd, localPath)
+			}
+		}
+		result, getErr := ctx.eng.Get(&vault.GetOpts{
+			VaultIndex: ctx.vaultIdx,
+			RemotePath: remotePath,
+			LocalDir:   ctx.localCwd,
+			LocalPath:  localPath,
+		})
+		if getErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", getErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "mget":
+		if len(args) < 1 {
+			fmt.Println("Usage: mget <remote-dir> [local-dir]")
+			return shellContinue
+		}
+		remotePath := resolvePath(ctx.cwd, args[0])
+		localDir := ctx.localCwd
+		if len(args) > 1 {
+			localDir = args[1]
+			if !filepath.IsAbs(localDir) {
+				localDir = filepath.Join(ctx.localCwd, localDir)
+			}
+		}
+		mgResult, mgetErr := doMget(ctx.eng, ctx.vaultIdx, remotePath, localDir)
+		if mgetErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", mgetErr)
+		} else {
+			fmt.Printf("Downloaded %d files, created %d directories\n",
+				mgResult.FilesDownloaded, mgResult.DirsCreated)
+			for _, e := range mgResult.Errors {
+				fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
+			}
+		}
+	case "mput":
+		if len(args) < 1 {
+			fmt.Println("Usage: mput <local-dir> [remote-dir]")
+			return shellContinue
+		}
+		localDir := args[0]
+		if !filepath.IsAbs(localDir) {
+			localDir = filepath.Join(ctx.localCwd, localDir)
+		}
+		remoteDir := ctx.cwd
+		if len(args) > 1 {
+			remoteDir = resolvePath(ctx.cwd, args[1])
+		}
+		access := "free"
+		if len(args) > 2 {
+			access = args[2]
+		}
+		if err := validateAccessMode(access); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return shellContinue
+		}
+		mpResult, mputErr := doMput(ctx.eng, ctx.vaultIdx, localDir, remoteDir, access)
+		if mputErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", mputErr)
+		} else {
+			fmt.Printf("Uploaded %d files, created %d directories\n",
+				mpResult.FilesUploaded, mpResult.DirsCreated)
+			for _, e := range mpResult.Errors {
+				fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
+			}
+		}
+	case "publish":
+		if len(args) == 0 {
+			// List all publish bindings.
+			bindings := ctx.eng.State.ListPublishBindings()
+			if len(bindings) == 0 {
+				fmt.Println("No published domains.")
+			} else {
+				for _, b := range bindings {
+					verified := ""
+					if b.Verified {
+						verified = " [verified]"
+					}
+					fmt.Printf("  %s -> vault %d%s\n", b.Domain, b.VaultIndex, verified)
+				}
+			}
+		} else {
+			domain := args[0]
+			dns := publish.DefaultDNSResolver()
+			result, pubErr := publish.Publish(ctx.eng, dns, &publish.PublishOpts{
+				VaultIndex: ctx.vaultIdx,
+				Domain:     domain,
+			})
+			if pubErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", pubErr)
+			} else {
+				fmt.Println(result.Message)
+			}
+		}
+	case "unpublish":
+		if len(args) < 1 {
+			fmt.Println("Usage: unpublish <domain>")
+			return shellContinue
+		}
+		domain := args[0]
+		result, unpubErr := publish.Unpublish(ctx.eng, &publish.UnpublishOpts{
+			Domain: domain,
+		})
+		if unpubErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", unpubErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "encrypt":
+		if len(args) < 1 {
+			fmt.Println("Usage: encrypt <path>")
+			return shellContinue
+		}
+		result, encErr := ctx.eng.EncryptNode(&vault.EncryptOpts{
+			VaultIndex: ctx.vaultIdx,
+			Path:       resolvePath(ctx.cwd, args[0]),
+		})
+		if encErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", encErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "decrypt":
+		if len(args) < 1 {
+			fmt.Println("Usage: decrypt <path>")
+			return shellContinue
+		}
+		result, decErr := ctx.eng.DecryptNode(&vault.DecryptOpts{
+			Path: resolvePath(ctx.cwd, args[0]),
+		})
+		if decErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", decErr)
+		} else {
+			fmt.Println(result.Message)
+		}
+	case "sales":
+		daemonURL := "http://localhost:8080" // default daemon port
+		cl := client.New(daemonURL)
+		records, salesErr := cl.GetSales("all", 50)
+		if salesErr != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v (is daemon running?)\n", salesErr)
+			return shellContinue
+		}
+		if len(records) == 0 {
+			fmt.Println("No sales records.")
+			return shellContinue
+		}
+		fmt.Printf("%-36s  %10s  %5s  %s\n", "INVOICE", "PRICE(sat)", "PAID", "KEY_HASH")
+		for _, r := range records {
+			paid := "no"
+			if r.Paid {
+				paid = "yes"
+			}
+			kh := r.KeyHash
+			if len(kh) > 16 {
+				kh = kh[:16] + "..."
+			}
+			fmt.Printf("%-36s  %10d  %5s  %s\n", r.InvoiceID, r.Price, paid, kh)
+		}
+	default:
+		fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", cmd)
+	}
+	return shellContinue
+}
+
 // runShell handles the "bitfs shell" command.
 // Provides an FTP-style interactive REPL with line editing, history,
 // and tab completion (commands + remote/local paths).
@@ -108,6 +566,8 @@ func runShell(args []string) int {
 
 	_, _ = fmt.Fprintf(rl.Stdout(), "BitFS Shell (vault %d). Type 'help' for commands, 'quit' to exit.\n", vaultIdx)
 
+	ctx := &shellCtx{eng: eng, vaultIdx: vaultIdx, cwd: cwd, localCwd: localCwd}
+
 	for {
 		line, err := rl.ReadLine()
 		if errors.Is(err, readline.ErrInterrupt) {
@@ -131,445 +591,15 @@ func runShell(args []string) int {
 		cmd := parts[0]
 		cmdArgs := parts[1:]
 
-		switch cmd {
-		case "help":
-			shellHelp()
-		case "quit", "exit":
-			fmt.Println("Bye.")
+		action := shellExecCmd(ctx, cmd, cmdArgs)
+		if action == shellExit {
 			return exitSuccess
-		case "pwd":
-			fmt.Println(cwd)
-		case "cd":
-			if len(cmdArgs) == 0 {
-				cwd = "/"
-			} else {
-				target := cmdArgs[0]
-				if !strings.HasPrefix(target, "/") {
-					target = cwd + "/" + target
-				}
-				target = cleanPath(target)
-				if target != "/" {
-					node := eng.State.FindNodeByPath(target)
-					if node == nil {
-						fmt.Fprintf(os.Stderr, "cd: %s: no such directory\n", target)
-						continue
-					}
-					if node.Type != "dir" {
-						fmt.Fprintf(os.Stderr, "cd: %s: not a directory\n", target)
-						continue
-					}
-				}
-				cwd = target
-			}
-			completer.cwd = cwd
-			rl.SetPrompt(fmt.Sprintf("bitfs:%s> ", cwd))
-		case "lcd":
-			if len(cmdArgs) == 0 {
-				fmt.Println(localCwd)
-			} else {
-				target := cmdArgs[0]
-				if !filepath.IsAbs(target) {
-					target = filepath.Join(localCwd, target)
-				}
-				target = filepath.Clean(target)
-				info, statErr := os.Stat(target)
-				if statErr != nil || !info.IsDir() {
-					fmt.Fprintf(os.Stderr, "Error: %s is not a directory\n", target)
-					continue
-				}
-				localCwd = target
-				completer.localCwd = localCwd
-				fmt.Printf("Local directory: %s\n", localCwd)
-			}
-		case "ls":
-			dir := cwd
-			if len(cmdArgs) > 0 {
-				dir = resolvePath(cwd, cmdArgs[0])
-			}
-			shellLs(eng, dir)
-		case "mkdir":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: mkdir <path>")
-				continue
-			}
-			path := resolvePath(cwd, cmdArgs[0])
-			result, mkErr := eng.Mkdir(&vault.MkdirOpts{VaultIndex: vaultIdx, Path: path})
-			if mkErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", mkErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "put":
-			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: put <local-file> <remote-path> [free|private]")
-				continue
-			}
-			localFile := cmdArgs[0]
-			if !filepath.IsAbs(localFile) {
-				localFile = filepath.Join(localCwd, localFile)
-			}
-			remotePath := resolvePath(cwd, cmdArgs[1])
-			access := "free"
-			if len(cmdArgs) > 2 && cmdArgs[2] == "private" {
-				access = "private"
-			}
-			result, putErr := eng.PutFile(&vault.PutOpts{
-				VaultIndex: vaultIdx,
-				LocalFile:  localFile,
-				RemotePath: remotePath,
-				Access:     access,
-			})
-			if putErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", putErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "rm":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: rm [-r] <path>")
-				continue
-			}
-			recursive := false
-			pathArgs := cmdArgs
-			for i, a := range cmdArgs {
-				if a == "-r" || a == "--recursive" {
-					recursive = true
-					pathArgs = make([]string, 0, len(cmdArgs)-1)
-					pathArgs = append(pathArgs, cmdArgs[:i]...)
-					pathArgs = append(pathArgs, cmdArgs[i+1:]...)
-					break
-				}
-			}
-			if len(pathArgs) < 1 {
-				fmt.Println("Usage: rm [-r] <path>")
-				continue
-			}
-			rmPath := resolvePath(cwd, pathArgs[0])
-			if recursive {
-				if err := shellRemoveRecursive(eng, vaultIdx, rmPath); err != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				}
-			} else {
-				result, rmErr := eng.Remove(&vault.RemoveOpts{VaultIndex: vaultIdx, Path: rmPath})
-				if rmErr != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", rmErr)
-				} else {
-					fmt.Println(result.Message)
-				}
-			}
-		case "mv":
-			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: mv <src> <dst>")
-				continue
-			}
-			srcPath := resolvePath(cwd, cmdArgs[0])
-			dstPath := resolvePath(cwd, cmdArgs[1])
-
-			// Warn about capsule invalidation on cross-directory mv of paid files.
-			if path.Dir(srcPath) != path.Dir(dstPath) {
-				srcNode := eng.State.FindNodeByPath(srcPath)
-				if srcNode != nil && srcNode.Access == "paid" {
-					fmt.Println("WARNING: Moving this paid file will invalidate existing capsules.")
-					fmt.Println("Buyers will need to re-purchase access at the new location.")
-					fmt.Print("Continue? [y/N] ")
-					var confirm string
-					_, _ = fmt.Scanln(&confirm)
-					if confirm != "y" && confirm != "Y" {
-						fmt.Println("Move canceled.")
-						continue
-					}
-				}
-			}
-
-			result, mvErr := eng.Move(&vault.MoveOpts{
-				VaultIndex: vaultIdx,
-				SrcPath:    srcPath,
-				DstPath:    dstPath,
-				Force:      true,
-			})
-			if mvErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", mvErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "cp":
-			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: cp <src> <dst>")
-				continue
-			}
-			result, cpErr := eng.Copy(&vault.CopyOpts{
-				VaultIndex: vaultIdx,
-				SrcPath:    resolvePath(cwd, cmdArgs[0]),
-				DstPath:    resolvePath(cwd, cmdArgs[1]),
-			})
-			if cpErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", cpErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "link":
-			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: link <target> <link-path> [-s|--soft]")
-				continue
-			}
-			soft := false
-			posArgs := make([]string, 0, len(cmdArgs))
-			for _, a := range cmdArgs {
-				if a == "-s" || a == "--soft" {
-					soft = true
-				} else {
-					posArgs = append(posArgs, a)
-				}
-			}
-			if len(posArgs) < 2 {
-				fmt.Println("Usage: link <target> <link-path> [-s|--soft]")
-				continue
-			}
-			result, lnErr := eng.Link(&vault.LinkOpts{
-				VaultIndex: vaultIdx,
-				TargetPath: resolvePath(cwd, posArgs[0]),
-				LinkPath:   resolvePath(cwd, posArgs[1]),
-				Soft:       soft,
-			})
-			if lnErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", lnErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "sell":
-			if len(cmdArgs) < 2 {
-				fmt.Println("Usage: sell <path> <price-sats-per-kb> [--recursive]")
-				continue
-			}
-			recursive := false
-			cleanArgs := make([]string, 0, len(cmdArgs))
-			for _, a := range cmdArgs {
-				if a == "-r" || a == "--recursive" {
-					recursive = true
-				} else {
-					cleanArgs = append(cleanArgs, a)
-				}
-			}
-			if len(cleanArgs) < 2 {
-				fmt.Println("Usage: sell <path> <price-sats-per-kb> [--recursive]")
-				continue
-			}
-			var price uint64
-			if _, err := fmt.Sscanf(cleanArgs[1], "%d", &price); err != nil || price == 0 {
-				fmt.Println("Error: price must be a positive integer")
-				continue
-			}
-			sellPath := resolvePath(cwd, cleanArgs[0])
-			if recursive {
-				if err := shellSellRecursive(eng, vaultIdx, sellPath, price); err != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				}
-			} else {
-				result, sellErr := eng.Sell(&vault.SellOpts{
-					VaultIndex: vaultIdx,
-					Path:       sellPath,
-					PricePerKB: price,
-				})
-				if sellErr != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", sellErr)
-				} else {
-					fmt.Println(result.Message)
-				}
-			}
-		case "cat":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: cat <path>")
-				continue
-			}
-			remotePath := resolvePath(cwd, cmdArgs[0])
-			force := len(cmdArgs) > 1 && cmdArgs[1] == "--force"
-			reader, info, catErr := eng.Cat(&vault.CatOpts{
-				Path: remotePath,
-			})
-			switch {
-			case catErr != nil:
-				fmt.Fprintf(os.Stderr, "Error: %v\n", catErr)
-			case !force && !isTextMime(info.MimeType):
-				fmt.Fprintf(os.Stderr, "Binary file (%s, %d bytes). Use 'cat <path> --force' or 'get' to download.\n", info.MimeType, info.FileSize)
-			default:
-				if _, cpErr := io.Copy(os.Stdout, reader); cpErr != nil {
-					fmt.Fprintf(os.Stderr, "Error writing output: %v\n", cpErr)
-				}
-			}
-		case "get":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: get <remote> [local]")
-				continue
-			}
-			remotePath := resolvePath(cwd, cmdArgs[0])
-			localPath := ""
-			if len(cmdArgs) > 1 {
-				localPath = cmdArgs[1]
-				if !filepath.IsAbs(localPath) {
-					localPath = filepath.Join(localCwd, localPath)
-				}
-			}
-			result, getErr := eng.Get(&vault.GetOpts{
-				VaultIndex: vaultIdx,
-				RemotePath: remotePath,
-				LocalDir:   localCwd,
-				LocalPath:  localPath,
-			})
-			if getErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", getErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "mget":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: mget <remote-dir> [local-dir]")
-				continue
-			}
-			remotePath := resolvePath(cwd, cmdArgs[0])
-			localDir := localCwd
-			if len(cmdArgs) > 1 {
-				localDir = cmdArgs[1]
-				if !filepath.IsAbs(localDir) {
-					localDir = filepath.Join(localCwd, localDir)
-				}
-			}
-			mgResult, mgetErr := doMget(eng, vaultIdx, remotePath, localDir)
-			if mgetErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", mgetErr)
-			} else {
-				fmt.Printf("Downloaded %d files, created %d directories\n",
-					mgResult.FilesDownloaded, mgResult.DirsCreated)
-				for _, e := range mgResult.Errors {
-					fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
-				}
-			}
-		case "mput":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: mput <local-dir> [remote-dir]")
-				continue
-			}
-			localDir := cmdArgs[0]
-			if !filepath.IsAbs(localDir) {
-				localDir = filepath.Join(localCwd, localDir)
-			}
-			remoteDir := cwd
-			if len(cmdArgs) > 1 {
-				remoteDir = resolvePath(cwd, cmdArgs[1])
-			}
-			access := "free"
-			if len(cmdArgs) > 2 {
-				access = cmdArgs[2]
-			}
-			if err := validateAccessMode(access); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				continue
-			}
-			mpResult, mputErr := doMput(eng, vaultIdx, localDir, remoteDir, access)
-			if mputErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", mputErr)
-			} else {
-				fmt.Printf("Uploaded %d files, created %d directories\n",
-					mpResult.FilesUploaded, mpResult.DirsCreated)
-				for _, e := range mpResult.Errors {
-					fmt.Fprintf(os.Stderr, "  warning: %s\n", e)
-				}
-			}
-		case "publish":
-			if len(cmdArgs) == 0 {
-				// List all publish bindings.
-				bindings := eng.State.ListPublishBindings()
-				if len(bindings) == 0 {
-					fmt.Println("No published domains.")
-				} else {
-					for _, b := range bindings {
-						verified := ""
-						if b.Verified {
-							verified = " [verified]"
-						}
-						fmt.Printf("  %s -> vault %d%s\n", b.Domain, b.VaultIndex, verified)
-					}
-				}
-			} else {
-				domain := cmdArgs[0]
-				dns := publish.DefaultDNSResolver()
-				result, pubErr := publish.Publish(eng, dns, &publish.PublishOpts{
-					VaultIndex: vaultIdx,
-					Domain:     domain,
-				})
-				if pubErr != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", pubErr)
-				} else {
-					fmt.Println(result.Message)
-				}
-			}
-		case "unpublish":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: unpublish <domain>")
-				continue
-			}
-			domain := cmdArgs[0]
-			result, unpubErr := publish.Unpublish(eng, &publish.UnpublishOpts{
-				Domain: domain,
-			})
-			if unpubErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", unpubErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "encrypt":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: encrypt <path>")
-				continue
-			}
-			result, encErr := eng.EncryptNode(&vault.EncryptOpts{
-				VaultIndex: vaultIdx,
-				Path:       resolvePath(cwd, cmdArgs[0]),
-			})
-			if encErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", encErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "decrypt":
-			if len(cmdArgs) < 1 {
-				fmt.Println("Usage: decrypt <path>")
-				continue
-			}
-			result, decErr := eng.DecryptNode(&vault.DecryptOpts{
-				Path: resolvePath(cwd, cmdArgs[0]),
-			})
-			if decErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", decErr)
-			} else {
-				fmt.Println(result.Message)
-			}
-		case "sales":
-			daemonURL := "http://localhost:8080" // default daemon port
-			cl := client.New(daemonURL)
-			records, salesErr := cl.GetSales("all", 50)
-			if salesErr != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v (is daemon running?)\n", salesErr)
-				continue
-			}
-			if len(records) == 0 {
-				fmt.Println("No sales records.")
-				continue
-			}
-			fmt.Printf("%-36s  %10s  %5s  %s\n", "INVOICE", "PRICE(sat)", "PAID", "KEY_HASH")
-			for _, r := range records {
-				paid := "no"
-				if r.Paid {
-					paid = "yes"
-				}
-				kh := r.KeyHash
-				if len(kh) > 16 {
-					kh = kh[:16] + "..."
-				}
-				fmt.Printf("%-36s  %10d  %5s  %s\n", r.InvoiceID, r.Price, paid, kh)
-			}
-		default:
-			fmt.Printf("Unknown command: %s (type 'help' for available commands)\n", cmd)
 		}
+
+		// Sync mutable state back to completer/prompt after cd/lcd.
+		completer.cwd = ctx.cwd
+		completer.localCwd = ctx.localCwd
+		rl.SetPrompt(fmt.Sprintf("bitfs:%s> ", ctx.cwd))
 	}
 }
 
