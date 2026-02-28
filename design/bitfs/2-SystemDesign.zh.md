@@ -363,8 +363,10 @@ message BitFSPayload {
   bytes enc_payload = 27;                  // salt(16B) || nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
 
   // === 以下字段已实现。fields 30-31 保持自然 tag 映射 (0x1E, 0x1F);
-  // fields 32+ tag 跳过 0x20-0x26 (Anchor 专用范围), 从 0x27 起连续分配。
-  // 完整映射见 libbitfs-go/metanet/parser.go tag 常量。 ===
+  // fields 32+ tag 跳过 0x20-0x26 (Anchor 节点专用: TreeRootPNode/TreeRootTxID/
+  // ParentAnchorTxID/Author/CommitMessage/GitCommitSHA/FileMode), 从 0x27 起连续分配。
+  // 完整映射见 libbitfs-go/metanet/parser.go tag 常量。
+  // Anchor 节点详见 3-DetailedDesign §十二-B.E、docs/spec/03-metanet.md §Anchor。 ===
 
   // PRIVATE 模式钱包恢复: 不存储明文 key_hash / file_index (设计决策 #10)。
   // 恢复方案: 元数据加密密钥 HKDF(ECDH.x, random(16B), "bitfs-metadata-encryption")
@@ -372,26 +374,26 @@ message BitFSPayload {
   // 配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密。
   // 原 field 28-29 (private_key_hash, private_file_index) 已废弃。
 
-  // 元信息扩展 (待实现)
+  // 元信息扩展
   map<string, string> metadata = 30; // 自定义键值对 (灵活扩展)
   bytes version_log = 31;            // 指向版本记录 Metanet 节点的 P_node
   bytes share_list = 32;             // 指向共享列表 Metanet 节点的 P_node
 
-  // 内容分片 (链上大文件, 待实现)
+  // 内容分片 (链上大文件)
   uint32 chunk_index = 33;                 // 本 chunk 序号 (0-based)
   uint32 total_chunks = 34;                // 总 chunk 数 (0 = 非分片)
   bytes recombination_hash = 35;           // SHA256(chunk0 || chunk1 || ...) 单次哈希
 
-  // Rabin 签名 (内容认证, 待实现)
+  // Rabin 签名 (内容认证)
   bytes rabin_signature = 36;              // Rabin 签名 (S, U) 序列化
   bytes rabin_pubkey = 37;                 // Rabin 公钥 n
 
-  // 收益权表 (Revenue Share, 待实现)
+  // 收益权表 (Revenue Share)
   bytes registry_txid              = 38;  // 指向 Registry UTXO 所在交易
   uint32 registry_vout             = 39;  // Registry UTXO 的输出索引
   ISOConfig iso                    = 40;  // ISO 配置 (可选, 仅 ISO 发起时写入)
 
-  // ACL 引用 (待实现)
+  // ACL 引用
   bytes acl_ref = 41;                  // ACL 引用 (群签名公钥哈希或 ACL 规则 TxID)
 }
 ```

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
@@ -113,7 +113,7 @@ Examples:
 		if *jsonOut {
 			return handleErrorJSON(err, stdout)
 		}
-		return buyer.HandleError(err, "bmget", stderr)
+		return buy.HandleError(err, "bmget", stderr)
 	}
 
 	if meta.Type != "dir" {
@@ -134,11 +134,11 @@ Examples:
 
 	if len(files) == 0 {
 		if *jsonOut {
-			resp := &buyer.BatchGetResponse{
+			resp := &buy.BatchGetResponse{
 				Total:     0,
 				Succeeded: 0,
 				Failed:    0,
-				Files:     []buyer.BatchFileEntry{},
+				Files:     []buy.BatchFileEntry{},
 			}
 			return writeJSON(resp, stdout, stderr)
 		}
@@ -166,9 +166,9 @@ Examples:
 	}
 
 	// Load buyer config if --buy is set.
-	var buyerCfg *buyer.BuyerConfig
+	var buyerCfg *buy.BuyerConfig
 	if *buyFlag {
-		cfg, err := buyer.LoadConfig(buyer.LoadConfigOpts{
+		cfg, err := buy.LoadConfig(buy.LoadConfigOpts{
 			WalletKeyFlag: *walletKey,
 			UTXOFlag:      *utxoStr,
 		})
@@ -193,14 +193,14 @@ Examples:
 		mu      sync.Mutex
 		wg      sync.WaitGroup
 		sem     = make(chan struct{}, conc)
-		results = make([]buyer.BatchFileEntry, len(files))
+		results = make([]buy.BatchFileEntry, len(files))
 		stopped int32 // atomic flag for fail-fast
 	)
 
 	for i, child := range files {
 		if *failFast && atomic.LoadInt32(&stopped) != 0 {
 			mu.Lock()
-			results[i] = buyer.BatchFileEntry{
+			results[i] = buy.BatchFileEntry{
 				Path:  child.Name,
 				Error: "skipped: fail-fast triggered",
 				Code:  1,
@@ -218,7 +218,7 @@ Examples:
 
 			if *failFast && atomic.LoadInt32(&stopped) != 0 {
 				mu.Lock()
-				results[idx] = buyer.BatchFileEntry{
+				results[idx] = buy.BatchFileEntry{
 					Path:  childEntry.Name,
 					Error: "skipped: fail-fast triggered",
 					Code:  1,
@@ -256,7 +256,7 @@ Examples:
 	}
 
 	if *jsonOut {
-		resp := &buyer.BatchGetResponse{
+		resp := &buy.BatchGetResponse{
 			Total:     len(files),
 			Succeeded: succeeded,
 			Failed:    failed,
@@ -287,11 +287,11 @@ Examples:
 
 // downloadFile downloads a single file from the daemon, decrypting it with
 // Method 42. For paid content with --buy, it executes the purchase flow first.
-func downloadFile(mg client.MetaGetter, c *client.Client, pnode, remotePath, localPath string, buyEnabled bool, buyerCfg *buyer.BuyerConfig) buyer.BatchFileEntry {
+func downloadFile(mg client.MetaGetter, c *client.Client, pnode, remotePath, localPath string, buyEnabled bool, buyerCfg *buy.BuyerConfig) buy.BatchFileEntry {
 	// Get file metadata.
 	meta, err := mg.GetMeta(pnode, remotePath)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("get meta: %v", err), Code: buyer.ExitCodeFromError(err)}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("get meta: %v", err), Code: buy.ExitCodeFromError(err)}
 	}
 
 	switch meta.Access {
@@ -299,34 +299,34 @@ func downloadFile(mg client.MetaGetter, c *client.Client, pnode, remotePath, loc
 		return downloadFreeFile(c, meta, localPath)
 	case "paid":
 		if !buyEnabled || buyerCfg == nil {
-			return buyer.BatchFileEntry{
+			return buy.BatchFileEntry{
 				Error: fmt.Sprintf("payment required: %d sat/KB", meta.PricePerKB),
 				Code:  5,
 			}
 		}
 		return downloadPaidFile(c, meta, localPath, buyerCfg)
 	case "private":
-		return buyer.BatchFileEntry{Error: "private content", Code: 6}
+		return buy.BatchFileEntry{Error: "private content", Code: 6}
 	default:
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("unknown access mode %q", meta.Access), Code: 1}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("unknown access mode %q", meta.Access), Code: 1}
 	}
 }
 
 // downloadFreeFile fetches encrypted data and decrypts it using Method 42 free mode.
-func downloadFreeFile(c *client.Client, meta *client.MetaResponse, localPath string) buyer.BatchFileEntry {
+func downloadFreeFile(c *client.Client, meta *client.MetaResponse, localPath string) buy.BatchFileEntry {
 	if meta.KeyHash == "" {
-		return buyer.BatchFileEntry{Error: "no content hash available", Code: 1}
+		return buy.BatchFileEntry{Error: "no content hash available", Code: 1}
 	}
 
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("get data: %v", err), Code: buyer.ExitCodeFromError(err)}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("get data: %v", err), Code: buy.ExitCodeFromError(err)}
 	}
 	defer func() { _ = reader.Close() }()
 
 	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("read data: %v", err), Code: 4}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("read data: %v", err), Code: 4}
 	}
 
 	// Decrypt using Method 42 free mode.
@@ -334,19 +334,19 @@ func downloadFreeFile(c *client.Client, meta *client.MetaResponse, localPath str
 	if len(ciphertext) > 0 {
 		pubKeyBytes, err := hex.DecodeString(meta.PNode)
 		if err != nil {
-			return buyer.BatchFileEntry{Error: fmt.Sprintf("invalid pnode hex: %v", err), Code: 1}
+			return buy.BatchFileEntry{Error: fmt.Sprintf("invalid pnode hex: %v", err), Code: 1}
 		}
 		pubKey, err := ec.PublicKeyFromBytes(pubKeyBytes)
 		if err != nil {
-			return buyer.BatchFileEntry{Error: fmt.Sprintf("invalid pnode key: %v", err), Code: 1}
+			return buy.BatchFileEntry{Error: fmt.Sprintf("invalid pnode key: %v", err), Code: 1}
 		}
 		keyHashBytes, err := hex.DecodeString(meta.KeyHash)
 		if err != nil {
-			return buyer.BatchFileEntry{Error: fmt.Sprintf("invalid key hash hex: %v", err), Code: 1}
+			return buy.BatchFileEntry{Error: fmt.Sprintf("invalid key hash hex: %v", err), Code: 1}
 		}
 		result, err := method42.Decrypt(ciphertext, nil, pubKey, keyHashBytes, method42.AccessFree)
 		if err != nil {
-			return buyer.BatchFileEntry{Error: fmt.Sprintf("decrypt: %v", err), Code: 5}
+			return buy.BatchFileEntry{Error: fmt.Sprintf("decrypt: %v", err), Code: 5}
 		}
 		plaintext = result.Plaintext
 	}
@@ -354,93 +354,93 @@ func downloadFreeFile(c *client.Client, meta *client.MetaResponse, localPath str
 	// Write to disk.
 	n, err := writeFile(localPath, plaintext)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("write file: %v", err), Code: 1}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("write file: %v", err), Code: 1}
 	}
 
-	return buyer.BatchFileEntry{
+	return buy.BatchFileEntry{
 		OutputPath:   localPath,
 		BytesWritten: int64(n),
 	}
 }
 
-// downloadPaidFile executes the purchase flow via buyer.Buy(), then decrypts
+// downloadPaidFile executes the purchase flow via buy.Buy(), then decrypts
 // the content using the capsule obtained from the HTLC exchange.
-func downloadPaidFile(c *client.Client, meta *client.MetaResponse, localPath string, cfg *buyer.BuyerConfig) buyer.BatchFileEntry {
+func downloadPaidFile(c *client.Client, meta *client.MetaResponse, localPath string, cfg *buy.BuyerConfig) buy.BatchFileEntry {
 	if meta.TxID == "" {
-		return buyer.BatchFileEntry{Error: "paid content has no invoice txid", Code: 5}
+		return buy.BatchFileEntry{Error: "paid content has no invoice txid", Code: 5}
 	}
 	if meta.KeyHash == "" {
-		return buyer.BatchFileEntry{Error: "no content hash available", Code: 1}
+		return buy.BatchFileEntry{Error: "no content hash available", Code: 1}
 	}
 
 	// Execute purchase flow.
-	buyResult, err := buyer.Buy(&buyer.BuyParams{
+	buyResult, err := buy.Buy(&buy.BuyParams{
 		Client: c,
 		TxID:   meta.TxID,
 		Config: cfg,
 	})
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("buy: %v", err), Code: 5}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("buy: %v", err), Code: 5}
 	}
 
 	// Fetch encrypted content.
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
-		return buyer.BatchFileEntry{
+		return buy.BatchFileEntry{
 			Error:   fmt.Sprintf("get data after purchase: %v", err),
-			Code:    buyer.ExitCodeFromError(err),
-			Payment: &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
+			Code:    buy.ExitCodeFromError(err),
+			Payment: &buy.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
 		}
 	}
 	defer func() { _ = reader.Close() }()
 
 	ciphertext, err := io.ReadAll(io.LimitReader(reader, maxContentSize))
 	if err != nil {
-		return buyer.BatchFileEntry{
+		return buy.BatchFileEntry{
 			Error:   fmt.Sprintf("read data: %v", err),
 			Code:    4,
-			Payment: &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
+			Payment: &buy.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
 		}
 	}
 
 	// Decrypt with capsule.
 	keyHashBytes, err := hex.DecodeString(meta.KeyHash)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("invalid key hash hex: %v", err), Code: 1}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("invalid key hash hex: %v", err), Code: 1}
 	}
 
 	nodePubBytes, err := hex.DecodeString(meta.PNode)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("invalid pnode hex: %v", err), Code: 1}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("invalid pnode hex: %v", err), Code: 1}
 	}
 	nodePub, err := ec.PublicKeyFromBytes(nodePubBytes)
 	if err != nil {
-		return buyer.BatchFileEntry{Error: fmt.Sprintf("invalid pnode key: %v", err), Code: 1}
+		return buy.BatchFileEntry{Error: fmt.Sprintf("invalid pnode key: %v", err), Code: 1}
 	}
 
 	result, err := method42.DecryptWithCapsule(ciphertext, buyResult.Capsule, keyHashBytes, cfg.PrivKey, nodePub)
 	if err != nil {
-		return buyer.BatchFileEntry{
+		return buy.BatchFileEntry{
 			Error:   fmt.Sprintf("decrypt: %v", err),
 			Code:    5,
-			Payment: &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
+			Payment: &buy.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
 		}
 	}
 
 	// Write to disk.
 	n, err := writeFile(localPath, result.Plaintext)
 	if err != nil {
-		return buyer.BatchFileEntry{
+		return buy.BatchFileEntry{
 			Error:   fmt.Sprintf("write file: %v", err),
 			Code:    1,
-			Payment: &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
+			Payment: &buy.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
 		}
 	}
 
-	return buyer.BatchFileEntry{
+	return buy.BatchFileEntry{
 		OutputPath:   localPath,
 		BytesWritten: int64(n),
-		Payment:      &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
+		Payment:      &buy.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
 	}
 }
 
@@ -476,8 +476,8 @@ func writeFile(path string, data []byte) (int, error) {
 // ---------------------------------------------------------------------------
 
 func handleErrorJSON(err error, stdout io.Writer) int {
-	code := buyer.ExitCodeFromError(err)
-	resp := &buyer.ErrorResponse{Error: buyer.ErrorMessage(err), Code: code}
+	code := buy.ExitCodeFromError(err)
+	resp := &buy.ErrorResponse{Error: buy.ErrorMessage(err), Code: code}
 	data, _ := json.Marshal(resp)
 	fmt.Fprintln(stdout, string(data))
 	return code

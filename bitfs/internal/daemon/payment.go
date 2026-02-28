@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
@@ -377,6 +378,101 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 		resp["capsule_nonce"] = hex.EncodeToString(invoice.CapsuleNonce)
 	}
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// handlePayInvoice handles POST /_bitfs/pay/{invoice_id}.
+// Accepts x402 bandwidth payment for a previously issued invoice.
+// Current version: empty body marks invoice as paid (dev/test).
+// Production: body contains raw transaction hex for verification.
+func (d *Daemon) handlePayInvoice(w http.ResponseWriter, r *http.Request) {
+	invoiceID := r.PathValue("invoice_id")
+	if invoiceID == "" {
+		writeJSONError(w, http.StatusBadRequest, "MISSING_ID", "Missing invoice_id")
+		return
+	}
+
+	d.invoicesMu.Lock()
+	invoice, ok := d.invoices[invoiceID]
+	if !ok {
+		d.invoicesMu.Unlock()
+		writeJSONError(w, http.StatusNotFound, "NOT_FOUND", "Invoice not found")
+		return
+	}
+	if invoice.Paid {
+		d.invoicesMu.Unlock()
+		// Idempotent: already paid.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "paid", "invoice_id": invoiceID,
+		})
+		return
+	}
+	if time.Now().After(invoice.Expiry) {
+		d.invoicesMu.Unlock()
+		writeJSONError(w, http.StatusGone, "EXPIRED", "Invoice has expired")
+		return
+	}
+
+	// Read optional payment proof (raw transaction hex).
+	body, _ := io.ReadAll(io.LimitReader(r.Body, maxHTLCBodySize))
+
+	if len(body) > 0 {
+		// Parse body as JSON { "raw_tx": "<hex>" } or raw hex string.
+		var rawTxHex string
+		var req struct {
+			RawTx string `json:"raw_tx"`
+		}
+		if json.Unmarshal(body, &req) == nil && req.RawTx != "" {
+			rawTxHex = req.RawTx
+		} else {
+			rawTxHex = strings.TrimSpace(string(body))
+		}
+
+		rawTx, err := hex.DecodeString(rawTxHex)
+		if err != nil {
+			d.invoicesMu.Unlock()
+			writeJSONError(w, http.StatusBadRequest, "INVALID_TX", "Invalid transaction hex")
+			return
+		}
+
+		// Verify P2PKH payment to seller address.
+		proof := &x402.PaymentProof{RawTx: rawTx}
+		x402Inv := &x402.Invoice{
+			ID:          invoice.ID,
+			Price:       invoice.TotalPrice,
+			PaymentAddr: invoice.PaymentAddr,
+		}
+		if err := x402.VerifyPayment(proof, x402Inv); err != nil {
+			d.invoicesMu.Unlock()
+			writeJSONError(w, http.StatusBadRequest, "VERIFICATION_FAILED", err.Error())
+			return
+		}
+
+		// Replay protection.
+		tx, _ := transaction.NewTransactionFromBytes(rawTx)
+		if tx != nil {
+			txid := tx.TxID().String()
+			d.usedTxIDsMu.Lock()
+			if _, used := d.usedTxIDs[txid]; used {
+				d.usedTxIDsMu.Unlock()
+				d.invoicesMu.Unlock()
+				writeJSONError(w, http.StatusConflict, "REPLAY", "Transaction already used")
+				return
+			}
+			d.usedTxIDs[txid] = invoiceID
+			d.usedTxIDsMu.Unlock()
+		}
+	}
+
+	invoice.Paid = true
+	d.invoicesMu.Unlock()
+
+	_ = d.persistInvoice(invoice)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "paid", "invoice_id": invoiceID,
+	})
 }
 
 // handleSales handles GET /_bitfs/sales and returns sales (invoice) records,

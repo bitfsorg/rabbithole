@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 )
 
@@ -85,7 +85,7 @@ Examples:
 
 	meta, err := cc.GetMeta(pnode, uriPath)
 	if err != nil {
-		return buyer.HandleError(err, "btree", stderr)
+		return buy.HandleError(err, "btree", stderr)
 	}
 
 	// If root target is a file (not a directory), print single file info.

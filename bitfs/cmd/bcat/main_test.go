@@ -17,7 +17,7 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
@@ -918,7 +918,7 @@ func TestJSON_FreeContent_TextPlain(t *testing.T) {
 	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 	assert.Empty(t, stderr.String())
 
-	var resp buyer.CatResponse
+	var resp buy.CatResponse
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &resp))
 	require.NotNil(t, resp.Content, "text content should use content field")
 	assert.Equal(t, string(plaintext), *resp.Content)
@@ -965,7 +965,7 @@ func TestJSON_FreeContent_Binary(t *testing.T) {
 
 	assert.Equal(t, 0, code, "exit code should be 0; stderr: %s", stderr.String())
 
-	var resp buyer.CatResponse
+	var resp buy.CatResponse
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &resp))
 	assert.Nil(t, resp.Content, "binary content should not use content field")
 	require.NotNil(t, resp.ContentBase64, "binary content should use content_base64")
@@ -1007,7 +1007,7 @@ func TestJSON_FreeContent_ApplicationJSON(t *testing.T) {
 
 	assert.Equal(t, 0, code)
 
-	var resp buyer.CatResponse
+	var resp buy.CatResponse
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &resp))
 	require.NotNil(t, resp.Content, "application/json should use content field")
 	assert.Equal(t, string(plaintext), *resp.Content)
@@ -1036,7 +1036,7 @@ func TestJSON_PaidContent_PaymentRequired(t *testing.T) {
 	assert.Equal(t, 0, code, "JSON payment-required should exit 0")
 	assert.Empty(t, stderr.String())
 
-	var resp buyer.CatResponse
+	var resp buy.CatResponse
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &resp))
 	assert.True(t, resp.PaymentRequired)
 	require.NotNil(t, resp.PaymentInfo)
@@ -1063,7 +1063,7 @@ func TestJSON_PrivateContent_ErrorJSON(t *testing.T) {
 
 	assert.Equal(t, 1, code)
 
-	var errResp buyer.ErrorResponse
+	var errResp buy.ErrorResponse
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &errResp))
 	assert.Contains(t, errResp.Error, "private content")
 	assert.Equal(t, 1, errResp.Code)
@@ -1088,7 +1088,7 @@ func TestJSON_NotFoundError(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// --buy flag parsing / buyer.LoadConfig integration
+// --buy flag parsing / buy.LoadConfig integration
 // ---------------------------------------------------------------------------
 
 func TestRun_BuyFlagParsing(t *testing.T) {

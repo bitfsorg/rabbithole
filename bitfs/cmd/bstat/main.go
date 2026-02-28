@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 )
 
@@ -69,7 +69,7 @@ Examples:
 	if *versions {
 		vers, versErr := c.GetVersions(resolved.PNode, resolved.Path)
 		if versErr != nil {
-			return buyer.HandleError(versErr, "bstat", stderr)
+			return buy.HandleError(versErr, "bstat", stderr)
 		}
 		if *jsonOut {
 			data, _ := json.Marshal(vers)
@@ -103,7 +103,7 @@ Examples:
 
 	meta, err := cc.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
-		return buyer.HandleError(err, "bstat", stderr)
+		return buy.HandleError(err, "bstat", stderr)
 	}
 
 	// Format output.

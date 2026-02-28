@@ -129,7 +129,7 @@ func (e *Engine) Copy(opts *CopyOpts) (*Result, error) {
 		Compression: srcNode.Compression,
 	}
 
-	payload, err := metanet.SerializePayload(node)
+	payload, err := serializePayloadForChain(node, childKP.PrivateKey, childKP.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("engine: serialize payload: %w", err)
 	}

@@ -1,7 +1,7 @@
 // Package buyer provides shared types and logic for b* buyer tools
 // (bcat, bget, bmget). It encapsulates JSON output formats, buyer
 // wallet configuration, UTXO selection, and the unified buy flow.
-package buyer
+package buy
 
 import "github.com/tongxiaofeng/bitfs/internal/client"
 

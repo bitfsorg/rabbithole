@@ -18,7 +18,7 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
@@ -1208,7 +1208,7 @@ func TestJSON_FreeContent_Success(t *testing.T) {
 	assert.Empty(t, stderr.String())
 
 	// Parse JSON output.
-	var resp buyer.GetResponse
+	var resp buy.GetResponse
 	err = json.Unmarshal(stdout.Bytes(), &resp)
 	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
 
@@ -1245,7 +1245,7 @@ func TestJSON_PaidContent_PaymentRequired(t *testing.T) {
 
 	assert.Equal(t, 0, code, "JSON payment required should exit 0")
 
-	var resp buyer.GetResponse
+	var resp buy.GetResponse
 	err := json.Unmarshal(stdout.Bytes(), &resp)
 	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
 
@@ -1274,7 +1274,7 @@ func TestJSON_PrivateContent_Error(t *testing.T) {
 
 	assert.Equal(t, 1, code, "private content JSON should exit 1")
 
-	var resp buyer.ErrorResponse
+	var resp buy.ErrorResponse
 	err := json.Unmarshal(stdout.Bytes(), &resp)
 	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
 
@@ -1296,7 +1296,7 @@ func TestJSON_NotFoundError(t *testing.T) {
 
 	assert.Equal(t, 2, code, "not found should exit 2")
 
-	var resp buyer.ErrorResponse
+	var resp buy.ErrorResponse
 	err := json.Unmarshal(stdout.Bytes(), &resp)
 	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
 
@@ -1323,7 +1323,7 @@ func TestJSON_DirectoryError(t *testing.T) {
 
 	assert.Equal(t, 1, code, "directory JSON should exit 1")
 
-	var resp buyer.ErrorResponse
+	var resp buy.ErrorResponse
 	err := json.Unmarshal(stdout.Bytes(), &resp)
 	require.NoError(t, err, "stdout should be valid JSON: %s", stdout.String())
 

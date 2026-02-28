@@ -2,7 +2,7 @@
 // Use of this source code is governed by the Open BSV License v5
 // that can be found in the LICENSE file.
 
-package buyer
+package buy
 
 import (
 	"errors"

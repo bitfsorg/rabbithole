@@ -14,6 +14,7 @@ import (
 	bsvhash "github.com/bsv-blockchain/go-sdk/primitives/hash"
 
 	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/tongxiaofeng/libbitfs-go/method42"
 	"github.com/tongxiaofeng/libbitfs-go/tx"
 	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
@@ -193,6 +194,38 @@ func (e *Engine) buildAndSignRootTx(kp *wallet.KeyPair, node *metanet.Node, node
 		Message: "Root node created",
 		NodePub: nodePubHex,
 	}, nil
+}
+
+// serializePayloadForChain serializes a node's TLV payload for on-chain storage.
+// For PRIVATE nodes, the full TLV is encrypted via Method 42 and wrapped in a
+// minimal cleartext envelope (version, type, op, access, EncPayload).
+// For non-PRIVATE nodes, this is a plain SerializePayload call.
+func serializePayloadForChain(node *metanet.Node, privKey *ec.PrivateKey, pubKey *ec.PublicKey) ([]byte, error) {
+	if node.Access != metanet.AccessPrivate {
+		return metanet.SerializePayload(node)
+	}
+
+	// Serialize the full TLV (all metadata fields).
+	fullTLV, err := metanet.SerializePayload(node)
+	if err != nil {
+		return nil, fmt.Errorf("engine: serialize full TLV: %w", err)
+	}
+
+	// Encrypt the full TLV as metadata.
+	encPayload, err := method42.EncryptMetadata(fullTLV, privKey, pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("engine: encrypt metadata: %w", err)
+	}
+
+	// Build minimal cleartext envelope with only structural fields.
+	envelope := &metanet.Node{
+		Version:    node.Version,
+		Type:       node.Type,
+		Op:         node.Op,
+		Access:     metanet.AccessPrivate,
+		EncPayload: encPayload,
+	}
+	return metanet.SerializePayload(envelope)
 }
 
 // DetectMimeType guesses MIME type from filename extension.

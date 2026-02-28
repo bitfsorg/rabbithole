@@ -1803,6 +1803,367 @@ func TestDaemon_PersistInvoice_DisabledWhenNoDirSet(t *testing.T) {
 	assert.NoError(t, d.persistInvoice(inv))
 }
 
+// --- handleVersions Tests ---
+
+func TestHandleVersions_Success(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+	pnode := "02" + strings.Repeat("ab", 32) // 66 hex chars = 33 bytes compressed pubkey
+	pnodeBytes, _ := hex.DecodeString(pnode)
+	path := "docs/readme.txt"
+
+	meta.nodes["/"+path] = &NodeInfo{
+		PNode:     pnodeBytes,
+		Type:      "file",
+		Access:    "free",
+		FileSize:  1024,
+		Timestamp: 1700000000,
+	}
+
+	req := httptest.NewRequest("GET", "/_bitfs/versions/"+pnode+"/"+path, nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var versions []versionEntryResponse
+	err := json.Unmarshal(w.Body.Bytes(), &versions)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+	assert.Equal(t, 1, versions[0].Version)
+	assert.Equal(t, uint64(1024), versions[0].FileSize)
+	assert.Equal(t, "free", versions[0].Access)
+	assert.Equal(t, int64(1700000000), versions[0].Timestamp)
+}
+
+func TestHandleVersions_ShortPNode(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	// A pnode that is valid hex but too short (not 33 bytes / 66 hex chars).
+	req := httptest.NewRequest("GET", "/_bitfs/versions/02abab/somefile", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "INVALID_PNODE")
+}
+
+func TestHandleVersions_InvalidPNode(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	req := httptest.NewRequest("GET", "/_bitfs/versions/zzzz/somefile", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "INVALID_PNODE")
+}
+
+func TestHandleVersions_PathTraversal(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	pnode := "02" + strings.Repeat("ab", 32)
+	// Use percent-encoded ".." (%2e%2e) to bypass Go's mux URL cleaning.
+	// The handler's containsPathTraversal decodes percent-encoding and catches this.
+	req := httptest.NewRequest("GET", "/_bitfs/versions/"+pnode+"/%2e%2e/etc/passwd", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "INVALID_PATH")
+}
+
+func TestHandleVersions_NotFound(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	pnode := "02" + strings.Repeat("ab", 32)
+	req := httptest.NewRequest("GET", "/_bitfs/versions/"+pnode+"/nonexistent", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "NOT_FOUND")
+}
+
+func TestHandleVersions_PNodeMismatch(t *testing.T) {
+	d, _, _, meta := newTestDaemon(t)
+
+	// Node exists under a different pnode.
+	realPnode := "03" + strings.Repeat("cd", 32)
+	realPnodeBytes, _ := hex.DecodeString(realPnode)
+	meta.nodes["/secret.txt"] = &NodeInfo{
+		PNode:  realPnodeBytes,
+		Type:   "file",
+		Access: "free",
+	}
+
+	// Request with a different pnode.
+	wrongPnode := "02" + strings.Repeat("ab", 32)
+	req := httptest.NewRequest("GET", "/_bitfs/versions/"+wrongPnode+"/secret.txt", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Contains(t, w.Body.String(), "NOT_FOUND")
+}
+
+// --- handleSales Tests ---
+
+func TestHandleSales_Empty(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	req := httptest.NewRequest("GET", "/_bitfs/sales", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var records []json.RawMessage
+	err := json.Unmarshal(w.Body.Bytes(), &records)
+	require.NoError(t, err)
+	assert.Empty(t, records)
+}
+
+func TestHandleSales_FilterPaid(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	d.invoices["inv-paid"] = &InvoiceRecord{
+		ID:         "inv-paid",
+		TotalPrice: 100,
+		Paid:       true,
+		Expiry:     time.Now().Add(1 * time.Hour),
+	}
+	d.invoices["inv-pending"] = &InvoiceRecord{
+		ID:         "inv-pending",
+		TotalPrice: 200,
+		Paid:       false,
+		Expiry:     time.Now().Add(1 * time.Hour),
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("GET", "/_bitfs/sales?status=paid", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var records []map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &records)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "inv-paid", records[0]["invoice_id"])
+	assert.Equal(t, true, records[0]["paid"])
+}
+
+func TestHandleSales_FilterPending(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	d.invoices["inv-paid"] = &InvoiceRecord{
+		ID:         "inv-paid",
+		TotalPrice: 100,
+		Paid:       true,
+		Expiry:     time.Now().Add(1 * time.Hour),
+	}
+	d.invoices["inv-pending"] = &InvoiceRecord{
+		ID:         "inv-pending",
+		TotalPrice: 200,
+		Paid:       false,
+		Expiry:     time.Now().Add(1 * time.Hour),
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("GET", "/_bitfs/sales?status=pending", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var records []map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &records)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "inv-pending", records[0]["invoice_id"])
+	assert.Equal(t, false, records[0]["paid"])
+}
+
+func TestHandleSales_Limit(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	for i := 0; i < 3; i++ {
+		id := fmt.Sprintf("inv-%d", i)
+		d.invoices[id] = &InvoiceRecord{
+			ID:         id,
+			TotalPrice: uint64(100 * (i + 1)),
+			Paid:       false,
+			Expiry:     time.Now().Add(1 * time.Hour),
+		}
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("GET", "/_bitfs/sales?limit=2", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var records []map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &records)
+	require.NoError(t, err)
+	assert.Len(t, records, 2)
+}
+
+// --- handlePayInvoice Tests ---
+
+func TestHandlePayInvoice_EmptyBody(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	// Seed an unpaid invoice.
+	d.invoicesMu.Lock()
+	d.invoices["inv-pay-1"] = &InvoiceRecord{
+		ID:     "inv-pay-1",
+		Expiry: time.Now().Add(1 * time.Hour),
+		Paid:   false,
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("POST", "/_bitfs/pay/inv-pay-1", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "paid", resp["status"])
+	assert.Equal(t, "inv-pay-1", resp["invoice_id"])
+
+	// Verify the invoice is marked paid.
+	d.invoicesMu.RLock()
+	assert.True(t, d.invoices["inv-pay-1"].Paid)
+	d.invoicesMu.RUnlock()
+}
+
+func TestHandlePayInvoice_NotFound(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	req := httptest.NewRequest("POST", "/_bitfs/pay/nonexistent", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandlePayInvoice_Expired(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	d.invoices["inv-expired"] = &InvoiceRecord{
+		ID:     "inv-expired",
+		Expiry: time.Now().Add(-1 * time.Hour), // already expired
+		Paid:   false,
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("POST", "/_bitfs/pay/inv-expired", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusGone, w.Code)
+}
+
+func TestHandlePayInvoice_Idempotent(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	d.invoices["inv-already-paid"] = &InvoiceRecord{
+		ID:     "inv-already-paid",
+		Expiry: time.Now().Add(1 * time.Hour),
+		Paid:   true,
+	}
+	d.invoicesMu.Unlock()
+
+	req := httptest.NewRequest("POST", "/_bitfs/pay/inv-already-paid", nil)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "paid", resp["status"])
+	assert.Equal(t, "inv-already-paid", resp["invoice_id"])
+}
+
+func TestHandlePayInvoice_InvalidTxHex(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+
+	d.invoicesMu.Lock()
+	d.invoices["inv-bad-hex"] = &InvoiceRecord{
+		ID:     "inv-bad-hex",
+		Expiry: time.Now().Add(1 * time.Hour),
+		Paid:   false,
+	}
+	d.invoicesMu.Unlock()
+
+	body := strings.NewReader("not-valid-hex!")
+	req := httptest.NewRequest("POST", "/_bitfs/pay/inv-bad-hex", body)
+	w := httptest.NewRecorder()
+	d.Handler().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- Trivial Setter Tests ---
+
+func TestSetChain(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	assert.Nil(t, d.chain)
+
+	mock := &mockChainService{}
+	d.SetChain(mock)
+	assert.Equal(t, mock, d.chain)
+}
+
+type mockChainService struct{}
+
+func (m *mockChainService) BroadcastTx(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
+func TestSetInvoiceDir(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	assert.Empty(t, d.invoiceDir)
+
+	d.SetInvoiceDir("/tmp/invoices")
+	assert.Equal(t, "/tmp/invoices", d.invoiceDir)
+}
+
+func TestLogInfo(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	require.NotNil(t, d.logBuf, "logBuf should be initialized by New()")
+
+	d.LogInfo("info", "test message one")
+	d.LogInfo("warn", "test message two")
+
+	entries := d.logBuf.Entries(0, "")
+	require.Len(t, entries, 2)
+	assert.Equal(t, "info", entries[0].Level)
+	assert.Equal(t, "test message one", entries[0].Message)
+	assert.Equal(t, "warn", entries[1].Level)
+	assert.Equal(t, "test message two", entries[1].Message)
+}
+
+func TestLogInfo_NilLogBuf(t *testing.T) {
+	d, _, _, _ := newTestDaemon(t)
+	d.logBuf = nil
+	// Should not panic when logBuf is nil.
+	assert.NotPanics(t, func() {
+		d.LogInfo("info", "should not panic")
+	})
+}
+
 // --- PrivateKey from big.Int for mock ---
 
 func init() {

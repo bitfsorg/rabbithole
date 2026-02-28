@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 )
 
@@ -87,7 +87,7 @@ Examples:
 
 	meta, err := cc.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
-		return buyer.HandleError(err, "bls", stderr)
+		return buy.HandleError(err, "bls", stderr)
 	}
 
 	// Apply keyword filter if set.

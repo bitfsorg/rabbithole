@@ -18,7 +18,7 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
@@ -34,7 +34,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("bcat", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
-	buy := fs.Bool("buy", false, "attempt to purchase paid content")
+	buyFlag := fs.Bool("buy", false, "attempt to purchase paid content")
 	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before outputting")
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 bytes)")
 	utxoFlag := fs.String("utxo", "", "manual UTXO for purchase (txid:vout:amount)")
@@ -90,7 +90,7 @@ Examples:
 
 	meta, err := cc.GetMeta(resolved.PNode, resolved.Path)
 	if err != nil {
-		return buyer.HandleError(err, "bcat", stderr)
+		return buy.HandleError(err, "bcat", stderr)
 	}
 
 	// Directories cannot be cat'd.
@@ -121,7 +121,7 @@ Examples:
 		}
 		return outputContent(c, meta, stdout, stderr)
 	case "paid":
-		return handlePaid(c, meta, *buy, *walletKey, *utxoFlag, *jsonOut, stdout, stderr)
+		return handlePaid(c, meta, *buyFlag, *walletKey, *utxoFlag, *jsonOut, stdout, stderr)
 	case "private":
 		if *jsonOut {
 			return handleErrorJSON(fmt.Errorf("private content"), stdout)
@@ -147,7 +147,7 @@ func outputContent(c *client.Client, meta *client.MetaResponse, stdout, stderr i
 
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
-		return buyer.HandleError(err, "bcat", stderr)
+		return buy.HandleError(err, "bcat", stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -195,8 +195,8 @@ func outputContent(c *client.Client, meta *client.MetaResponse, stdout, stderr i
 }
 
 // handlePaid handles paid content access (with or without --buy).
-func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, utxoFlag string, jsonOut bool, stdout, stderr io.Writer) int {
-	if !buy {
+func handlePaid(c *client.Client, meta *client.MetaResponse, buyEnabled bool, walletKey, utxoFlag string, jsonOut bool, stdout, stderr io.Writer) int {
+	if !buyEnabled {
 		if jsonOut {
 			return outputPaymentRequiredJSON(meta, stdout, stderr)
 		}
@@ -205,7 +205,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 5
 	}
 
-	cfg, err := buyer.LoadConfig(buyer.LoadConfigOpts{
+	cfg, err := buy.LoadConfig(buy.LoadConfigOpts{
 		WalletKeyFlag: walletKey,
 		UTXOFlag:      utxoFlag,
 	})
@@ -217,7 +217,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 6
 	}
 
-	result, err := buyer.Buy(&buyer.BuyParams{
+	result, err := buy.Buy(&buy.BuyParams{
 		Client: c,
 		TxID:   meta.TxID,
 		Config: cfg,
@@ -236,7 +236,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 
 // outputPaidContent fetches encrypted data, decrypts with the purchase capsule,
 // and writes plaintext to stdout.
-func outputPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *buyer.BuyResult, privKey *ec.PrivateKey, jsonOut bool, stdout, stderr io.Writer) int {
+func outputPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *buy.BuyResult, privKey *ec.PrivateKey, jsonOut bool, stdout, stderr io.Writer) int {
 	if meta.KeyHash == "" {
 		if jsonOut {
 			return handleErrorJSON(fmt.Errorf("no content hash available"), stdout)
@@ -250,7 +250,7 @@ func outputPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *b
 		if jsonOut {
 			return handleErrorJSON(err, stdout)
 		}
-		return buyer.HandleError(err, "bcat", stderr)
+		return buy.HandleError(err, "bcat", stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -310,8 +310,8 @@ func outputPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *b
 }
 
 // outputPaidContentJSON outputs decrypted paid content as a JSON response.
-func outputPaidContentJSON(meta *client.MetaResponse, plaintext []byte, buyResult *buyer.BuyResult, stdout, stderr io.Writer) int {
-	resp := &buyer.CatResponse{Meta: meta}
+func outputPaidContentJSON(meta *client.MetaResponse, plaintext []byte, buyResult *buy.BuyResult, stdout, stderr io.Writer) int {
+	resp := &buy.CatResponse{Meta: meta}
 	if strings.HasPrefix(meta.MimeType, "text/") || meta.MimeType == "application/json" {
 		s := string(plaintext)
 		resp.Content = &s
@@ -319,7 +319,7 @@ func outputPaidContentJSON(meta *client.MetaResponse, plaintext []byte, buyResul
 		s := base64.StdEncoding.EncodeToString(plaintext)
 		resp.ContentBase64 = &s
 	}
-	resp.Payment = &buyer.PaymentResult{
+	resp.Payment = &buy.PaymentResult{
 		CostSatoshis: buyResult.CostSatoshis,
 		HTLCTxID:     buyResult.HTLCTxID,
 	}
@@ -366,7 +366,7 @@ func outputContentJSON(c *client.Client, meta *client.MetaResponse, stdout, stde
 		plaintext = result.Plaintext
 	}
 
-	resp := &buyer.CatResponse{Meta: meta}
+	resp := &buy.CatResponse{Meta: meta}
 	if strings.HasPrefix(meta.MimeType, "text/") || meta.MimeType == "application/json" {
 		s := string(plaintext)
 		resp.Content = &s
@@ -379,10 +379,10 @@ func outputContentJSON(c *client.Client, meta *client.MetaResponse, stdout, stde
 
 // outputPaymentRequiredJSON outputs payment-required info as JSON.
 func outputPaymentRequiredJSON(meta *client.MetaResponse, stdout, stderr io.Writer) int {
-	resp := &buyer.CatResponse{
+	resp := &buy.CatResponse{
 		Meta:            meta,
 		PaymentRequired: true,
-		PaymentInfo: &buyer.PaymentInfo{
+		PaymentInfo: &buy.PaymentInfo{
 			Price:      meta.PricePerKB * (meta.FileSize/1024 + 1),
 			PricePerKB: meta.PricePerKB,
 		},
@@ -392,8 +392,8 @@ func outputPaymentRequiredJSON(meta *client.MetaResponse, stdout, stderr io.Writ
 
 // handleErrorJSON outputs an error as JSON and returns the exit code.
 func handleErrorJSON(err error, stdout io.Writer) int {
-	code := buyer.ExitCodeFromError(err)
-	resp := &buyer.ErrorResponse{Error: buyer.ErrorMessage(err), Code: code}
+	code := buy.ExitCodeFromError(err)
+	resp := &buy.ErrorResponse{Error: buy.ErrorMessage(err), Code: code}
 	data, _ := json.Marshal(resp)
 	fmt.Fprintln(stdout, string(data))
 	return code

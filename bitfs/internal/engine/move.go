@@ -210,7 +210,7 @@ func (e *Engine) crossDirectoryMove(opts *MoveOpts, srcNodeState *NodeState) (*R
 		OnChain:     srcNodeState.OnChain,
 		Compression: srcNodeState.Compression,
 	}
-	createPayload, err := metanet.SerializePayload(createNode)
+	createPayload, err := serializePayloadForChain(createNode, childKP.PrivateKey, childKP.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("engine: serialize create payload: %w", err)
 	}

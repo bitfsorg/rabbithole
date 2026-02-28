@@ -1695,14 +1695,24 @@ bitfs /<当前远程路径>
 #### 路由注册 (与实现一致)
 
 ```
-GET  /_bitfs/health               健康检查
-GET  /_bitfs/data/{hash}          获取加密数据 (SHA-256 hex, 64 字符)
-GET  /_bitfs/meta/{pnode}/{path}  查询 Metanet 元数据
-POST /_bitfs/pay/{invoice_id}     提交 x402 带宽费支付
-POST /_bitfs/handshake            Method 42 ECDH 握手
-GET  /_bitfs/buy/{txid}           获取购买信息 (定价、capsule_hash)
-POST /_bitfs/buy/{txid}           提交 HTLC, 获取 capsule
-GET  /{path...}                   内容路由 (Content Negotiation)
+GET  /_bitfs/health                    健康检查
+POST /_bitfs/handshake                 Method 42 ECDH 握手
+GET  /_bitfs/data/{hash}               获取加密数据 (SHA-256 hex, 64 字符)
+GET  /_bitfs/meta/{pnode}/{path}       查询 Metanet 元数据
+GET  /_bitfs/versions/{pnode}/{path}   版本历史
+GET  /_bitfs/buy/{txid}               获取购买信息 (定价、capsule_hash)
+POST /_bitfs/buy/{txid}               提交 HTLC, 获取 capsule
+POST /_bitfs/pay/{invoice_id}          提交 x402 带宽费支付
+GET  /_bitfs/sales                     销售记录
+GET  /_bitfs/spv/proof/{txid}          SPV 证明
+GET  /_bitfs/dashboard/status          仪表盘状态
+GET  /_bitfs/dashboard/storage         存储统计
+GET  /_bitfs/dashboard/wallet          钱包信息
+GET  /_bitfs/dashboard/network         网络状态
+GET  /_bitfs/dashboard/logs            日志
+GET  /.well-known/bsvalias             Paymail 发现
+GET  /api/v1/pki/{handle}              Paymail PKI
+GET  /{path...}                        内容路由 (Content Negotiation)
 ```
 
 #### 1. GET /_bitfs/health
@@ -2359,7 +2369,32 @@ helper 执行过程中使用临时 bare repo:
 | shallow clone (--depth) | 一期不支持, 返回完整历史 |
 | LFS 文件 | 不需要, BitFS 本身就是 LFS — 所有文件大小一视同仁 |
 
-### E. Repack (后续优化)
+### E. Anchor 节点 (NodeType=3)
+
+git commit 在 Metanet DAG 中表示为 Anchor 节点 (NodeType=3)。每个 Anchor 快照一个 commit 的文件树状态，通过 ParentAnchorTxID 链形成版本历史。
+
+```
+Anchor 节点 TLV 字段 (0x20-0x26):
+
+| Tag  | 名称              | 类型   | 长度 | 说明                              |
+|------|-------------------|--------|------|-----------------------------------|
+| 0x20 | TreeRootPNode     | bytes  | 33   | 根目录 P_node                      |
+| 0x21 | TreeRootTxID      | bytes  | 32   | 根目录最新 TxID                    |
+| 0x22 | ParentAnchorTxID  | bytes  | 32   | 父锚点 TxID (可重复, merge commit) |
+| 0x23 | Author            | string | var  | Git 提交作者                       |
+| 0x24 | CommitMessage     | string | var  | Git 提交消息                       |
+| 0x25 | GitCommitSHA      | bytes  | 20   | Git commit SHA-1                   |
+| 0x26 | FileMode          | uint32 | 4    | Git file mode                      |
+```
+
+**Git 操作映射**:
+- `git push`: 遍历新 commits → 每个 commit 创建一个 Anchor 节点 (CreateChild)，TreeRootPNode/TreeRootTxID 指向当前文件树根
+- `git clone/pull`: 从最新 Anchor 沿 ParentAnchorTxID 链回溯，重建 commit history → fast-import 到本地 git
+- merge commit: ParentAnchorTxID 重复出现多次 (每个 parent 一条)
+
+> 完整 TLV 定义见 `docs/spec/03-metanet.md` §Anchor 节点字段、`libbitfs-go/metanet/parser.go` tag 常量。
+
+### F. Repack (后续优化)
 
 多次增量 push 后会积累大量小 packfile。一期不实现 repack, 多 packfile 不影响正确性, 只影响 clone 速度。后续提供:
 

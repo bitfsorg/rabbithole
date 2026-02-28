@@ -18,7 +18,7 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/tongxiaofeng/bitfs/internal/buyer"
+	"github.com/tongxiaofeng/bitfs/internal/buy"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
@@ -36,7 +36,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	output := fs.String("o", "", "output filename")
 	fs.StringVar(output, "output", "", "output filename")
-	buy := fs.Bool("buy", false, "attempt to purchase paid content")
+	buyFlag := fs.Bool("buy", false, "attempt to purchase paid content")
 	verify := fs.Bool("verify", false, "SPV-verify the Metanet tx before downloading")
 	walletKey := fs.String("wallet-key", "", "hex-encoded buyer private key (32 bytes)")
 	utxoStr := fs.String("utxo", "", "buyer UTXO for purchase (txid:vout:amount)")
@@ -98,7 +98,7 @@ Examples:
 		if *jsonOut {
 			return handleErrorJSON(err, stdout)
 		}
-		return buyer.HandleError(err, "bget", stderr)
+		return buy.HandleError(err, "bget", stderr)
 	}
 
 	// Version override: fetch version history and apply the selected version's metadata.
@@ -108,7 +108,7 @@ Examples:
 			if *jsonOut {
 				return handleErrorJSON(versErr, stdout)
 			}
-			return buyer.HandleError(versErr, "bget", stderr)
+			return buy.HandleError(versErr, "bget", stderr)
 		}
 		if *version > len(vers) {
 			msg := fmt.Errorf("version %d not found (only %d versions)", *version, len(vers))
@@ -155,7 +155,7 @@ Examples:
 		}
 		return downloadContent(c, meta, *output, stdout, stderr)
 	case "paid":
-		return handlePaid(c, meta, *buy, *walletKey, *utxoStr, *output, *jsonOut, stdout, stderr)
+		return handlePaid(c, meta, *buyFlag, *walletKey, *utxoStr, *output, *jsonOut, stdout, stderr)
 	case "private":
 		if *jsonOut {
 			return handleErrorJSON(fmt.Errorf("private content"), stdout)
@@ -186,7 +186,7 @@ func downloadContent(c *client.Client, meta *client.MetaResponse, outputName str
 
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
-		return buyer.HandleError(err, "bget", stderr)
+		return buy.HandleError(err, "bget", stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -259,8 +259,8 @@ func deriveFilename(uriPath string) string {
 }
 
 // handlePaid handles paid content access (with or without --buy).
-func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey, utxoFlag, outputName string, jsonOut bool, stdout, stderr io.Writer) int {
-	if !buy {
+func handlePaid(c *client.Client, meta *client.MetaResponse, buyEnabled bool, walletKey, utxoFlag, outputName string, jsonOut bool, stdout, stderr io.Writer) int {
+	if !buyEnabled {
 		if jsonOut {
 			return outputPaymentRequiredJSON(meta, stdout, stderr)
 		}
@@ -269,7 +269,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 5
 	}
 
-	cfg, err := buyer.LoadConfig(buyer.LoadConfigOpts{WalletKeyFlag: walletKey, UTXOFlag: utxoFlag})
+	cfg, err := buy.LoadConfig(buy.LoadConfigOpts{WalletKeyFlag: walletKey, UTXOFlag: utxoFlag})
 	if err != nil {
 		if jsonOut {
 			return handleErrorJSON(err, stdout)
@@ -278,7 +278,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		return 6
 	}
 
-	result, err := buyer.Buy(&buyer.BuyParams{
+	result, err := buy.Buy(&buy.BuyParams{
 		Client: c,
 		TxID:   meta.TxID,
 		Config: cfg,
@@ -289,7 +289,7 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 		}
 		// Map client errors (e.g. server error) to appropriate exit codes.
 		if errors.Is(err, client.ErrServer) || errors.Is(err, client.ErrNetwork) || errors.Is(err, client.ErrTimeout) {
-			return buyer.HandleError(err, "bget", stderr)
+			return buy.HandleError(err, "bget", stderr)
 		}
 		fmt.Fprintf(stderr, "bget: purchase failed: %v\n", err)
 		return 5
@@ -300,14 +300,14 @@ func handlePaid(c *client.Client, meta *client.MetaResponse, buy bool, walletKey
 
 // downloadPaidContent fetches encrypted data, decrypts it using the capsule
 // obtained from the purchase, and writes the plaintext to a file.
-func downloadPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *buyer.BuyResult, privKey *ec.PrivateKey, outputName string, jsonOut bool, stdout, stderr io.Writer) int {
+func downloadPaidContent(c *client.Client, meta *client.MetaResponse, buyResult *buy.BuyResult, privKey *ec.PrivateKey, outputName string, jsonOut bool, stdout, stderr io.Writer) int {
 	// Fetch encrypted content.
 	reader, err := c.GetData(meta.KeyHash)
 	if err != nil {
 		if jsonOut {
 			return handleErrorJSON(err, stdout)
 		}
-		return buyer.HandleError(err, "bget", stderr)
+		return buy.HandleError(err, "bget", stderr)
 	}
 	defer func() { _ = reader.Close() }()
 
@@ -392,11 +392,11 @@ func downloadPaidContent(c *client.Client, meta *client.MetaResponse, buyResult 
 	}
 
 	if jsonOut {
-		resp := &buyer.GetResponse{
+		resp := &buy.GetResponse{
 			Meta:         meta,
 			OutputPath:   filename,
 			BytesWritten: int64(n),
-			Payment:      &buyer.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
+			Payment:      &buy.PaymentResult{CostSatoshis: buyResult.CostSatoshis, HTLCTxID: buyResult.HTLCTxID},
 		}
 		return writeJSON(resp, stdout, stderr)
 	}
@@ -473,7 +473,7 @@ func downloadContentJSON(c *client.Client, meta *client.MetaResponse, outputName
 		return handleErrorJSON(fmt.Errorf("close error: %w", err), stdout)
 	}
 
-	resp := &buyer.GetResponse{
+	resp := &buy.GetResponse{
 		Meta:         meta,
 		OutputPath:   filename,
 		BytesWritten: int64(n),
@@ -483,10 +483,10 @@ func downloadContentJSON(c *client.Client, meta *client.MetaResponse, outputName
 
 // outputPaymentRequiredJSON outputs a JSON response indicating payment is required.
 func outputPaymentRequiredJSON(meta *client.MetaResponse, stdout, stderr io.Writer) int {
-	resp := &buyer.GetResponse{
+	resp := &buy.GetResponse{
 		Meta:            meta,
 		PaymentRequired: true,
-		PaymentInfo: &buyer.PaymentInfo{
+		PaymentInfo: &buy.PaymentInfo{
 			Price:      meta.PricePerKB * (meta.FileSize/1024 + 1),
 			PricePerKB: meta.PricePerKB,
 		},
@@ -497,8 +497,8 @@ func outputPaymentRequiredJSON(meta *client.MetaResponse, stdout, stderr io.Writ
 // handleErrorJSON outputs a JSON error response to stdout and returns the
 // appropriate exit code.
 func handleErrorJSON(err error, stdout io.Writer) int {
-	code := buyer.ExitCodeFromError(err)
-	resp := &buyer.ErrorResponse{Error: buyer.ErrorMessage(err), Code: code}
+	code := buy.ExitCodeFromError(err)
+	resp := &buy.ErrorResponse{Error: buy.ErrorMessage(err), Code: code}
 	data, _ := json.Marshal(resp)
 	fmt.Fprintln(stdout, string(data))
 	return code

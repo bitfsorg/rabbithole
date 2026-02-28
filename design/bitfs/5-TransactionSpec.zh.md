@@ -1064,7 +1064,9 @@ bitfs> mv <src> <dst>         # 移动/重命名
 bitfs> cp <src> <dst>         # 复制
 bitfs> link -s <target> <path> # 创建软链接
 bitfs> sell <path> <price>    # 设定价格
+bitfs> sales [path]           # 销售历史
 bitfs> encrypt <path>         # 加密
+bitfs> decrypt <path>         # 解密
 bitfs> publish [domain]       # 发布
 bitfs> unpublish <domain>     # 取消发布
 bitfs> help                   # 帮助
@@ -1190,7 +1192,7 @@ bmget [--concurrency N] [--fail-fast] [--buy] [--wallet-key KEY] [--utxo SPEC] <
 | Tag (hex) | Tag (dec) | 常量名 | 类型 | 说明 |
 |-----------|-----------|--------|------|------|
 | `0x01` | 1 | `tagVersion` | uint32 | 协议版本 |
-| `0x02` | 2 | `tagType` | uint32 | 节点类型: File(0)/Dir(1)/Link(2) |
+| `0x02` | 2 | `tagType` | uint32 | 节点类型: File(0)/Dir(1)/Link(2)/Anchor(3) |
 | `0x03` | 3 | `tagOp` | uint32 | 操作: Create(0)/Update(1)/Delete(2) |
 | `0x04` | 4 | `tagMimeType` | string | MIME 类型 |
 | `0x05` | 5 | `tagFileSize` | uint64 | 文件大小 (明文，bytes) |
@@ -1217,9 +1219,39 @@ bmget [--concurrency N] [--fail-fast] [--buy] [--wallet-key KEY] [--utxo SPEC] <
 | `0x1A` | 26 | `tagMerkleRoot` | bytes | 目录 Merkle 根，32B |
 | `0x1B` | 27 | `tagEncPayload` | bytes | 加密 payload (PRIVATE 模式) |
 
+**扩展字段** (0x1E-0x1F, 0x27-0x30)：
+
+| Tag (hex) | Tag (dec) | 常量名 | 类型 | 说明 |
+|-----------|-----------|--------|------|------|
+| `0x1E` | 30 | `tagMetadata` | map | 自定义键值对 (子 TLV 编码) |
+| `0x1F` | 31 | `tagVersionLog` | bytes | 版本日志节点 P_node，33B |
+| `0x27` | 39 | `tagShareList` | bytes | 份额列表节点 P_node，33B |
+| `0x28` | 40 | `tagChunkIndex` | uint32 | 分片索引 (0-based) |
+| `0x29` | 41 | `tagTotalChunks` | uint32 | 总分片数 |
+| `0x2A` | 42 | `tagRecombinationHash` | bytes | SHA256(chunk₀ ‖ chunk₁ ‖ ...)，32B |
+| `0x2B` | 43 | `tagRabinSignature` | bytes | Rabin 签名 (S, U) |
+| `0x2C` | 44 | `tagRabinPubKey` | bytes | Rabin 公钥模数 n |
+| `0x2D` | 45 | `tagRegistryTxID` | bytes | 收入分成注册表 TxID，32B |
+| `0x2E` | 46 | `tagRegistryVout` | uint32 | 注册表输出索引 |
+| `0x2F` | 47 | `tagISOConfig` | bytes | ISO 配置 (子 TLV) |
+| `0x30` | 48 | `tagACLRef` | bytes | ACL 引用 |
+
+**Anchor 节点专用字段** (NodeType=3, git-remote-bitfs 使用)：
+
+| Tag (hex) | Tag (dec) | 常量名 | 类型 | 说明 |
+|-----------|-----------|--------|------|------|
+| `0x20` | 32 | `tagTreeRootPNode` | bytes | 根目录 P_node，33B |
+| `0x21` | 33 | `tagTreeRootTxID` | bytes | 根目录最新 TxID，32B |
+| `0x22` | 34 | `tagParentAnchorTxID` | bytes | 父锚点 TxID，32B (可重复, merge commit) |
+| `0x23` | 35 | `tagAuthor` | string | Git 提交作者 |
+| `0x24` | 36 | `tagCommitMessage` | string | Git 提交消息 |
+| `0x25` | 37 | `tagGitCommitSHA` | bytes | Git commit SHA，20B |
+| `0x26` | 38 | `tagFileMode` | uint32 | Git file mode |
+
+> 完整 Anchor 节点规范见 `docs/spec/03-metanet.md` §Anchor 节点字段。
+
 **预留范围**：
-- `0x20-0x2F`: 扩展字段（git-remote-bitfs Anchor 等）
-- `0x30+`: 未来使用
+- `0x31+`: 未来使用
 
 > **设计决策 #6**: Tag 编号以代码实现为准。设计文档中 field 5 的 reserved 位已取消。
 

@@ -33,6 +33,10 @@ func (d *Daemon) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /_bitfs/buy/{txid}", wrap(d.handleSubmitHTLC))
 	mux.HandleFunc("OPTIONS /_bitfs/buy/{txid}", wrap(d.handleOptions))
 
+	// x402 Bandwidth payment
+	mux.HandleFunc("POST /_bitfs/pay/{invoice_id}", wrap(d.handlePayInvoice))
+	mux.HandleFunc("OPTIONS /_bitfs/pay/{invoice_id}", wrap(d.handleOptions))
+
 	// Sales listing
 	mux.HandleFunc("GET /_bitfs/sales", wrap(d.handleSales))
 

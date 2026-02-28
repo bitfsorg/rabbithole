@@ -83,7 +83,7 @@ func (e *Engine) EncryptNode(opts *EncryptOpts) (*Result, error) {
 	node.OnChain = nodeState.OnChain
 	node.Compression = nodeState.Compression
 
-	payload, err := metanet.SerializePayload(node)
+	payload, err := serializePayloadForChain(node, kp.PrivateKey, kp.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("engine: serialize payload: %w", err)
 	}

@@ -4,6 +4,8 @@ package integration
 
 import (
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/bitfs/internal/engine"
 )
 
@@ -581,4 +584,249 @@ func TestShell_CpNonExistent(t *testing.T) {
 
 	_, err := eng.Copy(&engine.CopyOpts{VaultIndex: 0, SrcPath: "/nope.txt", DstPath: "/dest.txt"})
 	assert.Error(t, err)
+}
+
+// =============================================================================
+// Task 13: publish / unpublish / sales / decrypt
+// =============================================================================
+
+// --- Publish Tests ---
+
+// TestShell_PublishBindDomain publishes a domain and verifies the binding is
+// stored in local state with the correct vault root pubkey.
+func TestShell_PublishBindDomain(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	result, err := eng.Publish(&engine.PublishOpts{
+		VaultIndex: 0,
+		Domain:     "example.com",
+	})
+	require.NoError(t, err)
+
+	// Result should contain DNS instructions.
+	assert.Contains(t, result.Message, "_bitfs.example.com")
+	assert.Contains(t, result.Message, "bitfs=")
+	assert.NotEmpty(t, result.NodePub)
+
+	// Verify binding is stored in state.
+	binding := eng.State.GetPublishBinding("example.com")
+	require.NotNil(t, binding)
+	assert.Equal(t, "example.com", binding.Domain)
+	assert.Equal(t, uint32(0), binding.VaultIndex)
+	assert.Equal(t, result.NodePub, binding.PubKeyHex)
+}
+
+// TestShell_PublishListBindings publishes two domains, then calls Publish with
+// an empty domain to list all bindings. Verifies both domains appear.
+func TestShell_PublishListBindings(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	// Publish two domains.
+	_, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: "alpha.com"})
+	require.NoError(t, err)
+	_, err = eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: "beta.org"})
+	require.NoError(t, err)
+
+	// List bindings (empty domain).
+	result, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: ""})
+	require.NoError(t, err)
+
+	assert.Contains(t, result.Message, "alpha.com")
+	assert.Contains(t, result.Message, "beta.org")
+	assert.Contains(t, result.Message, "Publish bindings")
+}
+
+// TestShell_PublishNoBindings verifies listing bindings with none configured
+// returns an appropriate message.
+func TestShell_PublishNoBindings(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	result, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: ""})
+	require.NoError(t, err)
+	assert.Contains(t, result.Message, "No publish bindings")
+}
+
+// TestShell_PublishInvalidDomain verifies that invalid domain names are rejected.
+func TestShell_PublishInvalidDomain(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	tests := []string{"nodot", "has space.com", "has\ttab.com"}
+	for _, domain := range tests {
+		_, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: domain})
+		assert.Error(t, err, "domain %q should be rejected", domain)
+	}
+}
+
+// --- Unpublish Tests ---
+
+// TestShell_UnpublishDomain publishes a domain, then unpublishes it, verifying
+// the binding is removed from state.
+func TestShell_UnpublishDomain(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	// Publish a domain.
+	_, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: "remove-me.com"})
+	require.NoError(t, err)
+	require.NotNil(t, eng.State.GetPublishBinding("remove-me.com"))
+
+	// Unpublish it.
+	result, err := eng.Unpublish(&engine.UnpublishOpts{Domain: "remove-me.com"})
+	require.NoError(t, err)
+	assert.Contains(t, result.Message, "Removed")
+	assert.Contains(t, result.Message, "remove-me.com")
+
+	// Verify binding is gone.
+	assert.Nil(t, eng.State.GetPublishBinding("remove-me.com"))
+}
+
+// TestShell_UnpublishNonExistent verifies that unpublishing a domain that was
+// never published returns an error.
+func TestShell_UnpublishNonExistent(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	_, err := eng.Unpublish(&engine.UnpublishOpts{Domain: "ghost.com"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no publish binding")
+}
+
+// TestShell_UnpublishEmptyDomain verifies that unpublishing with an empty
+// domain name returns an error.
+func TestShell_UnpublishEmptyDomain(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	_, err := eng.Unpublish(&engine.UnpublishOpts{Domain: ""})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "domain is required")
+}
+
+// --- Sales Tests ---
+
+// TestShell_SalesNoDaemon verifies that querying sales with no running daemon
+// returns an error (the shell prints "is daemon running?").
+func TestShell_SalesNoDaemon(t *testing.T) {
+	// client.New points at a non-existent server by default.
+	cl := client.New("http://127.0.0.1:1") // port 1 = guaranteed connection refused
+	_, err := cl.GetSales("all", 50)
+	assert.Error(t, err, "GetSales should fail when daemon is not running")
+}
+
+// TestShell_SalesWithMockDaemon starts a mock HTTP server that returns sales
+// records, then verifies the client correctly parses them.
+func TestShell_SalesWithMockDaemon(t *testing.T) {
+	// Mock sales endpoint.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/_bitfs/sales" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`[
+			{"invoice_id":"inv-001","key_hash":"aabb","price":500,"paid":true},
+			{"invoice_id":"inv-002","key_hash":"ccdd","price":1000,"paid":false}
+		]`))
+	})
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	cl := client.New(srv.URL)
+	records, err := cl.GetSales("all", 50)
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+
+	assert.Equal(t, "inv-001", records[0].InvoiceID)
+	assert.Equal(t, uint64(500), records[0].Price)
+	assert.True(t, records[0].Paid)
+
+	assert.Equal(t, "inv-002", records[1].InvoiceID)
+	assert.Equal(t, uint64(1000), records[1].Price)
+	assert.False(t, records[1].Paid)
+}
+
+// --- Decrypt Tests (standalone, separate from EncryptDecrypt) ---
+
+// TestShell_DecryptFile uploads a file as free, encrypts it to private, then
+// decrypts it back to free. Verifies each access mode transition independently.
+func TestShell_DecryptFile(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	content := []byte("decrypt test content")
+	localFile := createTempFile(t, content)
+
+	// Upload as free.
+	_, err := eng.PutFile(&engine.PutOpts{
+		VaultIndex: 0,
+		LocalFile:  localFile,
+		RemotePath: "/decrypt-test.txt",
+		Access:     "free",
+	})
+	require.NoError(t, err)
+
+	node := eng.State.FindNodeByPath("/decrypt-test.txt")
+	require.NotNil(t, node)
+	assert.Equal(t, "free", node.Access)
+	originalKeyHash := node.KeyHash
+
+	// Encrypt: FREE -> PRIVATE.
+	encResult, err := eng.EncryptNode(&engine.EncryptOpts{
+		VaultIndex: 0,
+		Path:       "/decrypt-test.txt",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, encResult.Message, "PRIVATE")
+
+	node = eng.State.FindNodeByPath("/decrypt-test.txt")
+	require.NotNil(t, node)
+	assert.Equal(t, "private", node.Access)
+
+	// Decrypt: PRIVATE -> FREE.
+	decResult, err := eng.DecryptNode(&engine.DecryptOpts{
+		Path: "/decrypt-test.txt",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, decResult.Message, "FREE")
+	assert.NotEmpty(t, decResult.TxHex)
+	assert.NotEmpty(t, decResult.TxID)
+
+	// Verify access mode is back to free.
+	node = eng.State.FindNodeByPath("/decrypt-test.txt")
+	require.NotNil(t, node)
+	assert.Equal(t, "free", node.Access)
+
+	// key_hash = SHA256(SHA256(plaintext)) is content-based and access-mode-independent,
+	// so it stays the same across all access mode transitions.
+	assert.NotEmpty(t, node.KeyHash)
+	assert.Equal(t, originalKeyHash, node.KeyHash,
+		"key_hash is content-based and should remain the same after round-trip")
+}
+
+// TestShell_DecryptAlreadyFree verifies that decrypting a file that is already
+// free returns an error.
+func TestShell_DecryptAlreadyFree(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	content := []byte("already free file")
+	localFile := createTempFile(t, content)
+
+	_, err := eng.PutFile(&engine.PutOpts{
+		VaultIndex: 0,
+		LocalFile:  localFile,
+		RemotePath: "/free-file.txt",
+		Access:     "free",
+	})
+	require.NoError(t, err)
+
+	_, err = eng.DecryptNode(&engine.DecryptOpts{Path: "/free-file.txt"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "already free")
+}
+
+// TestShell_DecryptNonExistent verifies that decrypting a non-existent path
+// returns an error.
+func TestShell_DecryptNonExistent(t *testing.T) {
+	eng := initIntegrationEngine(t)
+
+	_, err := eng.DecryptNode(&engine.DecryptOpts{Path: "/ghost.txt"})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
 }

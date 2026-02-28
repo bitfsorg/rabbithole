@@ -1,4 +1,4 @@
-package buyer
+package buy
 
 import (
 	"bufio"

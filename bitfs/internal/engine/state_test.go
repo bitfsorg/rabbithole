@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewLocalState(t *testing.T) {
@@ -229,4 +232,51 @@ func TestLocalState_FindNodeByPath(t *testing.T) {
 	if s.FindNodeByPath("/gamma") != nil {
 		t.Error("expected nil for missing path")
 	}
+}
+
+func TestReleaseUTXO_MarksUnspent(t *testing.T) {
+	s := NewLocalState("")
+	s.AddUTXO(&UTXOState{TxID: "aa11", Vout: 0, Amount: 5000, Type: "fee"})
+
+	// Allocate it — should be marked spent.
+	u := s.AllocateFeeUTXO(1000)
+	require.NotNil(t, u)
+	assert.True(t, u.Spent, "UTXO should be spent after allocation")
+
+	// Release it — should be marked unspent again.
+	s.ReleaseUTXO("aa11", 0)
+	assert.False(t, u.Spent, "UTXO should be unspent after release")
+
+	// Verify it can be re-allocated.
+	u2 := s.AllocateFeeUTXO(1000)
+	require.NotNil(t, u2)
+	assert.Equal(t, "aa11", u2.TxID)
+}
+
+func TestReleaseUTXO_NonExistent(t *testing.T) {
+	s := NewLocalState("")
+	s.AddUTXO(&UTXOState{TxID: "bb22", Vout: 0, Amount: 3000, Type: "fee", Spent: true})
+
+	// Release a UTXO that does not exist — no panic, no state change.
+	s.ReleaseUTXO("nonexistent", 0)
+	s.ReleaseUTXO("bb22", 99) // same txid, wrong vout
+
+	// Original UTXO should still be spent.
+	s.mu.Lock()
+	assert.True(t, s.UTXOs[0].Spent, "unrelated UTXO should remain spent")
+	s.mu.Unlock()
+}
+
+func TestReleaseUTXO_MatchesTxIDAndVout(t *testing.T) {
+	s := NewLocalState("")
+	s.AddUTXO(&UTXOState{TxID: "cc33", Vout: 0, Amount: 1000, Type: "fee", Spent: true})
+	s.AddUTXO(&UTXOState{TxID: "cc33", Vout: 1, Amount: 2000, Type: "fee", Spent: true})
+
+	// Release only vout=1.
+	s.ReleaseUTXO("cc33", 1)
+
+	s.mu.Lock()
+	assert.True(t, s.UTXOs[0].Spent, "vout=0 should still be spent")
+	assert.False(t, s.UTXOs[1].Spent, "vout=1 should be unspent after release")
+	s.mu.Unlock()
 }
