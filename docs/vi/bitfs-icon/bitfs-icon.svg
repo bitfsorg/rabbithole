@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@800&amp;display=swap');
+      .b { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 800; font-size: 220px; }
+    </style>
+  </defs>
+  <rect width="400" height="400" rx="16" fill="#110f0d" stroke="#2e2924" stroke-width="1"/>
+  <text class="b" x="140" y="289" fill="#a07548" opacity="0.06">B</text>
+  <text class="b" x="124" y="273" fill="#a07548" opacity="0.12">B</text>
+  <text class="b" x="108" y="257" fill="#a07548" opacity="0.20">B</text>
+  <text class="b" x="92" y="241" fill="#a07548" opacity="0.35">B</text>
+  <text class="b" x="76" y="225" fill="#c9956b">B</text>
+</svg>

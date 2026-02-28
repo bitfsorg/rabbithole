@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BitFS Icon Export</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a1a; color: #d4cdc4; font-family: 'Inter', system-ui, sans-serif; padding: 40px; }
+  h1 { font-size: 24px; margin-bottom: 8px; color: #c9956b; }
+  .subtitle { color: #8a8078; margin-bottom: 32px; font-size: 14px; }
+  .section { margin-bottom: 40px; }
+  .section h2 { font-size: 16px; color: #dbb08a; margin-bottom: 16px; border-bottom: 1px solid #2e2924; padding-bottom: 8px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 24px; align-items: end; }
+  .item { text-align: center; }
+  .item canvas { border: 1px solid #2e2924; border-radius: 4px; cursor: pointer; transition: outline 0.15s; }
+  .item canvas:hover { outline: 2px solid #c9956b; outline-offset: 2px; }
+  .item .label { font-size: 11px; color: #8a8078; margin-top: 6px; }
+  .item .size { font-size: 10px; color: #6a6058; }
+  .btn { display: inline-block; padding: 10px 20px; background: #c9956b; color: #110f0d; border: none; border-radius: 8px;
+    font-family: inherit; font-weight: 700; font-size: 13px; cursor: pointer; margin: 4px; transition: background 0.15s; }
+  .btn:hover { background: #dbb08a; }
+  .actions { margin-bottom: 32px; }
+  .note { font-size: 12px; color: #6a6058; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>BitFS Icon Export</h1>
+<p class="subtitle">Long Shadow B — Click any icon to download PNG. Or use bulk export buttons below.</p>
+
+<div class="actions">
+  <button class="btn" onclick="downloadAll('icon')">Download All Icons (with bg)</button>
+  <button class="btn" onclick="downloadAll('mark')">Download All Marks (transparent)</button>
+  <button class="btn" onclick="downloadAll('both')">Download Everything</button>
+  <p class="note">Files are named bitfs-icon-{size}.png and bitfs-mark-{size}.png</p>
+</div>
+
+<div class="section">
+  <h2>Favicon</h2>
+  <div class="grid" id="favicon-grid"></div>
+</div>
+
+<div class="section">
+  <h2>App Icons</h2>
+  <div class="grid" id="app-grid"></div>
+</div>
+
+<div class="section">
+  <h2>Social / Avatar</h2>
+  <div class="grid" id="social-grid"></div>
+</div>
+
+<div class="section">
+  <h2>Logo</h2>
+  <div class="grid" id="logo-grid"></div>
+</div>
+
+<div class="section">
+  <h2>Mark Only (Transparent Background)</h2>
+  <div class="grid" id="mark-grid"></div>
+</div>
+
+<div class="section">
+  <h2>OG / Social Card (1200x630)</h2>
+  <div class="grid" id="og-grid"></div>
+</div>
+
+<script>
+const COLORS = {
+  bg: '#110f0d',
+  gold: '#c9956b',
+  goldDark: '#a07548',
+  goldLight: '#dbb08a',
+  border: '#2e2924'
+};
+
+const SIZES = {
+  favicon: [
+    { size: 16, label: 'favicon-16', use: 'favicon.ico' },
+    { size: 32, label: 'favicon-32', use: 'favicon.ico / favicon-32x32.png' },
+    { size: 48, label: 'favicon-48', use: 'favicon-48x48.png' },
+  ],
+  app: [
+    { size: 180, label: 'apple-touch', use: 'Apple Touch Icon' },
+    { size: 192, label: 'android', use: 'Android / PWA' },
+    { size: 512, label: 'pwa-512', use: 'PWA Manifest' },
+    { size: 1024, label: 'app-store', use: 'App Store' },
+  ],
+  social: [
+    { size: 400, label: 'avatar', use: 'GitHub / Twitter avatar' },
+    { size: 500, label: 'social', use: 'Social profile' },
+  ],
+  logo: [
+    { size: 64, label: 'logo-sm', use: 'Inline logo' },
+    { size: 128, label: 'logo-md', use: 'Medium logo' },
+    { size: 256, label: 'logo-lg', use: 'Large logo' },
+    { size: 512, label: 'logo-xl', use: 'Print / HiDPI' },
+    { size: 1024, label: 'logo-xxl', use: 'Master raster' },
+  ],
+  mark: [
+    { size: 64, label: 'mark-sm', use: 'Small mark' },
+    { size: 128, label: 'mark-md', use: 'Medium mark' },
+    { size: 256, label: 'mark-lg', use: 'Large mark' },
+    { size: 512, label: 'mark-xl', use: 'HiDPI mark' },
+  ]
+};
+
+function drawIcon(ctx, size, { withBg = true, simplified = false } = {}) {
+  const s = size / 400;
+  ctx.save();
+  ctx.scale(s, s);
+
+  if (withBg) {
+    // Background
+    const r = 16;
+    ctx.beginPath();
+    ctx.roundRect(0, 0, 400, 400, r);
+    ctx.fillStyle = COLORS.bg;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  ctx.font = '800 220px Inter, system-ui, -apple-system, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+
+  if (simplified) {
+    // Simplified: 1 shadow layer only
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = COLORS.goldDark;
+    ctx.fillText('B', 92, 225);
+  } else {
+    // Full shadow layers
+    const shadows = [
+      { x: 140, y: 289, opacity: 0.06 },
+      { x: 124, y: 273, opacity: 0.12 },
+      { x: 108, y: 257, opacity: 0.20 },
+      { x: 92, y: 241, opacity: 0.35 },
+    ];
+    for (const sh of shadows) {
+      ctx.globalAlpha = sh.opacity;
+      ctx.fillStyle = COLORS.goldDark;
+      ctx.fillText('B', sh.x, sh.y);
+    }
+  }
+
+  // Main B
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = COLORS.gold;
+  ctx.fillText('B', 76, 225);
+
+  ctx.restore();
+}
+
+function createCanvas(size, options) {
+  const dpr = 1;
+  const canvas = document.createElement('canvas');
+  canvas.width = size * dpr;
+  canvas.height = size * dpr;
+  canvas.style.width = Math.min(size, 128) + 'px';
+  canvas.style.height = Math.min(size, 128) + 'px';
+  const ctx = canvas.getContext('2d');
+  drawIcon(ctx, size * dpr, options);
+  return canvas;
+}
+
+function downloadCanvas(canvas, filename) {
+  const a = document.createElement('a');
+  a.download = filename;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+function renderSection(gridId, items, options = {}) {
+  const grid = document.getElementById(gridId);
+  for (const item of items) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    const simplified = item.size <= 48;
+    const canvas = createCanvas(item.size, { ...options, simplified });
+    const prefix = options.withBg === false ? 'bitfs-mark' : 'bitfs-icon';
+    canvas.title = `Click to download ${prefix}-${item.size}.png`;
+    canvas.onclick = () => downloadCanvas(canvas, `${prefix}-${item.size}.png`);
+    div.appendChild(canvas);
+    div.innerHTML += `<div class="label">${item.label}</div><div class="size">${item.size}×${item.size} — ${item.use}</div>`;
+    grid.appendChild(div);
+  }
+}
+
+function downloadAll(type) {
+  const allSections = ['favicon', 'app', 'social', 'logo'];
+  if (type === 'icon' || type === 'both') {
+    for (const section of allSections) {
+      for (const item of SIZES[section]) {
+        const canvas = createCanvas(item.size, { withBg: true, simplified: item.size <= 48 });
+        downloadCanvas(canvas, `bitfs-icon-${item.size}.png`);
+      }
+    }
+  }
+  if (type === 'mark' || type === 'both') {
+    for (const item of SIZES.mark) {
+      const canvas = createCanvas(item.size, { withBg: false });
+      downloadCanvas(canvas, `bitfs-mark-${item.size}.png`);
+    }
+  }
+}
+
+function drawOG(ctx) {
+  const w = 1200, h = 630;
+  // Background
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw icon centered-left
+  ctx.save();
+  const iconSize = 360;
+  const iconX = 120;
+  const iconY = (h - iconSize) / 2;
+  ctx.translate(iconX, iconY);
+  const s = iconSize / 400;
+  ctx.scale(s, s);
+
+  ctx.font = '800 220px Inter, system-ui, -apple-system, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  const shadows = [
+    { x: 140, y: 289, opacity: 0.06 },
+    { x: 124, y: 273, opacity: 0.12 },
+    { x: 108, y: 257, opacity: 0.20 },
+    { x: 92, y: 241, opacity: 0.35 },
+  ];
+  for (const sh of shadows) {
+    ctx.globalAlpha = sh.opacity;
+    ctx.fillStyle = COLORS.goldDark;
+    ctx.fillText('B', sh.x, sh.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = COLORS.gold;
+  ctx.fillText('B', 76, 225);
+  ctx.restore();
+
+  // Text: "BitFS"
+  ctx.font = '800 72px Inter, system-ui, sans-serif';
+  ctx.fillStyle = COLORS.gold;
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BitFS', 540, h / 2 - 30);
+
+  // Tagline
+  ctx.font = '400 22px Inter, system-ui, sans-serif';
+  ctx.fillStyle = '#8a8078';
+  ctx.fillText('Peer-to-Peer Encrypted File System', 540, h / 2 + 30);
+}
+
+function renderOG() {
+  const grid = document.getElementById('og-grid');
+  const div = document.createElement('div');
+  div.className = 'item';
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 630;
+  canvas.style.width = '480px';
+  canvas.style.height = '252px';
+  const ctx = canvas.getContext('2d');
+  drawOG(ctx);
+  canvas.title = 'Click to download bitfs-og-1200x630.png';
+  canvas.onclick = () => downloadCanvas(canvas, 'bitfs-og-1200x630.png');
+  div.appendChild(canvas);
+  div.innerHTML += '<div class="label">og-image</div><div class="size">1200×630 — Open Graph / Twitter Card</div>';
+  grid.appendChild(div);
+}
+
+// Wait for font to load
+document.fonts.ready.then(() => {
+  renderSection('favicon-grid', SIZES.favicon);
+  renderSection('app-grid', SIZES.app);
+  renderSection('social-grid', SIZES.social);
+  renderSection('logo-grid', SIZES.logo);
+  renderSection('mark-grid', SIZES.mark, { withBg: false });
+  renderOG();
+});
+</script>
+</body>
+</html>
