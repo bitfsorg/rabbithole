@@ -1,4 +1,4 @@
-module github.com/tongxiaofeng/den
+module github.com/tongxiaofeng/den-explorer
 
 go 1.25.6
 

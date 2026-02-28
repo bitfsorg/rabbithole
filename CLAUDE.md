@@ -30,7 +30,7 @@ RabbitHole/
 ├── metanet/           ← Metanet Go 实现 (CDN 节点)
 ├── libbitfs-go/       ← 共享核心库 Go (独立 repo)
 ├── libbitfs-ts/       ← 共享核心库 TypeScript (待开发)
-├── den/               ← BitFS 区块链浏览器 (Go + htmx)
+├── den-explorer/      ← BitFS 区块链浏览器 (Go + htmx)
 ├── git-remote-bitfs/  ← Git remote helper (独立 repo)
 ├── bitfs-app/         ← BitFS 桌面/移动客户端 (Flutter, 独立 repo)
 ├── bitfs-extension/   ← BitFS 浏览器扩展 (TypeScript, 独立 repo)
@@ -95,7 +95,7 @@ Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/t
 
 **状态**: Phase 1（chain/mining）完成，Phase 2（contract）进行中。`docs/spec/` 下 7 个模块规格说明。
 
-### den/ — 区块链浏览器
+### den-explorer/ — 区块链浏览器
 
 BSV 区块链浏览器，支持 BitFS/Metanet 协议解码。用于 regtest/testnet 调试。
 
