@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/bitfsorg/bitfs/internal/client"
 )
 
 func TestCatResponse_TextContent(t *testing.T) {

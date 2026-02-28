@@ -13,9 +13,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs-go/storage"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/bitfs/internal/daemon"
+	"github.com/bitfsorg/libbitfs-go/storage"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // --- Mock SPV service for E2E testing ---

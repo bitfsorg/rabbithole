@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/metanet/internal/config"
+	"github.com/bitfsorg/metanet/internal/config"
 )
 
 // cmdContracts handles the "metanet contracts" command.

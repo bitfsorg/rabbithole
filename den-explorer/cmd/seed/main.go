@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/bsv-blockchain/go-sdk/script"
-	"github.com/tongxiaofeng/libbitfs-go/metanet"
-	"github.com/tongxiaofeng/libbitfs-go/network"
-	"github.com/tongxiaofeng/libbitfs-go/tx"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/libbitfs-go/metanet"
+	"github.com/bitfsorg/libbitfs-go/network"
+	"github.com/bitfsorg/libbitfs-go/tx"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 func main() {

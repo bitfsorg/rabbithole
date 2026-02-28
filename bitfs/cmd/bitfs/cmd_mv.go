@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/libbitfs-go/config"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/config"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // runMv handles the "bitfs mv" command.

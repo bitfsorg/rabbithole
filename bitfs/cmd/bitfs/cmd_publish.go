@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/bitfs/internal/publish"
-	"github.com/tongxiaofeng/libbitfs-go/config"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/bitfs/internal/publish"
+	"github.com/bitfsorg/libbitfs-go/config"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // runPublish handles the "bitfs publish" command.

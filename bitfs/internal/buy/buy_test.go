@@ -13,9 +13,9 @@ import (
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/libbitfs-go/network"
-	"github.com/tongxiaofeng/libbitfs-go/x402"
+	"github.com/bitfsorg/bitfs/internal/client"
+	"github.com/bitfsorg/libbitfs-go/network"
+	"github.com/bitfsorg/libbitfs-go/x402"
 )
 
 // testAddr returns a base58 P2PKH address from a 20-byte PKH (testnet).

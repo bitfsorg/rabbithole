@@ -14,10 +14,10 @@ import (
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs-go/method42"
-	"github.com/tongxiaofeng/libbitfs-go/storage"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/bitfs/internal/daemon"
+	"github.com/bitfsorg/libbitfs-go/method42"
+	"github.com/bitfsorg/libbitfs-go/storage"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // --- Mock implementations for daemon integration ---

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/tongxiaofeng/libbitfs-go/network"
-	"github.com/tongxiaofeng/libbitfs-go/x402"
+	"github.com/bitfsorg/libbitfs-go/network"
+	"github.com/bitfsorg/libbitfs-go/x402"
 )
 
 // ErrInsufficientBalance is returned when available UTXOs cannot cover the

@@ -45,7 +45,7 @@ RabbitHole/
 
 ### bitfs/ — BitFS CLI + Daemon
 
-Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/tongxiaofeng/bitfs`
+Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/bitfsorg/bitfs`
 
 **架构三层**:
 - `cmd/bitfs/` — 主 CLI（wallet/vault/put/mkdir/rm/mv/cp/link/sell/encrypt/publish/shell/daemon）
@@ -64,7 +64,7 @@ Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/t
 
 ### libbitfs-go/ — 共享核心库 (Go)
 
-独立 Git 仓库。Module: `github.com/tongxiaofeng/libbitfs-go`。bitfs/go.mod 通过 `replace => ../libbitfs-go` 引用。
+独立 Git 仓库。Module: `github.com/bitfsorg/libbitfs-go`。bitfs/go.mod 通过 `replace => ../libbitfs-go` 引用。
 
 **10 个包**:
 

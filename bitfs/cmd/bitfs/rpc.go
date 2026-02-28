@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/libbitfs-go/network"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/network"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // configureChain resolves RPC configuration and attaches a BlockchainService

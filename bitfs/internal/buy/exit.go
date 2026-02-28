@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/bitfsorg/bitfs/internal/client"
 )
 
 // ExitCodeFromError maps a client error to a CLI exit code.

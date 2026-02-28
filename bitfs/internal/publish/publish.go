@@ -8,7 +8,7 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // DNSResolver is an interface for DNS TXT record lookups.

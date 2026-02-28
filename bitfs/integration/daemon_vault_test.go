@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/bitfs/internal/daemon"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // createDaemonWithEngine creates a real Engine wired into a Daemon via adapters

@@ -8,8 +8,8 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/bitfs/e2e/testutil"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // TestWalletFund verifies that HD wallet key derivation produces real addresses

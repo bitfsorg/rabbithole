@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/tongxiaofeng/libbitfs-go/network"
+	"github.com/bitfsorg/libbitfs-go/network"
 )
 
 // ChainInfo holds blockchain summary from getblockchaininfo.

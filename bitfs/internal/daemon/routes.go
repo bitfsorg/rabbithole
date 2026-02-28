@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/tongxiaofeng/libbitfs-go/paymail"
+	"github.com/bitfsorg/libbitfs-go/paymail"
 )
 
 // RegisterRoutes registers all HTTP handlers on the provided mux.

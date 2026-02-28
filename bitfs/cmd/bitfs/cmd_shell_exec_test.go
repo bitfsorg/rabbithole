@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // newTestShellCtx creates a shellCtx backed by a pre-populated vault for testing.

@@ -16,7 +16,7 @@ import (
 	"github.com/bsv-blockchain/go-sdk/transaction"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/libbitfs-go/x402"
+	"github.com/bitfsorg/libbitfs-go/x402"
 )
 
 // testPaymentAddr is a well-known Bitcoin address used in tests.

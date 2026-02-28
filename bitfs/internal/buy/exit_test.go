@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/bitfsorg/bitfs/internal/client"
 )
 
 func TestExitCodeFromError(t *testing.T) {

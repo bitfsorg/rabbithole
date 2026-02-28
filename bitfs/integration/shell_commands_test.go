@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/bitfs/internal/publish"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/bitfs/internal/client"
+	"github.com/bitfsorg/bitfs/internal/publish"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // =============================================================================

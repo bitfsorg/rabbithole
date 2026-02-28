@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/tongxiaofeng/libbitfs-go/metanet"
-	libtx "github.com/tongxiaofeng/libbitfs-go/tx"
+	"github.com/bitfsorg/libbitfs-go/metanet"
+	libtx "github.com/bitfsorg/libbitfs-go/tx"
 )
 
 func TestDecodeMetanetTx_NonMetanet(t *testing.T) {

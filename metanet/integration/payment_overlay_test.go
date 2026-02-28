@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tongxiaofeng/metanet/internal/overlay"
-	"github.com/tongxiaofeng/metanet/internal/payment"
+	"github.com/bitfsorg/metanet/internal/overlay"
+	"github.com/bitfsorg/metanet/internal/payment"
 )
 
 // makePaymentPubKey creates a valid 33-byte compressed public key.

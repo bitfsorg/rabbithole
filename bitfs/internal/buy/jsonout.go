@@ -3,7 +3,7 @@
 // wallet configuration, UTXO selection, and the unified buy flow.
 package buy
 
-import "github.com/tongxiaofeng/bitfs/internal/client"
+import "github.com/bitfsorg/bitfs/internal/client"
 
 // CatResponse is the JSON output for bcat --json.
 type CatResponse struct {

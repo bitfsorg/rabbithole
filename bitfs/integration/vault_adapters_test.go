@@ -9,9 +9,9 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
-	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/bitfs/internal/daemon"
+	"github.com/bitfsorg/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // testWalletAdapter implements daemon.WalletService for integration tests.

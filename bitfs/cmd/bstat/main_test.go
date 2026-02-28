@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/bitfsorg/bitfs/internal/client"
 )
 
 // testPubKey is a well-known compressed public key hex (33 bytes, prefix 02).

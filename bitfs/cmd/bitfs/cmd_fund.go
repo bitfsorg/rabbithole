@@ -15,9 +15,9 @@ import (
 	"github.com/bsv-blockchain/go-sdk/script"
 	qrterminal "github.com/mdp/qrterminal/v3"
 
-	"github.com/tongxiaofeng/libbitfs-go/config"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/libbitfs-go/config"
+	"github.com/bitfsorg/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // runWalletFund handles the "bitfs wallet fund" command.

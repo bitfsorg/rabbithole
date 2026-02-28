@@ -14,8 +14,8 @@ import (
 
 	bsvhash "github.com/bsv-blockchain/go-sdk/primitives/hash"
 
-	"github.com/tongxiaofeng/libbitfs-go/vault"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // ---------------------------------------------------------------------------

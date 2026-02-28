@@ -11,8 +11,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/tongxiaofeng/metanet/internal/chain"
-	"github.com/tongxiaofeng/metanet/internal/mining"
+	"github.com/bitfsorg/metanet/internal/chain"
+	"github.com/bitfsorg/metanet/internal/mining"
 )
 
 // ---------------------------------------------------------------------------

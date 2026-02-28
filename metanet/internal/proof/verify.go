@@ -7,7 +7,7 @@ package proof
 import (
 	"crypto/sha256"
 
-	"github.com/tongxiaofeng/metanet/internal/contract"
+	"github.com/bitfsorg/metanet/internal/contract"
 )
 
 // ProofData is what the Metanet Node submits to claim a period's payment.

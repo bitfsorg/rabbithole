@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/tongxiaofeng/metanet/internal/config"
+	"github.com/bitfsorg/metanet/internal/config"
 )
 
 // cmdStop handles the "metanet stop" command.

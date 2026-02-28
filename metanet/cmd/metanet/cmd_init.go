@@ -13,7 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tongxiaofeng/metanet/internal/config"
+	"github.com/bitfsorg/metanet/internal/config"
 )
 
 // cmdInit handles the "metanet init" command.

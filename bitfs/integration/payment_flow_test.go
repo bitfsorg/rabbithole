@@ -16,10 +16,10 @@ import (
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
 
-	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs-go/method42"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
-	"github.com/tongxiaofeng/libbitfs-go/x402"
+	"github.com/bitfsorg/bitfs/internal/daemon"
+	"github.com/bitfsorg/libbitfs-go/method42"
+	"github.com/bitfsorg/libbitfs-go/wallet"
+	"github.com/bitfsorg/libbitfs-go/x402"
 )
 
 // --- Mock wallet service for daemon ---

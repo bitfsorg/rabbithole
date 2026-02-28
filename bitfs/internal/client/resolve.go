@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tongxiaofeng/libbitfs-go/paymail"
+	"github.com/bitfsorg/libbitfs-go/paymail"
 )
 
 // ResolveResult holds the resolved connection parameters from a bitfs:// URI.

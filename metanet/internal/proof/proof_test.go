@@ -9,7 +9,7 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	"github.com/tongxiaofeng/metanet/internal/contract"
+	"github.com/bitfsorg/metanet/internal/contract"
 )
 
 // testOwnerPrivKey is a 32-byte private key for testing.

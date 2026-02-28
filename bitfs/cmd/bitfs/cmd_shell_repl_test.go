@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // ---------------------------------------------------------------------------

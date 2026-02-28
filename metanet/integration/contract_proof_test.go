@@ -11,8 +11,8 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	"github.com/tongxiaofeng/metanet/internal/contract"
-	"github.com/tongxiaofeng/metanet/internal/proof"
+	"github.com/bitfsorg/metanet/internal/contract"
+	"github.com/bitfsorg/metanet/internal/proof"
 )
 
 // makeTestPubKey creates a valid 33-byte compressed public key from a seed.

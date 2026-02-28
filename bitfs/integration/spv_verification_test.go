@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/libbitfs-go/spv"
+	"github.com/bitfsorg/libbitfs-go/spv"
 )
 
 // randomHash generates a cryptographically random 32-byte hash.

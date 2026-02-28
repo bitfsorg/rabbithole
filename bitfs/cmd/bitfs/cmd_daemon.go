@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/libbitfs-go/config"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/bitfs/internal/daemon"
+	"github.com/bitfsorg/libbitfs-go/config"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // runDaemon dispatches daemon subcommands.

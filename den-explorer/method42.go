@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/tongxiaofeng/libbitfs-go/metanet"
+	"github.com/bitfsorg/libbitfs-go/metanet"
 )
 
 // Method42Analysis holds the encryption analysis for a Metanet node.

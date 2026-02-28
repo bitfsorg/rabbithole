@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tongxiaofeng/libbitfs-go/config"
+	"github.com/bitfsorg/libbitfs-go/config"
 )
 
 // runVault dispatches vault subcommands.

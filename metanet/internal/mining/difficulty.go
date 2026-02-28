@@ -7,7 +7,7 @@ package mining
 import (
 	"math/big"
 
-	"github.com/tongxiaofeng/metanet/internal/chain"
+	"github.com/bitfsorg/metanet/internal/chain"
 )
 
 // CalcNextDifficulty computes the new compact difficulty target for the next

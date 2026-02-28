@@ -8,7 +8,7 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/tongxiaofeng/metanet/internal/config"
+	"github.com/bitfsorg/metanet/internal/config"
 )
 
 // cmdMine handles the "metanet mine" command.

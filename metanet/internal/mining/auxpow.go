@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 
-	"github.com/tongxiaofeng/metanet/internal/chain"
+	"github.com/bitfsorg/metanet/internal/chain"
 )
 
 // AuxPowMagic is the 4-byte marker embedded in parent chain coinbase

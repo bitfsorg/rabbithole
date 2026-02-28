@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/tongxiaofeng/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/vault"
 )
 
 // shellCompleter implements readline.AutoCompleter for the BitFS shell.

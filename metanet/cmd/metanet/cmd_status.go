@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tongxiaofeng/metanet/internal/config"
+	"github.com/bitfsorg/metanet/internal/config"
 )
 
 // nodeStatus represents the JSON output of the status command.

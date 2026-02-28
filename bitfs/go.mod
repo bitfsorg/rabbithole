@@ -1,4 +1,4 @@
-module github.com/tongxiaofeng/bitfs
+module github.com/bitfsorg/bitfs
 
 go 1.25.6
 
@@ -7,11 +7,11 @@ require (
 	github.com/ergochat/readline v0.1.3
 	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/stretchr/testify v1.11.1
-	github.com/tongxiaofeng/libbitfs-go v0.0.0
+	github.com/bitfsorg/libbitfs-go v0.0.0
 	golang.org/x/term v0.40.0
 )
 
-replace github.com/tongxiaofeng/libbitfs-go => ../libbitfs-go
+replace github.com/bitfsorg/libbitfs-go => ../libbitfs-go
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

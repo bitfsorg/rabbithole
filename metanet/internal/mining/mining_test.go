@@ -10,7 +10,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/tongxiaofeng/metanet/internal/chain"
+	"github.com/bitfsorg/metanet/internal/chain"
 )
 
 // ---------------------------------------------------------------------------

@@ -9,9 +9,9 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/libbitfs-go/tx"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/bitfs/e2e/testutil"
+	"github.com/bitfsorg/libbitfs-go/tx"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // TestDoubleSpendRejected builds and broadcasts a valid Metanet root tx, then

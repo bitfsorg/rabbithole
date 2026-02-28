@@ -21,9 +21,9 @@ import (
 	"time"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/tongxiaofeng/bitfs/internal/buy"
-	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/libbitfs-go/method42"
+	"github.com/bitfsorg/bitfs/internal/buy"
+	"github.com/bitfsorg/bitfs/internal/client"
+	"github.com/bitfsorg/libbitfs-go/method42"
 )
 
 const maxContentSize = 1 << 30 // 1 GB

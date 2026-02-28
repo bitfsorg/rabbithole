@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/tongxiaofeng/bitfs/internal/buy"
-	"github.com/tongxiaofeng/bitfs/internal/client"
+	"github.com/bitfsorg/bitfs/internal/buy"
+	"github.com/bitfsorg/bitfs/internal/client"
 )
 
 func main() {

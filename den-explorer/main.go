@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/tongxiaofeng/libbitfs-go/network"
+	"github.com/bitfsorg/libbitfs-go/network"
 )
 
 func main() {

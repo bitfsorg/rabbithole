@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
-	"github.com/tongxiaofeng/libbitfs-go/x402"
+	"github.com/bitfsorg/libbitfs-go/x402"
 )
 
 // ErrNoBuyerConfig is returned when no wallet key is configured.

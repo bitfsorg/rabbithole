@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"github.com/tongxiaofeng/metanet/internal/chain"
+	"github.com/bitfsorg/metanet/internal/chain"
 )
 
 // AnchorMagic is the 4-byte marker for BSV anchor transactions.

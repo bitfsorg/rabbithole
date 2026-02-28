@@ -15,9 +15,9 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 
-	"github.com/tongxiaofeng/libbitfs-go/config"
-	"github.com/tongxiaofeng/libbitfs-go/vault"
-	"github.com/tongxiaofeng/libbitfs-go/wallet"
+	"github.com/bitfsorg/libbitfs-go/config"
+	"github.com/bitfsorg/libbitfs-go/vault"
+	"github.com/bitfsorg/libbitfs-go/wallet"
 )
 
 // runWallet dispatches wallet subcommands.
