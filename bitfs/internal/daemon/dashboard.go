@@ -43,13 +43,15 @@ func (d *Daemon) handleDashboardStorage(w http.ResponseWriter, _ *http.Request) 
 	var fileCount int
 	var totalSize int64
 
-	_ = filepath.Walk(storageDir, func(_ string, info os.FileInfo, err error) error {
+	_ = filepath.WalkDir(storageDir, func(_ string, entry os.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip errors
+			return filepath.SkipDir
 		}
-		if !info.IsDir() {
-			fileCount++
-			totalSize += info.Size()
+		if !entry.IsDir() {
+			if info, infoErr := entry.Info(); infoErr == nil {
+				fileCount++
+				totalSize += info.Size()
+			}
 		}
 		return nil
 	})
