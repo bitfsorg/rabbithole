@@ -17,10 +17,10 @@ const navItems = [
 
 function MainLayout() {
   return (
-    <div className="flex h-screen bg-gray-50 text-gray-900">
-      <aside className="flex w-56 flex-col border-r border-gray-200 bg-white">
-        <div className="flex h-14 items-center border-b border-gray-200 px-4">
-          <span className="text-lg font-semibold">BitFS</span>
+    <div className="flex h-screen bg-bg-primary text-text-primary">
+      <aside className="flex w-56 flex-col border-r border-border bg-bg-sidebar">
+        <div className="flex h-14 items-center border-b border-border px-4">
+          <span className="text-lg font-semibold text-accent">BitFS</span>
         </div>
         <nav className="flex-1 space-y-1 p-2">
           {navItems.map(({ to, label, icon: Icon }) => (
@@ -31,8 +31,8 @@ function MainLayout() {
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isActive
-                    ? "bg-gray-100 text-gray-900"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    ? "bg-bg-card text-accent"
+                    : "text-text-secondary hover:bg-bg-card hover:text-text-primary"
                 }`
               }
             >
@@ -41,6 +41,9 @@ function MainLayout() {
             </NavLink>
           ))}
         </nav>
+        <div className="border-t border-border p-3 text-xs text-text-muted">
+          BitFS LFCP Dashboard
+        </div>
       </aside>
       <main className="flex-1 overflow-auto p-6">
         <Outlet />

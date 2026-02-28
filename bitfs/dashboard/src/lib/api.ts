@@ -1,26 +1,44 @@
-/** Base URL for the BitFS daemon API. */
-export const API_BASE = "/_api";
+export const API_BASE = "/_bitfs/dashboard";
 
-/** Fetch daemon status (version, uptime, etc.). */
-// TODO: implement daemon HTTP client
-export async function getStatus(): Promise<unknown> {
-  throw new Error("not implemented");
+export interface StatusResponse {
+  version: string;
+  uptime_seconds: number;
+  listen_addr: string;
+  started_at: string;
+  mainnet: boolean;
+  vault_pnode?: string;
 }
 
-/** Fetch storage statistics (total files, disk usage, etc.). */
-// TODO: implement daemon HTTP client
-export async function getStorageStats(): Promise<unknown> {
-  throw new Error("not implemented");
+export interface StorageResponse {
+  file_count: number;
+  total_size_bytes: number;
+  storage_path: string;
 }
 
-/** Fetch wallet information (address, balance, etc.). */
-// TODO: implement daemon HTTP client
-export async function getWalletInfo(): Promise<unknown> {
-  throw new Error("not implemented");
+export interface WalletResponse {
+  available: boolean;
+  pubkey?: string;
 }
 
-/** Fetch connected network peers. */
-// TODO: implement daemon HTTP client
-export async function getNetworkPeers(): Promise<unknown> {
-  throw new Error("not implemented");
+export interface NetworkResponse {
+  mainnet: boolean;
+  spv_enabled: boolean;
+}
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
+export interface LogsResponse {
+  entries: LogEntry[];
+}
+
+export interface SaleRecord {
+  invoice_id: string;
+  price: number;
+  key_hash: string;
+  timestamp: number;
+  paid: boolean;
 }
