@@ -36,6 +36,7 @@ bitfs-app/
 bitfs-extension/
 git-remote-bitfs/
 libbitfs-go/
+libbitfs-ts/
 
 
 # Dashboard build output
