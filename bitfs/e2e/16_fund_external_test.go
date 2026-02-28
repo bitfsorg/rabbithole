@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 	"github.com/tongxiaofeng/libbitfs-go/tx"
 	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
@@ -99,7 +99,7 @@ func TestFundExternalUTXO(t *testing.T) {
 	// This simulates the `bitfs fund` command that scans for external UTXOs
 	// and adds them to the engine's local state.
 	// ==================================================================
-	eng.State.AddUTXO(&engine.UTXOState{
+	eng.State.AddUTXO(&vault.UTXOState{
 		TxID:         hex.EncodeToString(txidBytes),
 		Vout:         regtestUTXO.Vout,
 		Amount:       amountSat,
@@ -136,22 +136,20 @@ func TestFundExternalUTXO(t *testing.T) {
 	}
 
 	payload := []byte("external-funded root directory")
-	mtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     payload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	batch := tx.NewMutationBatch()
+	batch.AddCreateRoot(rootKey.PublicKey, payload)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(feeKey.PublicKey.Hash())
+	batch.SetFeeRate(1)
+	batchResult, err := batch.Build()
 	require.NoError(t, err, "build unsigned root tx from external UTXO")
-	require.NotEmpty(t, mtx.RawTx, "unsigned tx bytes should not be empty")
-	t.Logf("unsigned tx size: %d bytes", len(mtx.RawTx))
+	require.NotEmpty(t, batchResult.RawTx, "unsigned tx bytes should not be empty")
+	t.Logf("unsigned tx size: %d bytes", len(batchResult.RawTx))
 
 	// ==================================================================
 	// Step 7: Sign and broadcast the transaction.
 	// ==================================================================
-	signedHex, err := tx.SignMetanetTx(mtx, []*tx.UTXO{feeUTXO})
+	signedHex, err := batch.Sign(batchResult)
 	require.NoError(t, err, "sign metanet tx")
 	require.NotEmpty(t, signedHex, "signed hex should not be empty")
 	t.Logf("signed tx hex length: %d chars", len(signedHex))

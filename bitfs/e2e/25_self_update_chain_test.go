@@ -68,17 +68,15 @@ func TestMultipleUpdates(t *testing.T) {
 	// ==================================================================
 	// Step 2: Create root directory.
 	// ==================================================================
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     []byte("self-update chain test root"),
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, []byte("self-update chain test root"))
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
 	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -86,13 +84,13 @@ func TestMultipleUpdates(t *testing.T) {
 	t.Logf("root txid: %s", rootTxIDStr)
 	mineOneBlock(t)
 
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -102,20 +100,15 @@ func TestMultipleUpdates(t *testing.T) {
 	// ==================================================================
 	// Step 3: Create child directory.
 	// ==================================================================
-	dirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       []byte("self-update chain test dir"),
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirKey.PublicKey, rootResult.TxID, []byte("self-update chain test dir"), rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(changeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
 	require.NoError(t, err, "build dir tx")
 
-	dirSignedHex, err := tx.SignMetanetTx(dirMtx, []*tx.UTXO{rootNodeUTXO, changeUTXO})
+	dirSignedHex, err := dirBatch.Sign(dirResult)
 	require.NoError(t, err, "sign dir tx")
 
 	dirTxIDStr, err := node.SendRawTransaction(ctx, dirSignedHex)
@@ -123,13 +116,13 @@ func TestMultipleUpdates(t *testing.T) {
 	t.Logf("dir txid: %s", dirTxIDStr)
 	mineOneBlock(t)
 
-	dirNodeUTXO := dirMtx.NodeUTXO
+	dirNodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirNodeScript, err := tx.BuildP2PKHScript(dirKey.PublicKey)
 	require.NoError(t, err)
 	dirNodeUTXO.ScriptPubKey = dirNodeScript
 	dirNodeUTXO.PrivateKey = dirKey.PrivateKey
 
-	dirChangeUTXO := dirMtx.ChangeUTXO
+	dirChangeUTXO := dirResult.ChangeUTXO
 	require.NotNil(t, dirChangeUTXO, "dir tx should have change output")
 	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -148,20 +141,15 @@ func TestMultipleUpdates(t *testing.T) {
 	v0Payload = append(v0Payload, v0Enc.KeyHash...)
 	v0Payload = append(v0Payload, v0Enc.Ciphertext...)
 
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       v0Payload,
-		ParentUTXO:    dirNodeUTXO,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       dirChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, v0Payload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddFeeInput(dirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
 	require.NoError(t, err, "build file tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{dirNodeUTXO, dirChangeUTXO})
+	fileSignedHex, err := fileBatch.Sign(fileResult)
 	require.NoError(t, err, "sign file tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
@@ -186,13 +174,13 @@ func TestMultipleUpdates(t *testing.T) {
 	allContents := [][]byte{v0Content}
 
 	// Current node and fee UTXOs start from the file creation tx.
-	curNodeUTXO := fileMtx.NodeUTXO
+	curNodeUTXO := fileResult.NodeOps[0].NodeUTXO
 	fileNodeScript, err := tx.BuildP2PKHScript(fileKey.PublicKey)
 	require.NoError(t, err)
 	curNodeUTXO.ScriptPubKey = fileNodeScript
 	curNodeUTXO.PrivateKey = fileKey.PrivateKey
 
-	curFeeUTXO := fileMtx.ChangeUTXO
+	curFeeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, curFeeUTXO, "file tx should have change output")
 	feeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -210,19 +198,15 @@ func TestMultipleUpdates(t *testing.T) {
 			payload = append(payload, enc.Ciphertext...)
 
 			// Build self-update tx.
-			updateMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-				NodePubKey:  fileKey.PublicKey,
-				NodePrivKey: fileKey.PrivateKey,
-				ParentTxID:  dirMtx.TxID, // always same parent
-				Payload:     payload,
-				NodeUTXO:    curNodeUTXO,
-				FeeUTXO:     curFeeUTXO,
-				ChangeAddr:  feeKey.PublicKey.Hash(),
-				FeeRate:     1,
-			})
+			updateBatch := tx.NewMutationBatch()
+			updateBatch.AddSelfUpdate(fileKey.PublicKey, dirResult.TxID, payload, curNodeUTXO, fileKey.PrivateKey)
+			updateBatch.AddFeeInput(curFeeUTXO)
+			updateBatch.SetChange(feeKey.PublicKey.Hash())
+			updateBatch.SetFeeRate(1)
+			updateResult, err := updateBatch.Build()
 			require.NoError(t, err, "build self-update tx %s", ver.label)
 
-			signedHex, err := tx.SignMetanetTx(updateMtx, []*tx.UTXO{curNodeUTXO, curFeeUTXO})
+			signedHex, err := updateBatch.Sign(updateResult)
 			require.NoError(t, err, "sign self-update tx %s", ver.label)
 
 			txIDStr, err := node.SendRawTransaction(ctx, signedHex)
@@ -234,11 +218,11 @@ func TestMultipleUpdates(t *testing.T) {
 			allContents = append(allContents, ver.content)
 
 			// Advance the UTXO chain for the next iteration.
-			curNodeUTXO = updateMtx.NodeUTXO
+			curNodeUTXO = updateResult.NodeOps[0].NodeUTXO
 			curNodeUTXO.ScriptPubKey = fileNodeScript
 			curNodeUTXO.PrivateKey = fileKey.PrivateKey
 
-			curFeeUTXO = updateMtx.ChangeUTXO
+			curFeeUTXO = updateResult.ChangeUTXO
 			require.NotNil(t, curFeeUTXO, "%s tx should have change output", ver.label)
 			curFeeUTXO.ScriptPubKey = feeScript
 			curFeeUTXO.PrivateKey = feeKey.PrivateKey
@@ -278,7 +262,7 @@ func TestMultipleUpdates(t *testing.T) {
 				"%s P_node should match file key", label)
 
 			// All versions should link to the same parent (dir tx).
-			assert.Equal(t, dirMtx.TxID, parentTxID,
+			assert.Equal(t, dirResult.TxID, parentTxID,
 				"%s parentTxID should link to dir tx", label)
 
 			// Decrypt and verify content.
@@ -357,30 +341,28 @@ func TestUpdatePreservesIdentity(t *testing.T) {
 	// ==================================================================
 
 	// Root.
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     []byte("identity test root"),
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, []byte("identity test root"))
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
 	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	_, err = node.SendRawTransaction(ctx, rootSignedHex)
 	require.NoError(t, err, "broadcast root tx")
 	mineOneBlock(t)
 
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
-	rootChangeUTXO := rootMtx.ChangeUTXO
+	rootChangeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, rootChangeUTXO)
 	rootChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -388,33 +370,28 @@ func TestUpdatePreservesIdentity(t *testing.T) {
 	rootChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// Dir.
-	dirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       []byte("identity test dir"),
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       rootChangeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirKey.PublicKey, rootResult.TxID, []byte("identity test dir"), rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(rootChangeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
 	require.NoError(t, err, "build dir tx")
 
-	dirSignedHex, err := tx.SignMetanetTx(dirMtx, []*tx.UTXO{rootNodeUTXO, rootChangeUTXO})
+	dirSignedHex, err := dirBatch.Sign(dirResult)
 	require.NoError(t, err, "sign dir tx")
 
 	_, err = node.SendRawTransaction(ctx, dirSignedHex)
 	require.NoError(t, err, "broadcast dir tx")
 	mineOneBlock(t)
 
-	dirNodeUTXO := dirMtx.NodeUTXO
+	dirNodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirNodeScript, err := tx.BuildP2PKHScript(dirKey.PublicKey)
 	require.NoError(t, err)
 	dirNodeUTXO.ScriptPubKey = dirNodeScript
 	dirNodeUTXO.PrivateKey = dirKey.PrivateKey
 
-	dirChangeUTXO := dirMtx.ChangeUTXO
+	dirChangeUTXO := dirResult.ChangeUTXO
 	require.NotNil(t, dirChangeUTXO)
 	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -430,20 +407,15 @@ func TestUpdatePreservesIdentity(t *testing.T) {
 	origPayload = append(origPayload, origEnc.KeyHash...)
 	origPayload = append(origPayload, origEnc.Ciphertext...)
 
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       origPayload,
-		ParentUTXO:    dirNodeUTXO,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       dirChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, origPayload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddFeeInput(dirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
 	require.NoError(t, err, "build file tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{dirNodeUTXO, dirChangeUTXO})
+	fileSignedHex, err := fileBatch.Sign(fileResult)
 	require.NoError(t, err, "sign file tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
@@ -478,32 +450,28 @@ func TestUpdatePreservesIdentity(t *testing.T) {
 	updPayload = append(updPayload, updEnc.KeyHash...)
 	updPayload = append(updPayload, updEnc.Ciphertext...)
 
-	fileNodeUTXO := fileMtx.NodeUTXO
+	fileNodeUTXO := fileResult.NodeOps[0].NodeUTXO
 	fileNodeScript, err := tx.BuildP2PKHScript(fileKey.PublicKey)
 	require.NoError(t, err)
 	fileNodeUTXO.ScriptPubKey = fileNodeScript
 	fileNodeUTXO.PrivateKey = fileKey.PrivateKey
 
-	fileChangeUTXO := fileMtx.ChangeUTXO
+	fileChangeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
 	fileFeeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
 	fileChangeUTXO.ScriptPubKey = fileFeeScript
 	fileChangeUTXO.PrivateKey = feeKey.PrivateKey
 
-	updateMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-		NodePubKey:  fileKey.PublicKey,
-		NodePrivKey: fileKey.PrivateKey,
-		ParentTxID:  dirMtx.TxID, // preserve original parent link
-		Payload:     updPayload,
-		NodeUTXO:    fileNodeUTXO,
-		FeeUTXO:     fileChangeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	updateBatch := tx.NewMutationBatch()
+	updateBatch.AddSelfUpdate(fileKey.PublicKey, dirResult.TxID, updPayload, fileNodeUTXO, fileKey.PrivateKey)
+	updateBatch.AddFeeInput(fileChangeUTXO)
+	updateBatch.SetChange(feeKey.PublicKey.Hash())
+	updateBatch.SetFeeRate(1)
+	updateResult, err := updateBatch.Build()
 	require.NoError(t, err, "build self-update tx")
 
-	updateSignedHex, err := tx.SignMetanetTx(updateMtx, []*tx.UTXO{fileNodeUTXO, fileChangeUTXO})
+	updateSignedHex, err := updateBatch.Sign(updateResult)
 	require.NoError(t, err, "sign self-update tx")
 
 	updateTxIDStr, err := node.SendRawTransaction(ctx, updateSignedHex)

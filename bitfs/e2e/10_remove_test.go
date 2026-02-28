@@ -84,17 +84,15 @@ func TestRemoveFile(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs remove-file test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -103,14 +101,14 @@ func TestRemoveFile(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO for spending as parent edge.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx as next fee input.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -121,23 +119,15 @@ func TestRemoveFile(t *testing.T) {
 	// Step 3: Create dir under root (with file entry in payload).
 	// ==================================================================
 	dirPayload := buildDirPayload("docs", fileKey.PublicKey.Compressed())
-	dirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir tx")
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirKey.PublicKey, rootResult.TxID, dirPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(changeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
+	require.NoError(t, err, "build dir tx")
 
-	dirSignedHex, err := tx.SignMetanetTx(dirMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
+	dirSignedHex, err := dirBatch.Sign(dirResult)
 	require.NoError(t, err, "sign dir tx")
 
 	dirTxIDStr, err := node.SendRawTransaction(ctx, dirSignedHex)
@@ -146,14 +136,14 @@ func TestRemoveFile(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare dir's NodeUTXO for spending as parent edge.
-	dirNodeUTXO := dirMtx.NodeUTXO
+	dirNodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirNodeUTXOScript, err := tx.BuildP2PKHScript(dirKey.PublicKey)
 	require.NoError(t, err)
 	dirNodeUTXO.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXO.PrivateKey = dirKey.PrivateKey
 
 	// Prepare change from dir tx as next fee input.
-	dirChangeUTXO := dirMtx.ChangeUTXO
+	dirChangeUTXO := dirResult.ChangeUTXO
 	require.NotNil(t, dirChangeUTXO, "dir tx should have change output")
 	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -161,41 +151,36 @@ func TestRemoveFile(t *testing.T) {
 	dirChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 4: Create file under dir.
+	// Step 4: Create file under dir, and refresh dir UTXO via SelfUpdate
+	// in the same batch (since MutationBatch does not produce a parent
+	// refresh output for CreateChild).
 	// ==================================================================
 	filePayload := []byte("file content to be removed")
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    dirNodeUTXO,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       dirChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned file tx")
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, filePayload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddSelfUpdate(dirKey.PublicKey, rootResult.TxID, dirPayload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddFeeInput(dirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
+	require.NoError(t, err, "build file+dir-refresh tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		dirNodeUTXO,
-		dirChangeUTXO,
-	})
-	require.NoError(t, err, "sign file tx")
+	fileSignedHex, err := fileBatch.Sign(fileResult)
+	require.NoError(t, err, "sign file+dir-refresh tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
-	require.NoError(t, err, "broadcast file tx")
+	require.NoError(t, err, "broadcast file+dir-refresh tx")
 	t.Logf("file txid: %s", fileTxIDStr)
 	mineOneBlock(t)
 
-	// Prepare dir's refreshed NodeUTXO (output 2 of file tx = parent refresh).
-	dirNodeUTXORefresh := fileMtx.ParentUTXO
-	require.NotNil(t, dirNodeUTXORefresh, "file tx should refresh dir UTXO")
+	// Dir's refreshed NodeUTXO comes from the SelfUpdate op (index 1).
+	dirNodeUTXORefresh := fileResult.NodeOps[1].NodeUTXO
+	require.NotNil(t, dirNodeUTXORefresh, "dir SelfUpdate should produce refreshed UTXO")
 	dirNodeUTXORefresh.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXORefresh.PrivateKey = dirKey.PrivateKey
 
 	// Prepare change from file tx as next fee input.
-	fileChangeUTXO := fileMtx.ChangeUTXO
+	fileChangeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
 	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -209,23 +194,16 @@ func TestRemoveFile(t *testing.T) {
 		// Build a new directory version with empty children (file removed).
 		removedPayload := buildDirPayload("docs") // no file entries
 
-		removeMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-			NodePubKey:  dirKey.PublicKey,
-			NodePrivKey: dirKey.PrivateKey,
-			ParentTxID:  rootMtx.TxID, // preserve original parent link
-			Payload:     removedPayload,
-			NodeUTXO:    dirNodeUTXORefresh,
-			FeeUTXO:     fileChangeUTXO,
-			ChangeAddr:  feeKey.PublicKey.Hash(),
-			FeeRate:     1,
-		})
-		require.NoError(t, err, "build unsigned remove-file tx")
-		require.NotEmpty(t, removeMtx.RawTx)
+		removeBatch := tx.NewMutationBatch()
+		removeBatch.AddSelfUpdate(dirKey.PublicKey, rootResult.TxID, removedPayload, dirNodeUTXORefresh, dirKey.PrivateKey)
+		removeBatch.AddFeeInput(fileChangeUTXO)
+		removeBatch.SetChange(feeKey.PublicKey.Hash())
+		removeBatch.SetFeeRate(1)
+		removeResult, err := removeBatch.Build()
+		require.NoError(t, err, "build remove-file tx")
+		require.NotEmpty(t, removeResult.RawTx)
 
-		removeSignedHex, err := tx.SignMetanetTx(removeMtx, []*tx.UTXO{
-			dirNodeUTXORefresh,
-			fileChangeUTXO,
-		})
+		removeSignedHex, err := removeBatch.Sign(removeResult)
 		require.NoError(t, err, "sign remove-file tx")
 
 		removeTxIDStr, err := node.SendRawTransaction(ctx, removeSignedHex)
@@ -254,7 +232,7 @@ func TestRemoveFile(t *testing.T) {
 			"updated dir P_node should still be dir key")
 
 		// Verify parentTxID preserved.
-		assert.Equal(t, rootMtx.TxID, parentTxID,
+		assert.Equal(t, rootResult.TxID, parentTxID,
 			"updated dir parentTxID should still link to root")
 
 		// Verify file entry removed from payload.
@@ -348,17 +326,15 @@ func TestRemoveDirectory(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs remove-directory test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -367,14 +343,14 @@ func TestRemoveDirectory(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO for spending as parent edge.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx as next fee input.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -385,23 +361,15 @@ func TestRemoveDirectory(t *testing.T) {
 	// Step 3: Create dir_parent under root (with dir_child entry in payload).
 	// ==================================================================
 	dirParentPayload := buildDirPayload("parent", dirChildKey.PublicKey.Compressed())
-	dirParentMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirParentKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirParentPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir_parent tx")
+	dirParentBatch := tx.NewMutationBatch()
+	dirParentBatch.AddCreateChild(dirParentKey.PublicKey, rootResult.TxID, dirParentPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirParentBatch.AddFeeInput(changeUTXO)
+	dirParentBatch.SetChange(feeKey.PublicKey.Hash())
+	dirParentBatch.SetFeeRate(1)
+	dirParentResult, err := dirParentBatch.Build()
+	require.NoError(t, err, "build dir_parent tx")
 
-	dirParentSignedHex, err := tx.SignMetanetTx(dirParentMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
+	dirParentSignedHex, err := dirParentBatch.Sign(dirParentResult)
 	require.NoError(t, err, "sign dir_parent tx")
 
 	dirParentTxIDStr, err := node.SendRawTransaction(ctx, dirParentSignedHex)
@@ -410,14 +378,14 @@ func TestRemoveDirectory(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare dir_parent's NodeUTXO for spending as parent edge.
-	dirParentNodeUTXO := dirParentMtx.NodeUTXO
+	dirParentNodeUTXO := dirParentResult.NodeOps[0].NodeUTXO
 	dirParentNodeUTXOScript, err := tx.BuildP2PKHScript(dirParentKey.PublicKey)
 	require.NoError(t, err)
 	dirParentNodeUTXO.ScriptPubKey = dirParentNodeUTXOScript
 	dirParentNodeUTXO.PrivateKey = dirParentKey.PrivateKey
 
 	// Prepare change from dir_parent tx as next fee input.
-	dirParentChangeUTXO := dirParentMtx.ChangeUTXO
+	dirParentChangeUTXO := dirParentResult.ChangeUTXO
 	require.NotNil(t, dirParentChangeUTXO, "dir_parent tx should have change output")
 	dirParentChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -425,41 +393,35 @@ func TestRemoveDirectory(t *testing.T) {
 	dirParentChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 4: Create dir_child under dir_parent.
+	// Step 4: Create dir_child under dir_parent, and refresh dir_parent
+	// UTXO via SelfUpdate in the same batch.
 	// ==================================================================
 	dirChildPayload := []byte("child directory to be removed")
-	dirChildMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirChildKey.PublicKey,
-		ParentTxID:    dirParentMtx.TxID,
-		Payload:       dirChildPayload,
-		ParentUTXO:    dirParentNodeUTXO,
-		ParentPrivKey: dirParentKey.PrivateKey,
-		FeeUTXO:       dirParentChangeUTXO,
-		ParentPubKey:  dirParentKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir_child tx")
+	dirChildBatch := tx.NewMutationBatch()
+	dirChildBatch.AddCreateChild(dirChildKey.PublicKey, dirParentResult.TxID, dirChildPayload, dirParentNodeUTXO, dirParentKey.PrivateKey)
+	dirChildBatch.AddSelfUpdate(dirParentKey.PublicKey, rootResult.TxID, dirParentPayload, dirParentNodeUTXO, dirParentKey.PrivateKey)
+	dirChildBatch.AddFeeInput(dirParentChangeUTXO)
+	dirChildBatch.SetChange(feeKey.PublicKey.Hash())
+	dirChildBatch.SetFeeRate(1)
+	dirChildResult, err := dirChildBatch.Build()
+	require.NoError(t, err, "build dir_child+parent-refresh tx")
 
-	dirChildSignedHex, err := tx.SignMetanetTx(dirChildMtx, []*tx.UTXO{
-		dirParentNodeUTXO,
-		dirParentChangeUTXO,
-	})
-	require.NoError(t, err, "sign dir_child tx")
+	dirChildSignedHex, err := dirChildBatch.Sign(dirChildResult)
+	require.NoError(t, err, "sign dir_child+parent-refresh tx")
 
 	dirChildTxIDStr, err := node.SendRawTransaction(ctx, dirChildSignedHex)
-	require.NoError(t, err, "broadcast dir_child tx")
+	require.NoError(t, err, "broadcast dir_child+parent-refresh tx")
 	t.Logf("dir_child txid: %s", dirChildTxIDStr)
 	mineOneBlock(t)
 
-	// Prepare dir_parent's refreshed NodeUTXO (output 2 of dir_child tx).
-	dirParentNodeUTXORefresh := dirChildMtx.ParentUTXO
-	require.NotNil(t, dirParentNodeUTXORefresh, "dir_child tx should refresh dir_parent UTXO")
+	// Dir_parent's refreshed NodeUTXO comes from the SelfUpdate op (index 1).
+	dirParentNodeUTXORefresh := dirChildResult.NodeOps[1].NodeUTXO
+	require.NotNil(t, dirParentNodeUTXORefresh, "dir_parent SelfUpdate should produce refreshed UTXO")
 	dirParentNodeUTXORefresh.ScriptPubKey = dirParentNodeUTXOScript
 	dirParentNodeUTXORefresh.PrivateKey = dirParentKey.PrivateKey
 
 	// Prepare change from dir_child tx as next fee input.
-	dirChildChangeUTXO := dirChildMtx.ChangeUTXO
+	dirChildChangeUTXO := dirChildResult.ChangeUTXO
 	require.NotNil(t, dirChildChangeUTXO, "dir_child tx should have change output")
 	dirChildChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -473,23 +435,16 @@ func TestRemoveDirectory(t *testing.T) {
 		// Build a new directory version with empty children (dir_child removed).
 		removedPayload := buildDirPayload("parent") // no child entries
 
-		removeMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-			NodePubKey:  dirParentKey.PublicKey,
-			NodePrivKey: dirParentKey.PrivateKey,
-			ParentTxID:  rootMtx.TxID, // preserve original parent link
-			Payload:     removedPayload,
-			NodeUTXO:    dirParentNodeUTXORefresh,
-			FeeUTXO:     dirChildChangeUTXO,
-			ChangeAddr:  feeKey.PublicKey.Hash(),
-			FeeRate:     1,
-		})
-		require.NoError(t, err, "build unsigned remove-dir tx")
-		require.NotEmpty(t, removeMtx.RawTx)
+		removeBatch := tx.NewMutationBatch()
+		removeBatch.AddSelfUpdate(dirParentKey.PublicKey, rootResult.TxID, removedPayload, dirParentNodeUTXORefresh, dirParentKey.PrivateKey)
+		removeBatch.AddFeeInput(dirChildChangeUTXO)
+		removeBatch.SetChange(feeKey.PublicKey.Hash())
+		removeBatch.SetFeeRate(1)
+		removeResult, err := removeBatch.Build()
+		require.NoError(t, err, "build remove-dir tx")
+		require.NotEmpty(t, removeResult.RawTx)
 
-		removeSignedHex, err := tx.SignMetanetTx(removeMtx, []*tx.UTXO{
-			dirParentNodeUTXORefresh,
-			dirChildChangeUTXO,
-		})
+		removeSignedHex, err := removeBatch.Sign(removeResult)
 		require.NoError(t, err, "sign remove-dir tx")
 
 		removeTxIDStr, err := node.SendRawTransaction(ctx, removeSignedHex)
@@ -518,7 +473,7 @@ func TestRemoveDirectory(t *testing.T) {
 			"updated dir_parent P_node should still be dir_parent key")
 
 		// Verify parentTxID preserved.
-		assert.Equal(t, rootMtx.TxID, parentTxID,
+		assert.Equal(t, rootResult.TxID, parentTxID,
 			"updated dir_parent parentTxID should still link to root")
 
 		// Verify dir_child entry removed from payload.
@@ -616,17 +571,15 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs remove-verify-dag test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -635,14 +588,14 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO for spending as parent edge.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx as next fee input.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -653,23 +606,15 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 	// Step 3: Create dir under root (with file entry in payload).
 	// ==================================================================
 	dirPayload := buildDirPayload("docs", fileKey.PublicKey.Compressed())
-	dirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir tx")
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirKey.PublicKey, rootResult.TxID, dirPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(changeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
+	require.NoError(t, err, "build dir tx")
 
-	dirSignedHex, err := tx.SignMetanetTx(dirMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
+	dirSignedHex, err := dirBatch.Sign(dirResult)
 	require.NoError(t, err, "sign dir tx")
 
 	dirTxIDStr, err := node.SendRawTransaction(ctx, dirSignedHex)
@@ -678,14 +623,14 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare dir's NodeUTXO for spending as parent edge.
-	dirNodeUTXO := dirMtx.NodeUTXO
+	dirNodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirNodeUTXOScript, err := tx.BuildP2PKHScript(dirKey.PublicKey)
 	require.NoError(t, err)
 	dirNodeUTXO.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXO.PrivateKey = dirKey.PrivateKey
 
 	// Prepare change from dir tx as next fee input.
-	dirChangeUTXO := dirMtx.ChangeUTXO
+	dirChangeUTXO := dirResult.ChangeUTXO
 	require.NotNil(t, dirChangeUTXO, "dir tx should have change output")
 	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -693,41 +638,35 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 	dirChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 4: Create file under dir.
+	// Step 4: Create file under dir, and refresh dir UTXO via SelfUpdate
+	// in the same batch.
 	// ==================================================================
 	filePayload := []byte("file content for DAG verification test")
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    dirNodeUTXO,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       dirChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned file tx")
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, filePayload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddSelfUpdate(dirKey.PublicKey, rootResult.TxID, dirPayload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddFeeInput(dirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
+	require.NoError(t, err, "build file+dir-refresh tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		dirNodeUTXO,
-		dirChangeUTXO,
-	})
-	require.NoError(t, err, "sign file tx")
+	fileSignedHex, err := fileBatch.Sign(fileResult)
+	require.NoError(t, err, "sign file+dir-refresh tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
-	require.NoError(t, err, "broadcast file tx")
+	require.NoError(t, err, "broadcast file+dir-refresh tx")
 	t.Logf("file txid: %s", fileTxIDStr)
 	mineOneBlock(t)
 
-	// Prepare dir's refreshed NodeUTXO (output 2 of file tx = parent refresh).
-	dirNodeUTXORefresh := fileMtx.ParentUTXO
-	require.NotNil(t, dirNodeUTXORefresh, "file tx should refresh dir UTXO")
+	// Dir's refreshed NodeUTXO comes from the SelfUpdate op (index 1).
+	dirNodeUTXORefresh := fileResult.NodeOps[1].NodeUTXO
+	require.NotNil(t, dirNodeUTXORefresh, "dir SelfUpdate should produce refreshed UTXO")
 	dirNodeUTXORefresh.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXORefresh.PrivateKey = dirKey.PrivateKey
 
 	// Prepare change from file tx as next fee input.
-	fileChangeUTXO := fileMtx.ChangeUTXO
+	fileChangeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
 	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -739,22 +678,15 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 	// ==================================================================
 	removedPayload := buildDirPayload("docs") // no file entries
 
-	removeMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-		NodePubKey:  dirKey.PublicKey,
-		NodePrivKey: dirKey.PrivateKey,
-		ParentTxID:  rootMtx.TxID, // preserve original parent link
-		Payload:     removedPayload,
-		NodeUTXO:    dirNodeUTXORefresh,
-		FeeUTXO:     fileChangeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned remove tx")
+	removeBatch := tx.NewMutationBatch()
+	removeBatch.AddSelfUpdate(dirKey.PublicKey, rootResult.TxID, removedPayload, dirNodeUTXORefresh, dirKey.PrivateKey)
+	removeBatch.AddFeeInput(fileChangeUTXO)
+	removeBatch.SetChange(feeKey.PublicKey.Hash())
+	removeBatch.SetFeeRate(1)
+	removeResult, err := removeBatch.Build()
+	require.NoError(t, err, "build remove tx")
 
-	removeSignedHex, err := tx.SignMetanetTx(removeMtx, []*tx.UTXO{
-		dirNodeUTXORefresh,
-		fileChangeUTXO,
-	})
+	removeSignedHex, err := removeBatch.Sign(removeResult)
 	require.NoError(t, err, "sign remove tx")
 
 	removeTxIDStr, err := node.SendRawTransaction(ctx, removeSignedHex)
@@ -794,7 +726,9 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 		assert.Equal(t, rootTxIDBytes, dirParentTxID,
 			"dir parentTxID should match root txid")
 
-		// Verify file tx is on-chain with correct parent link.
+		// Verify file OP_RETURN is on-chain with correct parent link.
+		// The file was created in a combined batch (file + dir refresh),
+		// so the file's OP_RETURN is at output 0 of the file tx.
 		fileRaw, err := node.GetRawTransaction(ctx, fileTxIDStr)
 		require.NoError(t, err, "get file tx from chain")
 		fileParsed, err := transaction.NewTransactionFromBytes(fileRaw)
@@ -841,7 +775,7 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 			"remove tx P_node should still be dir key")
 
 		// parentTxID should still link to root (preserved by SelfUpdate).
-		assert.Equal(t, rootMtx.TxID, parentTxID,
+		assert.Equal(t, rootResult.TxID, parentTxID,
 			"remove tx parentTxID should still link to root")
 
 		// Payload should NOT contain the file pubkey anymore.
@@ -864,7 +798,7 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 	})
 
 	t.Run("verify_file_still_on_chain", func(t *testing.T) {
-		// The file tx is still on-chain (orphaned from directory, but immutable).
+		// The file's OP_RETURN is still on-chain in the combined batch tx.
 		fileRaw, err := node.GetRawTransaction(ctx, fileTxIDStr)
 		require.NoError(t, err, "file tx should still be retrievable from chain")
 		require.NotEmpty(t, fileRaw, "file tx bytes should not be empty")
@@ -879,7 +813,7 @@ func TestRemoveAndVerifyDAG(t *testing.T) {
 		// File's P_node and parent link are immutable on-chain.
 		assert.Equal(t, fileKey.PublicKey.Compressed(), filePNode,
 			"orphaned file P_node should still be file key")
-		assert.Equal(t, dirMtx.TxID, fileParentTxID,
+		assert.Equal(t, dirResult.TxID, fileParentTxID,
 			"orphaned file parentTxID should still link to dir")
 		assert.Equal(t, filePayload, filePayloadOnChain,
 			"orphaned file payload should still be intact")

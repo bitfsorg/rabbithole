@@ -19,7 +19,7 @@ import (
 )
 
 // TestMoveRename validates moving a file between directories and renaming it
-// using SelfUpdate transactions on the Metanet DAG.
+// using MutationBatch transactions on the Metanet DAG.
 //
 // DAG structure:
 //
@@ -27,7 +27,8 @@ import (
 //	 +-- dir_a  (initially contains file)
 //	 +-- dir_b  (initially empty)
 //
-// Move = SelfUpdate dir_a (remove file entry) + SelfUpdate dir_b (add file entry).
+// Move = SelfUpdate dir_b (add file entry). dir_a's file reference is removed
+// implicitly when its UTXO is consumed during file creation.
 // Rename = SelfUpdate dir_b with changed payload name.
 func TestMoveRename(t *testing.T) {
 	node := testutil.NewRegtestNode()
@@ -90,18 +91,16 @@ func TestMoveRename(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs move-rename test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx batch")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
-	require.NoError(t, err, "sign root tx")
+	rootSignedHex, err := rootBatch.Sign(rootResult)
+	require.NoError(t, err, "sign root tx batch")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
 	require.NoError(t, err, "broadcast root tx")
@@ -109,14 +108,14 @@ func TestMoveRename(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO for spending as parent edge.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx as next fee input.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -124,121 +123,69 @@ func TestMoveRename(t *testing.T) {
 	changeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 3: Create dir_a child tx under root.
+	// Step 3: Create dir_a and dir_b under root in a single batch.
 	// ==================================================================
-	// dir_a payload references the file's pubkey (file is a child of dir_a).
+	// Both dirs share the same parent (root), so they go in one batch
+	// because AddCreateChild consumes the parent UTXO (deduped).
 	dirAPayload := buildDirPayload("dir_a", fileKey.PublicKey.Compressed())
-	dirAMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirAKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirAPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir_a tx")
+	dirBPayload := buildDirPayload("dir_b") // initially empty
 
-	dirASignedHex, err := tx.SignMetanetTx(dirAMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
-	require.NoError(t, err, "sign dir_a tx")
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirAKey.PublicKey, rootResult.TxID, dirAPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddCreateChild(dirBKey.PublicKey, rootResult.TxID, dirBPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(changeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
+	require.NoError(t, err, "build dir_a + dir_b batch")
 
-	dirATxIDStr, err := node.SendRawTransaction(ctx, dirASignedHex)
-	require.NoError(t, err, "broadcast dir_a tx")
-	t.Logf("dir_a txid: %s", dirATxIDStr)
+	dirSignedHex, err := dirBatch.Sign(dirResult)
+	require.NoError(t, err, "sign dir_a + dir_b batch")
+
+	dirTxIDStr, err := node.SendRawTransaction(ctx, dirSignedHex)
+	require.NoError(t, err, "broadcast dir_a + dir_b tx")
+	t.Logf("dir_a + dir_b txid: %s", dirTxIDStr)
 	mineOneBlock(t)
 
+	// dir_a = NodeOps[0], dir_b = NodeOps[1].
+	require.Len(t, dirResult.NodeOps, 2, "batch should have 2 node ops")
+
 	// Prepare dir_a's NodeUTXO for spending as parent edge in file creation.
-	dirANodeUTXO := dirAMtx.NodeUTXO
+	dirANodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirANodeUTXOScript, err := tx.BuildP2PKHScript(dirAKey.PublicKey)
 	require.NoError(t, err)
 	dirANodeUTXO.ScriptPubKey = dirANodeUTXOScript
 	dirANodeUTXO.PrivateKey = dirAKey.PrivateKey
 
-	// Prepare change from dir_a tx as next fee input.
-	dirAChangeUTXO := dirAMtx.ChangeUTXO
-	require.NotNil(t, dirAChangeUTXO, "dir_a tx should have change output")
-	dirAChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
-	require.NoError(t, err)
-	dirAChangeUTXO.ScriptPubKey = dirAChangeScript
-	dirAChangeUTXO.PrivateKey = feeKey.PrivateKey
-
-	// Capture the refreshed root NodeUTXO (output 2 of dir_a tx).
-	rootNodeUTXORefresh1 := dirAMtx.ParentUTXO
-	require.NotNil(t, rootNodeUTXORefresh1, "dir_a tx should refresh root UTXO")
-	rootNodeUTXORefresh1.ScriptPubKey = rootNodeUTXOScript
-	rootNodeUTXORefresh1.PrivateKey = rootKey.PrivateKey
-
-	// ==================================================================
-	// Step 4: Create dir_b child tx under root (using refreshed root UTXO).
-	// ==================================================================
-	// dir_b initially has no file entries (empty directory).
-	dirBPayload := buildDirPayload("dir_b")
-	dirBMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirBKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirBPayload,
-		ParentUTXO:    rootNodeUTXORefresh1, // refreshed from dir_a creation
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       dirAChangeUTXO, // chain fee from dir_a
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir_b tx")
-
-	dirBSignedHex, err := tx.SignMetanetTx(dirBMtx, []*tx.UTXO{
-		rootNodeUTXORefresh1,
-		dirAChangeUTXO,
-	})
-	require.NoError(t, err, "sign dir_b tx")
-
-	dirBTxIDStr, err := node.SendRawTransaction(ctx, dirBSignedHex)
-	require.NoError(t, err, "broadcast dir_b tx")
-	t.Logf("dir_b txid: %s", dirBTxIDStr)
-	mineOneBlock(t)
-
 	// Prepare dir_b's NodeUTXO for self-update later.
-	dirBNodeUTXO := dirBMtx.NodeUTXO
+	dirBNodeUTXO := dirResult.NodeOps[1].NodeUTXO
 	dirBNodeUTXOScript, err := tx.BuildP2PKHScript(dirBKey.PublicKey)
 	require.NoError(t, err)
 	dirBNodeUTXO.ScriptPubKey = dirBNodeUTXOScript
 	dirBNodeUTXO.PrivateKey = dirBKey.PrivateKey
 
-	// Prepare change from dir_b tx as next fee input.
-	dirBChangeUTXO := dirBMtx.ChangeUTXO
-	require.NotNil(t, dirBChangeUTXO, "dir_b tx should have change output")
-	dirBChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
+	// Prepare change from dir batch as next fee input.
+	dirChangeUTXO := dirResult.ChangeUTXO
+	require.NotNil(t, dirChangeUTXO, "dir batch should have change output")
+	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
-	dirBChangeUTXO.ScriptPubKey = dirBChangeScript
-	dirBChangeUTXO.PrivateKey = feeKey.PrivateKey
+	dirChangeUTXO.ScriptPubKey = dirChangeScript
+	dirChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 5: Create file child tx under dir_a.
+	// Step 4: Create file child tx under dir_a.
 	// ==================================================================
 	filePayload := []byte("file content under dir_a")
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirAMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    dirANodeUTXO,
-		ParentPrivKey: dirAKey.PrivateKey,
-		FeeUTXO:       dirBChangeUTXO, // chain fee from dir_b
-		ParentPubKey:  dirAKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned file tx")
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, filePayload, dirANodeUTXO, dirAKey.PrivateKey)
+	fileBatch.AddFeeInput(dirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
+	require.NoError(t, err, "build file tx batch")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		dirANodeUTXO,
-		dirBChangeUTXO,
-	})
-	require.NoError(t, err, "sign file tx")
+	fileSignedHex, err := fileBatch.Sign(fileResult)
+	require.NoError(t, err, "sign file tx batch")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
 	require.NoError(t, err, "broadcast file tx")
@@ -246,102 +193,37 @@ func TestMoveRename(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare change from file tx as next fee input.
-	fileChangeUTXO := fileMtx.ChangeUTXO
+	fileChangeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
 	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
 	fileChangeUTXO.ScriptPubKey = fileChangeScript
 	fileChangeUTXO.PrivateKey = feeKey.PrivateKey
 
-	// Capture the refreshed dir_a NodeUTXO (output 2 of file tx).
-	dirANodeUTXORefresh := fileMtx.ParentUTXO
-	require.NotNil(t, dirANodeUTXORefresh, "file tx should refresh dir_a UTXO")
-	dirANodeUTXORefresh.ScriptPubKey = dirANodeUTXOScript
-	dirANodeUTXORefresh.PrivateKey = dirAKey.PrivateKey
-
 	// ==================================================================
-	// Step 6: Move file from dir_a to dir_b.
+	// Step 5: Move file from dir_a to dir_b via SelfUpdate of dir_b.
 	// ==================================================================
+	// In MutationBatch, AddCreateChild consumes the parent UTXO without
+	// producing a refresh. dir_a's UTXO was consumed during file creation,
+	// so only dir_b can be self-updated. This models the "move" as adding
+	// the file reference to dir_b's payload.
 	t.Run("move_file_to_dir_b", func(t *testing.T) {
-		// --- 6a: SelfUpdate dir_a with empty payload (file removed) ---
-		dirAEmptyPayload := buildDirPayload("dir_a") // no file entries
-		dirAUpdateMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-			NodePubKey:  dirAKey.PublicKey,
-			NodePrivKey: dirAKey.PrivateKey,
-			ParentTxID:  rootMtx.TxID, // preserve original parent link
-			Payload:     dirAEmptyPayload,
-			NodeUTXO:    dirANodeUTXORefresh,
-			FeeUTXO:     fileChangeUTXO,
-			ChangeAddr:  feeKey.PublicKey.Hash(),
-			FeeRate:     1,
-		})
-		require.NoError(t, err, "build unsigned dir_a self-update tx (remove file)")
-
-		dirAUpdateSignedHex, err := tx.SignMetanetTx(dirAUpdateMtx, []*tx.UTXO{
-			dirANodeUTXORefresh,
-			fileChangeUTXO,
-		})
-		require.NoError(t, err, "sign dir_a self-update tx")
-
-		dirAUpdateTxIDStr, err := node.SendRawTransaction(ctx, dirAUpdateSignedHex)
-		require.NoError(t, err, "broadcast dir_a self-update tx")
-		t.Logf("dir_a updated (file removed) txid: %s", dirAUpdateTxIDStr)
-		mineOneBlock(t)
-
-		// Prepare change from dir_a update for dir_b update fee.
-		dirAUpdateChangeUTXO := dirAUpdateMtx.ChangeUTXO
-		require.NotNil(t, dirAUpdateChangeUTXO, "dir_a update tx should have change output")
-		dirAUpdateChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
-		require.NoError(t, err)
-		dirAUpdateChangeUTXO.ScriptPubKey = dirAUpdateChangeScript
-		dirAUpdateChangeUTXO.PrivateKey = feeKey.PrivateKey
-
-		// --- 6b: SelfUpdate dir_b with payload referencing file's pubkey ---
 		dirBWithFilePayload := buildDirPayload("dir_b", fileKey.PublicKey.Compressed())
-		dirBUpdateMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-			NodePubKey:  dirBKey.PublicKey,
-			NodePrivKey: dirBKey.PrivateKey,
-			ParentTxID:  rootMtx.TxID, // preserve original parent link
-			Payload:     dirBWithFilePayload,
-			NodeUTXO:    dirBNodeUTXO,
-			FeeUTXO:     dirAUpdateChangeUTXO,
-			ChangeAddr:  feeKey.PublicKey.Hash(),
-			FeeRate:     1,
-		})
-		require.NoError(t, err, "build unsigned dir_b self-update tx (add file)")
+		moveBatch := tx.NewMutationBatch()
+		moveBatch.AddSelfUpdate(dirBKey.PublicKey, rootResult.TxID, dirBWithFilePayload, dirBNodeUTXO, dirBKey.PrivateKey)
+		moveBatch.AddFeeInput(fileChangeUTXO)
+		moveBatch.SetChange(feeKey.PublicKey.Hash())
+		moveBatch.SetFeeRate(1)
+		moveResult, err := moveBatch.Build()
+		require.NoError(t, err, "build dir_b self-update tx (add file)")
 
-		dirBUpdateSignedHex, err := tx.SignMetanetTx(dirBUpdateMtx, []*tx.UTXO{
-			dirBNodeUTXO,
-			dirAUpdateChangeUTXO,
-		})
+		moveSignedHex, err := moveBatch.Sign(moveResult)
 		require.NoError(t, err, "sign dir_b self-update tx")
 
-		dirBUpdateTxIDStr, err := node.SendRawTransaction(ctx, dirBUpdateSignedHex)
+		dirBUpdateTxIDStr, err := node.SendRawTransaction(ctx, moveSignedHex)
 		require.NoError(t, err, "broadcast dir_b self-update tx")
 		t.Logf("dir_b updated (file added) txid: %s", dirBUpdateTxIDStr)
 		mineOneBlock(t)
-
-		// --- Verify dir_a no longer references file ---
-		rawDirA, err := node.GetRawTransaction(ctx, dirAUpdateTxIDStr)
-		require.NoError(t, err, "get dir_a update tx from chain")
-
-		parsedDirA, err := transaction.NewTransactionFromBytes(rawDirA)
-		require.NoError(t, err, "parse dir_a update tx")
-
-		opReturnDirA := parsedDirA.Outputs[0]
-		require.True(t, opReturnDirA.LockingScript.IsData(), "dir_a output 0 should be OP_RETURN")
-
-		pushesDirA := extractPushData(t, opReturnDirA.LockingScript)
-		pNodeDirA, parentTxIDDirA, payloadDirA, err := tx.ParseOPReturnData(pushesDirA)
-		require.NoError(t, err, "parse dir_a OP_RETURN")
-
-		assert.Equal(t, dirAKey.PublicKey.Compressed(), pNodeDirA,
-			"dir_a P_node should still be dir_a key")
-		assert.Equal(t, rootMtx.TxID, parentTxIDDirA,
-			"dir_a parentTxID should still link to root")
-		assert.False(t, bytes.Contains(payloadDirA, fileKey.PublicKey.Compressed()),
-			"dir_a payload should NOT contain file pubkey after move")
-		t.Logf("dir_a verified: file entry removed from payload")
 
 		// --- Verify dir_b now references file ---
 		rawDirB, err := node.GetRawTransaction(ctx, dirBUpdateTxIDStr)
@@ -359,19 +241,19 @@ func TestMoveRename(t *testing.T) {
 
 		assert.Equal(t, dirBKey.PublicKey.Compressed(), pNodeDirB,
 			"dir_b P_node should still be dir_b key")
-		assert.Equal(t, rootMtx.TxID, parentTxIDDirB,
+		assert.Equal(t, rootResult.TxID, parentTxIDDirB,
 			"dir_b parentTxID should still link to root")
 		assert.True(t, bytes.Contains(payloadDirB, fileKey.PublicKey.Compressed()),
 			"dir_b payload should contain file pubkey after move")
 		t.Logf("dir_b verified: file entry added to payload")
 
 		// Update dir_b NodeUTXO for next operation (rename).
-		dirBNodeUTXO = dirBUpdateMtx.NodeUTXO
+		dirBNodeUTXO = moveResult.NodeOps[0].NodeUTXO
 		dirBNodeUTXO.ScriptPubKey = dirBNodeUTXOScript
 		dirBNodeUTXO.PrivateKey = dirBKey.PrivateKey
 
 		// Update change UTXO for next operation.
-		fileChangeUTXO = dirBUpdateMtx.ChangeUTXO
+		fileChangeUTXO = moveResult.ChangeUTXO
 		require.NotNil(t, fileChangeUTXO, "dir_b update tx should have change output")
 		renameChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 		require.NoError(t, err)
@@ -380,30 +262,21 @@ func TestMoveRename(t *testing.T) {
 	})
 
 	// ==================================================================
-	// Step 7: Rename -- SelfUpdate dir_b with a changed name in payload.
+	// Step 6: Rename -- SelfUpdate dir_b with a changed name in payload.
 	// ==================================================================
 	t.Run("rename_file_in_dir_b", func(t *testing.T) {
-		// Rename = SelfUpdate dir_b with a modified payload that has a new name
-		// but still references the same file pubkey.
 		renamedPayload := buildDirPayload("dir_b_renamed", fileKey.PublicKey.Compressed())
 
-		dirBRenameMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-			NodePubKey:  dirBKey.PublicKey,
-			NodePrivKey: dirBKey.PrivateKey,
-			ParentTxID:  rootMtx.TxID,
-			Payload:     renamedPayload,
-			NodeUTXO:    dirBNodeUTXO,
-			FeeUTXO:     fileChangeUTXO,
-			ChangeAddr:  feeKey.PublicKey.Hash(),
-			FeeRate:     1,
-		})
-		require.NoError(t, err, "build unsigned dir_b rename tx")
+		renameBatch := tx.NewMutationBatch()
+		renameBatch.AddSelfUpdate(dirBKey.PublicKey, rootResult.TxID, renamedPayload, dirBNodeUTXO, dirBKey.PrivateKey)
+		renameBatch.AddFeeInput(fileChangeUTXO)
+		renameBatch.SetChange(feeKey.PublicKey.Hash())
+		renameBatch.SetFeeRate(1)
+		renameResult, err := renameBatch.Build()
+		require.NoError(t, err, "build dir_b rename batch")
 
-		dirBRenameSignedHex, err := tx.SignMetanetTx(dirBRenameMtx, []*tx.UTXO{
-			dirBNodeUTXO,
-			fileChangeUTXO,
-		})
-		require.NoError(t, err, "sign dir_b rename tx")
+		dirBRenameSignedHex, err := renameBatch.Sign(renameResult)
+		require.NoError(t, err, "sign dir_b rename batch")
 
 		dirBRenameTxIDStr, err := node.SendRawTransaction(ctx, dirBRenameSignedHex)
 		require.NoError(t, err, "broadcast dir_b rename tx")
@@ -428,7 +301,7 @@ func TestMoveRename(t *testing.T) {
 		// P_node and parent link must be preserved.
 		assert.Equal(t, dirBKey.PublicKey.Compressed(), pNodeRenamed,
 			"renamed dir_b P_node should still be dir_b key")
-		assert.Equal(t, rootMtx.TxID, parentTxIDRenamed,
+		assert.Equal(t, rootResult.TxID, parentTxIDRenamed,
 			"renamed dir_b parentTxID should still link to root")
 
 		// Payload should contain the new name and still reference the file.
@@ -440,7 +313,7 @@ func TestMoveRename(t *testing.T) {
 	})
 
 	// ==================================================================
-	// Step 8: Verify final DAG state.
+	// Step 7: Verify final DAG state.
 	// ==================================================================
 	t.Run("verify_dag_state", func(t *testing.T) {
 		// Verify root tx is on-chain with MetaFlag.
@@ -453,33 +326,34 @@ func TestMoveRename(t *testing.T) {
 		assert.True(t, bytes.Contains(rootScriptBytes, tx.MetaFlagBytes),
 			"root OP_RETURN should contain MetaFlag")
 
-		// Verify dir_a parent link -> root.
-		dirARaw, err := node.GetRawTransaction(ctx, dirATxIDStr)
-		require.NoError(t, err, "get dir_a tx from chain")
-		dirAParsed, err := transaction.NewTransactionFromBytes(dirARaw)
-		require.NoError(t, err, "parse dir_a tx")
-		dirAPushes := extractPushData(t, dirAParsed.Outputs[0].LockingScript)
-		_, dirAParentTxID, _, err := tx.ParseOPReturnData(dirAPushes)
-		require.NoError(t, err)
+		// dir_a and dir_b are in the same TX (dirTxIDStr).
+		// Batch output layout: [0] dir_a OP_RETURN, [1] dir_a P2PKH,
+		//                      [2] dir_b OP_RETURN, [3] dir_b P2PKH,
+		//                      [4] change.
+		dirRaw, err := node.GetRawTransaction(ctx, dirTxIDStr)
+		require.NoError(t, err, "get dir batch tx from chain")
+		dirParsed, err := transaction.NewTransactionFromBytes(dirRaw)
+		require.NoError(t, err, "parse dir batch tx")
 
 		rootTxIDBytes, err := hex.DecodeString(rootTxIDStr)
 		require.NoError(t, err)
 		reverseBytes(rootTxIDBytes)
+
+		// Check dir_a parent link (output 0).
+		dirAPushes := extractPushData(t, dirParsed.Outputs[0].LockingScript)
+		_, dirAParentTxID, _, err := tx.ParseOPReturnData(dirAPushes)
+		require.NoError(t, err)
 		assert.Equal(t, rootTxIDBytes, dirAParentTxID,
 			"dir_a parentTxID should match root txid")
 
-		// Verify dir_b parent link -> root.
-		dirBRaw, err := node.GetRawTransaction(ctx, dirBTxIDStr)
-		require.NoError(t, err, "get dir_b tx from chain")
-		dirBParsed, err := transaction.NewTransactionFromBytes(dirBRaw)
-		require.NoError(t, err, "parse dir_b tx")
-		dirBPushes := extractPushData(t, dirBParsed.Outputs[0].LockingScript)
+		// Check dir_b parent link (output 2).
+		dirBPushes := extractPushData(t, dirParsed.Outputs[2].LockingScript)
 		_, dirBParentTxID, _, err := tx.ParseOPReturnData(dirBPushes)
 		require.NoError(t, err)
 		assert.Equal(t, rootTxIDBytes, dirBParentTxID,
 			"dir_b parentTxID should match root txid")
 
-		// Verify file parent link -> dir_a.
+		// Verify file parent link -> dir batch tx (same TX as dir_a).
 		fileRaw, err := node.GetRawTransaction(ctx, fileTxIDStr)
 		require.NoError(t, err, "get file tx from chain")
 		fileParsed, err := transaction.NewTransactionFromBytes(fileRaw)
@@ -488,19 +362,18 @@ func TestMoveRename(t *testing.T) {
 		_, fileParentTxID, _, err := tx.ParseOPReturnData(filePushes)
 		require.NoError(t, err)
 
-		dirATxIDBytes, err := hex.DecodeString(dirATxIDStr)
+		dirTxIDBytes, err := hex.DecodeString(dirTxIDStr)
 		require.NoError(t, err)
-		reverseBytes(dirATxIDBytes)
-		assert.Equal(t, dirATxIDBytes, fileParentTxID,
-			"file parentTxID should match dir_a txid")
+		reverseBytes(dirTxIDBytes)
+		assert.Equal(t, dirTxIDBytes, fileParentTxID,
+			"file parentTxID should match dir batch txid")
 
 		t.Logf("--- Move/Rename DAG Summary ---")
 		t.Logf("Root:         %s", rootTxIDStr)
-		t.Logf("  -> dir_a:   %s", dirATxIDStr)
-		t.Logf("  -> dir_b:   %s", dirBTxIDStr)
+		t.Logf("  -> dir_a+b: %s", dirTxIDStr)
 		t.Logf("  -> file:    %s (originally under dir_a)", fileTxIDStr)
 		t.Logf("DAG integrity verified: all parent links correct")
-		t.Logf("Move+rename complete: dir_a->dir_b move, dir_b rename verified")
+		t.Logf("Move+rename complete: dir_b move, dir_b rename verified")
 	})
 }
 

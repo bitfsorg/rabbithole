@@ -32,9 +32,10 @@ import (
 //	file (child of dir_a, but dir_b's payload also references file's pubkey)
 //
 // Steps:
-//  1. Create root, dir_a (with file ref), dir_b (empty), file under dir_a
-//  2. SelfUpdate dir_b to add file's pubkey to its payload (hard link)
-//  3. Verify: file's compressed pubkey appears in both dir_a and dir_b payloads
+//  1. Create root, dir_a (with file ref) and dir_b (empty) in one batch
+//  2. Create file under dir_a
+//  3. SelfUpdate dir_b to add file's pubkey to its payload (hard link)
+//  4. Verify: file's compressed pubkey appears in both dir_a and dir_b payloads
 func TestHardLink(t *testing.T) {
 	node := testutil.NewRegtestNode()
 	testutil.SkipIfUnavailable(t, node)
@@ -87,17 +88,15 @@ func TestHardLink(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs hard-link test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -106,14 +105,14 @@ func TestHardLink(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -121,118 +120,64 @@ func TestHardLink(t *testing.T) {
 	changeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 3: Create dir_a (with file's pubkey reference) under root.
+	// Step 3: Create dir_a (with file ref) and dir_b (empty) under root
+	// in a single batch. Both children share root's NodeUTXO as parent
+	// input (deduped by the batch builder).
 	// ==================================================================
 	dirAPayload := buildDirPayload("dir_a", fileKey.PublicKey.Compressed())
-	dirAMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirAKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirAPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir_a tx")
+	dirBPayload := buildDirPayload("dir_b")
 
-	dirASignedHex, err := tx.SignMetanetTx(dirAMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
-	require.NoError(t, err, "sign dir_a tx")
+	dirsBatch := tx.NewMutationBatch()
+	dirsBatch.AddCreateChild(dirAKey.PublicKey, rootResult.TxID, dirAPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirsBatch.AddCreateChild(dirBKey.PublicKey, rootResult.TxID, dirBPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirsBatch.AddFeeInput(changeUTXO)
+	dirsBatch.SetChange(feeKey.PublicKey.Hash())
+	dirsBatch.SetFeeRate(1)
+	dirsResult, err := dirsBatch.Build()
+	require.NoError(t, err, "build dirs batch tx")
 
-	dirATxIDStr, err := node.SendRawTransaction(ctx, dirASignedHex)
-	require.NoError(t, err, "broadcast dir_a tx")
-	t.Logf("dir_a txid: %s", dirATxIDStr)
+	dirsSignedHex, err := dirsBatch.Sign(dirsResult)
+	require.NoError(t, err, "sign dirs batch tx")
+
+	dirsTxIDStr, err := node.SendRawTransaction(ctx, dirsSignedHex)
+	require.NoError(t, err, "broadcast dirs batch tx")
+	t.Logf("dirs txid: %s (dir_a + dir_b)", dirsTxIDStr)
 	mineOneBlock(t)
 
-	// Prepare dir_a's NodeUTXO for file creation.
-	dirANodeUTXO := dirAMtx.NodeUTXO
+	// dir_a's NodeUTXO is NodeOps[0], dir_b's is NodeOps[1].
+	dirANodeUTXO := dirsResult.NodeOps[0].NodeUTXO
 	dirANodeUTXOScript, err := tx.BuildP2PKHScript(dirAKey.PublicKey)
 	require.NoError(t, err)
 	dirANodeUTXO.ScriptPubKey = dirANodeUTXOScript
 	dirANodeUTXO.PrivateKey = dirAKey.PrivateKey
 
-	// Prepare change from dir_a tx.
-	dirAChangeUTXO := dirAMtx.ChangeUTXO
-	require.NotNil(t, dirAChangeUTXO, "dir_a tx should have change output")
-	dirAChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
-	require.NoError(t, err)
-	dirAChangeUTXO.ScriptPubKey = dirAChangeScript
-	dirAChangeUTXO.PrivateKey = feeKey.PrivateKey
-
-	// Capture refreshed root NodeUTXO (output 2 of dir_a tx).
-	rootNodeUTXORefresh := dirAMtx.ParentUTXO
-	require.NotNil(t, rootNodeUTXORefresh, "dir_a tx should refresh root UTXO")
-	rootNodeUTXORefresh.ScriptPubKey = rootNodeUTXOScript
-	rootNodeUTXORefresh.PrivateKey = rootKey.PrivateKey
-
-	// ==================================================================
-	// Step 4: Create dir_b (empty) under root.
-	// ==================================================================
-	dirBPayload := buildDirPayload("dir_b")
-	dirBMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirBKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirBPayload,
-		ParentUTXO:    rootNodeUTXORefresh,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       dirAChangeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir_b tx")
-
-	dirBSignedHex, err := tx.SignMetanetTx(dirBMtx, []*tx.UTXO{
-		rootNodeUTXORefresh,
-		dirAChangeUTXO,
-	})
-	require.NoError(t, err, "sign dir_b tx")
-
-	dirBTxIDStr, err := node.SendRawTransaction(ctx, dirBSignedHex)
-	require.NoError(t, err, "broadcast dir_b tx")
-	t.Logf("dir_b txid: %s", dirBTxIDStr)
-	mineOneBlock(t)
-
-	// Prepare dir_b's NodeUTXO for self-update later.
-	dirBNodeUTXO := dirBMtx.NodeUTXO
+	dirBNodeUTXO := dirsResult.NodeOps[1].NodeUTXO
 	dirBNodeUTXOScript, err := tx.BuildP2PKHScript(dirBKey.PublicKey)
 	require.NoError(t, err)
 	dirBNodeUTXO.ScriptPubKey = dirBNodeUTXOScript
 	dirBNodeUTXO.PrivateKey = dirBKey.PrivateKey
 
-	// Prepare change from dir_b tx.
-	dirBChangeUTXO := dirBMtx.ChangeUTXO
-	require.NotNil(t, dirBChangeUTXO, "dir_b tx should have change output")
-	dirBChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
+	// Prepare change from dirs tx.
+	dirsChangeUTXO := dirsResult.ChangeUTXO
+	require.NotNil(t, dirsChangeUTXO, "dirs tx should have change output")
+	dirsChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
-	dirBChangeUTXO.ScriptPubKey = dirBChangeScript
-	dirBChangeUTXO.PrivateKey = feeKey.PrivateKey
+	dirsChangeUTXO.ScriptPubKey = dirsChangeScript
+	dirsChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 5: Create file under dir_a.
+	// Step 4: Create file under dir_a.
 	// ==================================================================
 	filePayload := []byte("hard-link test file content")
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirAMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    dirANodeUTXO,
-		ParentPrivKey: dirAKey.PrivateKey,
-		FeeUTXO:       dirBChangeUTXO,
-		ParentPubKey:  dirAKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned file tx")
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, dirsResult.TxID, filePayload, dirANodeUTXO, dirAKey.PrivateKey)
+	fileBatch.AddFeeInput(dirsChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
+	require.NoError(t, err, "build file tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		dirANodeUTXO,
-		dirBChangeUTXO,
-	})
+	fileSignedHex, err := fileBatch.Sign(fileResult)
 	require.NoError(t, err, "sign file tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
@@ -241,7 +186,7 @@ func TestHardLink(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare change from file tx for the hard-link self-update.
-	fileChangeUTXO := fileMtx.ChangeUTXO
+	fileChangeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
 	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -249,26 +194,19 @@ func TestHardLink(t *testing.T) {
 	fileChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 6: SelfUpdate dir_b to add file's pubkey (hard link).
+	// Step 5: SelfUpdate dir_b to add file's pubkey (hard link).
 	// ==================================================================
 	t.Run("hard_link_dir_b", func(t *testing.T) {
 		dirBHardLinkPayload := buildDirPayload("dir_b", fileKey.PublicKey.Compressed())
-		dirBUpdateMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-			NodePubKey:  dirBKey.PublicKey,
-			NodePrivKey: dirBKey.PrivateKey,
-			ParentTxID:  rootMtx.TxID,
-			Payload:     dirBHardLinkPayload,
-			NodeUTXO:    dirBNodeUTXO,
-			FeeUTXO:     fileChangeUTXO,
-			ChangeAddr:  feeKey.PublicKey.Hash(),
-			FeeRate:     1,
-		})
-		require.NoError(t, err, "build unsigned dir_b self-update tx (hard link)")
+		dirBUpdateBatch := tx.NewMutationBatch()
+		dirBUpdateBatch.AddSelfUpdate(dirBKey.PublicKey, rootResult.TxID, dirBHardLinkPayload, dirBNodeUTXO, dirBKey.PrivateKey)
+		dirBUpdateBatch.AddFeeInput(fileChangeUTXO)
+		dirBUpdateBatch.SetChange(feeKey.PublicKey.Hash())
+		dirBUpdateBatch.SetFeeRate(1)
+		dirBUpdateResult, err := dirBUpdateBatch.Build()
+		require.NoError(t, err, "build dir_b self-update tx (hard link)")
 
-		dirBUpdateSignedHex, err := tx.SignMetanetTx(dirBUpdateMtx, []*tx.UTXO{
-			dirBNodeUTXO,
-			fileChangeUTXO,
-		})
+		dirBUpdateSignedHex, err := dirBUpdateBatch.Sign(dirBUpdateResult)
 		require.NoError(t, err, "sign dir_b self-update tx")
 
 		dirBUpdateTxIDStr, err := node.SendRawTransaction(ctx, dirBUpdateSignedHex)
@@ -277,13 +215,14 @@ func TestHardLink(t *testing.T) {
 		mineOneBlock(t)
 
 		// --- Verify dir_a payload still contains file's pubkey ---
-		rawDirA, err := node.GetRawTransaction(ctx, dirATxIDStr)
-		require.NoError(t, err, "get dir_a tx from chain")
+		// dir_a's OP_RETURN is at output 0 of the combined dirs tx.
+		rawDirsA, err := node.GetRawTransaction(ctx, dirsTxIDStr)
+		require.NoError(t, err, "get dirs tx from chain")
 
-		parsedDirA, err := transaction.NewTransactionFromBytes(rawDirA)
-		require.NoError(t, err, "parse dir_a tx")
+		parsedDirsA, err := transaction.NewTransactionFromBytes(rawDirsA)
+		require.NoError(t, err, "parse dirs tx")
 
-		opReturnDirA := parsedDirA.Outputs[0]
+		opReturnDirA := parsedDirsA.Outputs[0]
 		require.True(t, opReturnDirA.LockingScript.IsData(), "dir_a output 0 should be OP_RETURN")
 
 		pushesDirA := extractPushData(t, opReturnDirA.LockingScript)
@@ -322,7 +261,7 @@ func TestHardLink(t *testing.T) {
 
 		t.Logf("--- Hard Link Summary ---")
 		t.Logf("Root:      %s", rootTxIDStr)
-		t.Logf("  dir_a:   %s (file ref in original payload)", dirATxIDStr)
+		t.Logf("  dir_a:   %s (file ref in original payload)", dirsTxIDStr)
 		t.Logf("  dir_b:   %s (file ref added via SelfUpdate)", dirBUpdateTxIDStr)
 		t.Logf("  file:    %s (P_node=%x)", fileTxIDStr, filePub[:8])
 		t.Logf("Hard link verified: file pubkey in both dir_a and dir_b payloads")
@@ -398,17 +337,15 @@ func TestSoftLink(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs soft-link test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -417,14 +354,14 @@ func TestSoftLink(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -439,23 +376,15 @@ func TestSoftLink(t *testing.T) {
 		fileKey.PublicKey.Compressed(),
 		linkKey.PublicKey.Compressed(),
 	)
-	dirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir tx")
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirKey.PublicKey, rootResult.TxID, dirPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(changeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
+	require.NoError(t, err, "build dir tx")
 
-	dirSignedHex, err := tx.SignMetanetTx(dirMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
+	dirSignedHex, err := dirBatch.Sign(dirResult)
 	require.NoError(t, err, "sign dir tx")
 
 	dirTxIDStr, err := node.SendRawTransaction(ctx, dirSignedHex)
@@ -464,14 +393,14 @@ func TestSoftLink(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare dir's NodeUTXO for file creation.
-	dirNodeUTXO := dirMtx.NodeUTXO
+	dirNodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirNodeUTXOScript, err := tx.BuildP2PKHScript(dirKey.PublicKey)
 	require.NoError(t, err)
 	dirNodeUTXO.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXO.PrivateKey = dirKey.PrivateKey
 
 	// Prepare change from dir tx.
-	dirChangeUTXO := dirMtx.ChangeUTXO
+	dirChangeUTXO := dirResult.ChangeUTXO
 	require.NotNil(t, dirChangeUTXO, "dir tx should have change output")
 	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -479,44 +408,40 @@ func TestSoftLink(t *testing.T) {
 	dirChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 4: Create file under dir.
+	// Step 4: Create file under dir, and refresh dir UTXO via SelfUpdate
+	// in the same batch (since MutationBatch does not produce a parent
+	// refresh output for CreateChild, we need the refreshed dir UTXO
+	// for the subsequent link creation in step 5).
 	// ==================================================================
 	filePayload := []byte("soft-link test file content")
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    dirNodeUTXO,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       dirChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned file tx")
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, filePayload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddSelfUpdate(dirKey.PublicKey, rootResult.TxID, dirPayload, dirNodeUTXO, dirKey.PrivateKey)
+	fileBatch.AddFeeInput(dirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
+	require.NoError(t, err, "build file+dir-refresh tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		dirNodeUTXO,
-		dirChangeUTXO,
-	})
-	require.NoError(t, err, "sign file tx")
+	fileSignedHex, err := fileBatch.Sign(fileResult)
+	require.NoError(t, err, "sign file+dir-refresh tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
-	require.NoError(t, err, "broadcast file tx")
+	require.NoError(t, err, "broadcast file+dir-refresh tx")
 	t.Logf("file txid: %s", fileTxIDStr)
 	mineOneBlock(t)
 
 	// Prepare change from file tx.
-	fileChangeUTXO := fileMtx.ChangeUTXO
+	fileChangeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
 	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
 	fileChangeUTXO.ScriptPubKey = fileChangeScript
 	fileChangeUTXO.PrivateKey = feeKey.PrivateKey
 
-	// Capture refreshed dir NodeUTXO (output 2 of file tx).
-	dirNodeUTXORefresh := fileMtx.ParentUTXO
-	require.NotNil(t, dirNodeUTXORefresh, "file tx should refresh dir UTXO")
+	// Dir's refreshed NodeUTXO comes from the SelfUpdate op (index 1).
+	dirNodeUTXORefresh := fileResult.NodeOps[1].NodeUTXO
+	require.NotNil(t, dirNodeUTXORefresh, "dir SelfUpdate should produce refreshed UTXO")
 	dirNodeUTXORefresh.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXORefresh.PrivateKey = dirKey.PrivateKey
 
@@ -527,23 +452,15 @@ func TestSoftLink(t *testing.T) {
 	// file's compressed pubkey. This allows traversal to resolve the link.
 	linkPayload := append([]byte("symlink:"), fileKey.PublicKey.Compressed()...)
 
-	linkMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    linkKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       linkPayload,
-		ParentUTXO:    dirNodeUTXORefresh,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       fileChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned link tx")
+	linkBatch := tx.NewMutationBatch()
+	linkBatch.AddCreateChild(linkKey.PublicKey, dirResult.TxID, linkPayload, dirNodeUTXORefresh, dirKey.PrivateKey)
+	linkBatch.AddFeeInput(fileChangeUTXO)
+	linkBatch.SetChange(feeKey.PublicKey.Hash())
+	linkBatch.SetFeeRate(1)
+	linkResult, err := linkBatch.Build()
+	require.NoError(t, err, "build link tx")
 
-	linkSignedHex, err := tx.SignMetanetTx(linkMtx, []*tx.UTXO{
-		dirNodeUTXORefresh,
-		fileChangeUTXO,
-	})
+	linkSignedHex, err := linkBatch.Sign(linkResult)
 	require.NoError(t, err, "sign link tx")
 
 	linkTxIDStr, err := node.SendRawTransaction(ctx, linkSignedHex)

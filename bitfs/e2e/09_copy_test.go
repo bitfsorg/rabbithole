@@ -28,11 +28,8 @@ import (
 //	      +-- copy     (file, Free encrypted, same plaintext, different key)
 //
 // Steps:
-//  1. Create root -> dir -> original file (encrypted Free)
-//  2. Decrypt original content
-//  3. Generate new key for copy, re-encrypt same plaintext
-//  4. Build CreateChild tx for copy under same dir
-//  5. Verify: different P_node, different TxID, same decrypted plaintext
+//  1. Create root -> dir -> original file + copy (in same batch, both Free encrypted)
+//  2. Verify: different P_node, different vout, same decrypted plaintext
 func TestCopyFile(t *testing.T) {
 	node := testutil.NewRegtestNode()
 	testutil.SkipIfUnavailable(t, node)
@@ -87,18 +84,16 @@ func TestCopyFile(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs copy test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx batch")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
-	require.NoError(t, err, "sign root tx")
+	rootSignedHex, err := rootBatch.Sign(rootResult)
+	require.NoError(t, err, "sign root tx batch")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
 	require.NoError(t, err, "broadcast root tx")
@@ -106,14 +101,14 @@ func TestCopyFile(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO for spending as parent edge.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx as next fee input.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -124,24 +119,16 @@ func TestCopyFile(t *testing.T) {
 	// Step 3: Create dir under root.
 	// ==================================================================
 	dirPayload := []byte("bitfs directory: docs")
-	dirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir tx")
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirKey.PublicKey, rootResult.TxID, dirPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(changeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
+	require.NoError(t, err, "build dir tx batch")
 
-	dirSignedHex, err := tx.SignMetanetTx(dirMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
-	require.NoError(t, err, "sign dir tx")
+	dirSignedHex, err := dirBatch.Sign(dirResult)
+	require.NoError(t, err, "sign dir tx batch")
 
 	dirTxIDStr, err := node.SendRawTransaction(ctx, dirSignedHex)
 	require.NoError(t, err, "broadcast dir tx")
@@ -149,14 +136,14 @@ func TestCopyFile(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare dir's NodeUTXO for spending as parent edge.
-	dirNodeUTXO := dirMtx.NodeUTXO
+	dirNodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirNodeUTXOScript, err := tx.BuildP2PKHScript(dirKey.PublicKey)
 	require.NoError(t, err)
 	dirNodeUTXO.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXO.PrivateKey = dirKey.PrivateKey
 
 	// Prepare change from dir tx as next fee input.
-	dirChangeUTXO := dirMtx.ChangeUTXO
+	dirChangeUTXO := dirResult.ChangeUTXO
 	require.NotNil(t, dirChangeUTXO, "dir tx should have change output")
 	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -164,120 +151,76 @@ func TestCopyFile(t *testing.T) {
 	dirChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 4: Create original file under dir (Free encrypted).
+	// Step 4: Create original file and copy under dir in a single batch.
 	// ==================================================================
+	// Both files share the same parent (dir), so they go in one batch
+	// because AddCreateChild consumes the parent UTXO (deduped).
 	originalContent := []byte("Hello BitFS! Original file content for copy test.")
 
+	// Encrypt original.
 	encResult, err := method42.Encrypt(originalContent, fileKey.PrivateKey, fileKey.PublicKey, method42.AccessFree)
 	require.NoError(t, err, "method42 encrypt original (free)")
 	require.NotEmpty(t, encResult.Ciphertext)
 	require.NotEmpty(t, encResult.KeyHash)
 	t.Logf("encrypted original: %d bytes -> %d bytes ciphertext", len(originalContent), len(encResult.Ciphertext))
 
-	// Payload = keyHash(32B) + ciphertext.
 	filePayload := make([]byte, 0, 32+len(encResult.Ciphertext))
 	filePayload = append(filePayload, encResult.KeyHash...)
 	filePayload = append(filePayload, encResult.Ciphertext...)
 
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    dirNodeUTXO,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       dirChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned original file tx")
-
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		dirNodeUTXO,
-		dirChangeUTXO,
-	})
-	require.NoError(t, err, "sign original file tx")
-
-	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
-	require.NoError(t, err, "broadcast original file tx")
-	t.Logf("original file txid: %s", fileTxIDStr)
-	mineOneBlock(t)
-
-	// Prepare dir's refreshed NodeUTXO from the file tx (output 2 = parent refresh).
-	dirNodeUTXORefresh := fileMtx.ParentUTXO
-	require.NotNil(t, dirNodeUTXORefresh, "file tx should refresh dir UTXO")
-	dirNodeUTXORefresh.ScriptPubKey = dirNodeUTXOScript
-	dirNodeUTXORefresh.PrivateKey = dirKey.PrivateKey
-
-	// Prepare change from file tx as next fee input.
-	fileChangeUTXO := fileMtx.ChangeUTXO
-	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
-	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
-	require.NoError(t, err)
-	fileChangeUTXO.ScriptPubKey = fileChangeScript
-	fileChangeUTXO.PrivateKey = feeKey.PrivateKey
-
-	// ==================================================================
-	// Step 5: Copy -- re-encrypt same plaintext with new key, create new child.
-	// ==================================================================
+	// Encrypt copy (same plaintext, different key).
 	copyEncResult, err := method42.Encrypt(originalContent, copyKey.PrivateKey, copyKey.PublicKey, method42.AccessFree)
 	require.NoError(t, err, "method42 encrypt copy (free)")
 	require.NotEmpty(t, copyEncResult.Ciphertext)
 	require.NotEmpty(t, copyEncResult.KeyHash)
 	t.Logf("encrypted copy: %d bytes -> %d bytes ciphertext", len(originalContent), len(copyEncResult.Ciphertext))
 
-	// Copy payload = keyHash(32B) + ciphertext.
 	copyPayload := make([]byte, 0, 32+len(copyEncResult.Ciphertext))
 	copyPayload = append(copyPayload, copyEncResult.KeyHash...)
 	copyPayload = append(copyPayload, copyEncResult.Ciphertext...)
 
-	// Build CreateChild tx for the copy under the same dir.
-	// Uses dir's refreshed NodeUTXO from the original file's CreateChild tx.
-	copyMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    copyKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       copyPayload,
-		ParentUTXO:    dirNodeUTXORefresh,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       fileChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned copy file tx")
+	// Build batch with both file creations.
+	filesBatch := tx.NewMutationBatch()
+	filesBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, filePayload, dirNodeUTXO, dirKey.PrivateKey)
+	filesBatch.AddCreateChild(copyKey.PublicKey, dirResult.TxID, copyPayload, dirNodeUTXO, dirKey.PrivateKey)
+	filesBatch.AddFeeInput(dirChangeUTXO)
+	filesBatch.SetChange(feeKey.PublicKey.Hash())
+	filesBatch.SetFeeRate(1)
+	filesResult, err := filesBatch.Build()
+	require.NoError(t, err, "build original + copy batch")
 
-	copySignedHex, err := tx.SignMetanetTx(copyMtx, []*tx.UTXO{
-		dirNodeUTXORefresh,
-		fileChangeUTXO,
-	})
-	require.NoError(t, err, "sign copy file tx")
+	filesSignedHex, err := filesBatch.Sign(filesResult)
+	require.NoError(t, err, "sign original + copy batch")
 
-	copyTxIDStr, err := node.SendRawTransaction(ctx, copySignedHex)
-	require.NoError(t, err, "broadcast copy file tx")
-	t.Logf("copy file txid: %s", copyTxIDStr)
+	filesTxIDStr, err := node.SendRawTransaction(ctx, filesSignedHex)
+	require.NoError(t, err, "broadcast original + copy tx")
+	t.Logf("original + copy txid: %s", filesTxIDStr)
 	mineOneBlock(t)
 
+	// original = NodeOps[0], copy = NodeOps[1].
+	require.Len(t, filesResult.NodeOps, 2, "batch should have 2 node ops")
+
 	// ==================================================================
-	// Step 6: Verify -- different P_node, different TxID, same plaintext.
+	// Step 5: Verify -- different P_node, same TX, same decrypted plaintext.
 	// ==================================================================
 	t.Run("verify_copy_different_pnode_same_content", func(t *testing.T) {
 		// Different P_node (public keys).
 		assert.NotEqual(t, fileKey.PublicKey.Compressed(), copyKey.PublicKey.Compressed(),
 			"original and copy should have different P_node keys")
 
-		// Different TxID.
-		assert.NotEqual(t, fileTxIDStr, copyTxIDStr,
-			"original and copy should have different TxIDs")
+		// Both are in the same TX but at different output indices.
+		// original OP_RETURN = output 0, copy OP_RETURN = output 2.
 
-		// Read back the copy from chain and decrypt.
-		rawCopy, err := node.GetRawTransaction(ctx, copyTxIDStr)
-		require.NoError(t, err, "get copy tx from chain")
+		// Read the TX from chain.
+		rawFiles, err := node.GetRawTransaction(ctx, filesTxIDStr)
+		require.NoError(t, err, "get files tx from chain")
 
-		parsedCopy, err := transaction.NewTransactionFromBytes(rawCopy)
-		require.NoError(t, err, "parse copy tx")
+		parsedFiles, err := transaction.NewTransactionFromBytes(rawFiles)
+		require.NoError(t, err, "parse files tx")
 
-		opReturnCopy := parsedCopy.Outputs[0]
-		require.True(t, opReturnCopy.LockingScript.IsData(), "copy output 0 should be OP_RETURN")
+		// Verify copy's OP_RETURN (output 2).
+		opReturnCopy := parsedFiles.Outputs[2]
+		require.True(t, opReturnCopy.LockingScript.IsData(), "copy output 2 should be OP_RETURN")
 
 		pushes := extractPushData(t, opReturnCopy.LockingScript)
 		require.GreaterOrEqual(t, len(pushes), 4, "copy OP_RETURN should have >= 4 pushes")
@@ -289,9 +232,9 @@ func TestCopyFile(t *testing.T) {
 		assert.Equal(t, copyKey.PublicKey.Compressed(), pNode,
 			"copy P_node should match copy key")
 
-		// Verify copy's parent link points to the same dir.
-		assert.Equal(t, dirMtx.TxID, parentTxID,
-			"copy parentTxID should link to same dir")
+		// Verify copy's parent link points to the dir.
+		assert.Equal(t, dirResult.TxID, parentTxID,
+			"copy parentTxID should link to dir")
 
 		// Decrypt the copy and verify content matches original.
 		require.True(t, len(payload) > 32, "payload should contain keyHash + ciphertext")
@@ -309,18 +252,19 @@ func TestCopyFile(t *testing.T) {
 		assert.Equal(t, originalContent, decResult.Plaintext,
 			"copy decrypted content should match original plaintext")
 
-		t.Logf("copy verified: different P_node, different TxID, same plaintext (%d bytes)", len(decResult.Plaintext))
+		t.Logf("copy verified: different P_node, same TX, same plaintext (%d bytes)", len(decResult.Plaintext))
 	})
 
 	// Also verify original is still readable.
 	t.Run("verify_original_still_readable", func(t *testing.T) {
-		rawOriginal, err := node.GetRawTransaction(ctx, fileTxIDStr)
-		require.NoError(t, err, "get original tx from chain")
+		rawFiles, err := node.GetRawTransaction(ctx, filesTxIDStr)
+		require.NoError(t, err, "get files tx from chain")
 
-		parsedOriginal, err := transaction.NewTransactionFromBytes(rawOriginal)
-		require.NoError(t, err, "parse original tx")
+		parsedFiles, err := transaction.NewTransactionFromBytes(rawFiles)
+		require.NoError(t, err, "parse files tx")
 
-		opReturnOriginal := parsedOriginal.Outputs[0]
+		// Original OP_RETURN = output 0.
+		opReturnOriginal := parsedFiles.Outputs[0]
 		require.True(t, opReturnOriginal.LockingScript.IsData())
 
 		pushes := extractPushData(t, opReturnOriginal.LockingScript)
@@ -350,8 +294,7 @@ func TestCopyFile(t *testing.T) {
 	t.Logf("--- Copy File DAG Summary ---")
 	t.Logf("Root:             %s", rootTxIDStr)
 	t.Logf("  -> Dir:         %s", dirTxIDStr)
-	t.Logf("    -> Original:  %s", fileTxIDStr)
-	t.Logf("    -> Copy:      %s", copyTxIDStr)
+	t.Logf("  -> Orig+Copy:   %s", filesTxIDStr)
 }
 
 // TestCopyIndependence verifies that after copying a file, updating the
@@ -416,31 +359,29 @@ func TestCopyIndependence(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs copy-independence test root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx batch")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
-	require.NoError(t, err, "sign root tx")
+	rootSignedHex, err := rootBatch.Sign(rootResult)
+	require.NoError(t, err, "sign root tx batch")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
 	require.NoError(t, err, "broadcast root tx")
 	t.Logf("root txid: %s", rootTxIDStr)
 	mineOneBlock(t)
 
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO)
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -451,37 +392,29 @@ func TestCopyIndependence(t *testing.T) {
 	// Step 3: Create dir under root.
 	// ==================================================================
 	dirPayload := []byte("bitfs directory: docs")
-	dirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    dirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       dirPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned dir tx")
+	dirBatch := tx.NewMutationBatch()
+	dirBatch.AddCreateChild(dirKey.PublicKey, rootResult.TxID, dirPayload, rootNodeUTXO, rootKey.PrivateKey)
+	dirBatch.AddFeeInput(changeUTXO)
+	dirBatch.SetChange(feeKey.PublicKey.Hash())
+	dirBatch.SetFeeRate(1)
+	dirResult, err := dirBatch.Build()
+	require.NoError(t, err, "build dir tx batch")
 
-	dirSignedHex, err := tx.SignMetanetTx(dirMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
-	require.NoError(t, err, "sign dir tx")
+	dirSignedHex, err := dirBatch.Sign(dirResult)
+	require.NoError(t, err, "sign dir tx batch")
 
 	dirTxIDStr, err := node.SendRawTransaction(ctx, dirSignedHex)
 	require.NoError(t, err, "broadcast dir tx")
 	t.Logf("dir txid: %s", dirTxIDStr)
 	mineOneBlock(t)
 
-	dirNodeUTXO := dirMtx.NodeUTXO
+	dirNodeUTXO := dirResult.NodeOps[0].NodeUTXO
 	dirNodeUTXOScript, err := tx.BuildP2PKHScript(dirKey.PublicKey)
 	require.NoError(t, err)
 	dirNodeUTXO.ScriptPubKey = dirNodeUTXOScript
 	dirNodeUTXO.PrivateKey = dirKey.PrivateKey
 
-	dirChangeUTXO := dirMtx.ChangeUTXO
+	dirChangeUTXO := dirResult.ChangeUTXO
 	require.NotNil(t, dirChangeUTXO)
 	dirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -489,7 +422,7 @@ func TestCopyIndependence(t *testing.T) {
 	dirChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 4: Create original file under dir (Free encrypted).
+	// Step 4: Create original file and copy under dir in a single batch.
 	// ==================================================================
 	originalContent := []byte("Original content before any updates.")
 
@@ -500,54 +433,6 @@ func TestCopyIndependence(t *testing.T) {
 	filePayload = append(filePayload, encResult.KeyHash...)
 	filePayload = append(filePayload, encResult.Ciphertext...)
 
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    dirNodeUTXO,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       dirChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned original file tx")
-
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		dirNodeUTXO,
-		dirChangeUTXO,
-	})
-	require.NoError(t, err, "sign original file tx")
-
-	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
-	require.NoError(t, err, "broadcast original file tx")
-	t.Logf("original file txid: %s", fileTxIDStr)
-	mineOneBlock(t)
-
-	// Prepare dir's refreshed NodeUTXO (output 2 of file tx = parent refresh).
-	dirNodeUTXORefresh := fileMtx.ParentUTXO
-	require.NotNil(t, dirNodeUTXORefresh, "file tx should refresh dir UTXO")
-	dirNodeUTXORefresh.ScriptPubKey = dirNodeUTXOScript
-	dirNodeUTXORefresh.PrivateKey = dirKey.PrivateKey
-
-	// Prepare file's NodeUTXO for SelfUpdate later.
-	fileNodeUTXO := fileMtx.NodeUTXO
-	fileNodeUTXOScript, err := tx.BuildP2PKHScript(fileKey.PublicKey)
-	require.NoError(t, err)
-	fileNodeUTXO.ScriptPubKey = fileNodeUTXOScript
-	fileNodeUTXO.PrivateKey = fileKey.PrivateKey
-
-	// Prepare change from file tx.
-	fileChangeUTXO := fileMtx.ChangeUTXO
-	require.NotNil(t, fileChangeUTXO)
-	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
-	require.NoError(t, err)
-	fileChangeUTXO.ScriptPubKey = fileChangeScript
-	fileChangeUTXO.PrivateKey = feeKey.PrivateKey
-
-	// ==================================================================
-	// Step 5: Copy original file under same dir.
-	// ==================================================================
 	copyEncResult, err := method42.Encrypt(originalContent, copyKey.PrivateKey, copyKey.PublicKey, method42.AccessFree)
 	require.NoError(t, err, "method42 encrypt copy (free)")
 
@@ -555,40 +440,44 @@ func TestCopyIndependence(t *testing.T) {
 	copyPayload = append(copyPayload, copyEncResult.KeyHash...)
 	copyPayload = append(copyPayload, copyEncResult.Ciphertext...)
 
-	copyMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    copyKey.PublicKey,
-		ParentTxID:    dirMtx.TxID,
-		Payload:       copyPayload,
-		ParentUTXO:    dirNodeUTXORefresh,
-		ParentPrivKey: dirKey.PrivateKey,
-		FeeUTXO:       fileChangeUTXO,
-		ParentPubKey:  dirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned copy file tx")
+	// Both files share the same parent (dir), so they go in one batch.
+	filesBatch := tx.NewMutationBatch()
+	filesBatch.AddCreateChild(fileKey.PublicKey, dirResult.TxID, filePayload, dirNodeUTXO, dirKey.PrivateKey)
+	filesBatch.AddCreateChild(copyKey.PublicKey, dirResult.TxID, copyPayload, dirNodeUTXO, dirKey.PrivateKey)
+	filesBatch.AddFeeInput(dirChangeUTXO)
+	filesBatch.SetChange(feeKey.PublicKey.Hash())
+	filesBatch.SetFeeRate(1)
+	filesResult, err := filesBatch.Build()
+	require.NoError(t, err, "build original + copy batch")
 
-	copySignedHex, err := tx.SignMetanetTx(copyMtx, []*tx.UTXO{
-		dirNodeUTXORefresh,
-		fileChangeUTXO,
-	})
-	require.NoError(t, err, "sign copy file tx")
+	filesSignedHex, err := filesBatch.Sign(filesResult)
+	require.NoError(t, err, "sign original + copy batch")
 
-	copyTxIDStr, err := node.SendRawTransaction(ctx, copySignedHex)
-	require.NoError(t, err, "broadcast copy file tx")
-	t.Logf("copy file txid: %s", copyTxIDStr)
+	filesTxIDStr, err := node.SendRawTransaction(ctx, filesSignedHex)
+	require.NoError(t, err, "broadcast original + copy tx")
+	t.Logf("original + copy txid: %s", filesTxIDStr)
 	mineOneBlock(t)
 
-	// Prepare change from copy tx for the SelfUpdate fee.
-	copyChangeUTXO := copyMtx.ChangeUTXO
-	require.NotNil(t, copyChangeUTXO, "copy tx should have change output")
-	copyChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
+	// original = NodeOps[0], copy = NodeOps[1].
+	require.Len(t, filesResult.NodeOps, 2, "batch should have 2 node ops")
+
+	// Prepare original file's NodeUTXO for SelfUpdate later.
+	fileNodeUTXO := filesResult.NodeOps[0].NodeUTXO
+	fileNodeUTXOScript, err := tx.BuildP2PKHScript(fileKey.PublicKey)
 	require.NoError(t, err)
-	copyChangeUTXO.ScriptPubKey = copyChangeScript
-	copyChangeUTXO.PrivateKey = feeKey.PrivateKey
+	fileNodeUTXO.ScriptPubKey = fileNodeUTXOScript
+	fileNodeUTXO.PrivateKey = fileKey.PrivateKey
+
+	// Prepare change from files batch.
+	filesChangeUTXO := filesResult.ChangeUTXO
+	require.NotNil(t, filesChangeUTXO, "files batch should have change output")
+	filesChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
+	require.NoError(t, err)
+	filesChangeUTXO.ScriptPubKey = filesChangeScript
+	filesChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// ==================================================================
-	// Step 6: SelfUpdate original file with new content.
+	// Step 5: SelfUpdate original file with new content.
 	// ==================================================================
 	updatedContent := []byte("Updated content! The original file has been modified.")
 
@@ -599,23 +488,16 @@ func TestCopyIndependence(t *testing.T) {
 	updatedPayload = append(updatedPayload, updatedEncResult.KeyHash...)
 	updatedPayload = append(updatedPayload, updatedEncResult.Ciphertext...)
 
-	updateMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-		NodePubKey:  fileKey.PublicKey,
-		NodePrivKey: fileKey.PrivateKey,
-		ParentTxID:  dirMtx.TxID, // preserve original parent link
-		Payload:     updatedPayload,
-		NodeUTXO:    fileNodeUTXO,
-		FeeUTXO:     copyChangeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned self-update tx")
+	updateBatch := tx.NewMutationBatch()
+	updateBatch.AddSelfUpdate(fileKey.PublicKey, dirResult.TxID, updatedPayload, fileNodeUTXO, fileKey.PrivateKey)
+	updateBatch.AddFeeInput(filesChangeUTXO)
+	updateBatch.SetChange(feeKey.PublicKey.Hash())
+	updateBatch.SetFeeRate(1)
+	updateResult, err := updateBatch.Build()
+	require.NoError(t, err, "build self-update batch")
 
-	updateSignedHex, err := tx.SignMetanetTx(updateMtx, []*tx.UTXO{
-		fileNodeUTXO,
-		copyChangeUTXO,
-	})
-	require.NoError(t, err, "sign self-update tx")
+	updateSignedHex, err := updateBatch.Sign(updateResult)
+	require.NoError(t, err, "sign self-update batch")
 
 	updateTxIDStr, err := node.SendRawTransaction(ctx, updateSignedHex)
 	require.NoError(t, err, "broadcast self-update tx")
@@ -623,16 +505,17 @@ func TestCopyIndependence(t *testing.T) {
 	mineOneBlock(t)
 
 	// ==================================================================
-	// Step 7: Verify copy still has original content (independence).
+	// Step 6: Verify copy still has original content (independence).
 	// ==================================================================
 	t.Run("copy_retains_original_content", func(t *testing.T) {
-		rawCopy, err := node.GetRawTransaction(ctx, copyTxIDStr)
-		require.NoError(t, err, "get copy tx from chain")
+		// Copy is in the files batch TX at output index 2 (OP_RETURN).
+		rawFiles, err := node.GetRawTransaction(ctx, filesTxIDStr)
+		require.NoError(t, err, "get files tx from chain")
 
-		parsedCopy, err := transaction.NewTransactionFromBytes(rawCopy)
-		require.NoError(t, err, "parse copy tx")
+		parsedFiles, err := transaction.NewTransactionFromBytes(rawFiles)
+		require.NoError(t, err, "parse files tx")
 
-		opReturnCopy := parsedCopy.Outputs[0]
+		opReturnCopy := parsedFiles.Outputs[2]
 		require.True(t, opReturnCopy.LockingScript.IsData())
 
 		pushes := extractPushData(t, opReturnCopy.LockingScript)
@@ -660,7 +543,7 @@ func TestCopyIndependence(t *testing.T) {
 	})
 
 	// ==================================================================
-	// Step 8: Verify original now has updated content.
+	// Step 7: Verify original now has updated content.
 	// ==================================================================
 	t.Run("original_has_updated_content", func(t *testing.T) {
 		rawUpdate, err := node.GetRawTransaction(ctx, updateTxIDStr)
@@ -679,7 +562,7 @@ func TestCopyIndependence(t *testing.T) {
 		// SelfUpdate preserves P_node and parentTxID.
 		assert.Equal(t, fileKey.PublicKey.Compressed(), pNode,
 			"updated P_node should still be file key")
-		assert.Equal(t, dirMtx.TxID, parentTxID,
+		assert.Equal(t, dirResult.TxID, parentTxID,
 			"updated parentTxID should still link to dir")
 
 		require.True(t, len(payload) > 32)
@@ -705,8 +588,7 @@ func TestCopyIndependence(t *testing.T) {
 	t.Logf("--- Copy Independence DAG Summary ---")
 	t.Logf("Root:              %s", rootTxIDStr)
 	t.Logf("  -> Dir:          %s", dirTxIDStr)
-	t.Logf("    -> Original:   %s (created)", fileTxIDStr)
-	t.Logf("    -> Copy:       %s (independent copy)", copyTxIDStr)
-	t.Logf("    -> Update:     %s (original self-updated)", updateTxIDStr)
+	t.Logf("  -> Orig+Copy:    %s (batch)", filesTxIDStr)
+	t.Logf("  -> Update:       %s (original self-updated)", updateTxIDStr)
 	t.Logf("Copy independence verified: updating original does not affect copy")
 }

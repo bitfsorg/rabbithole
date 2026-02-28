@@ -45,17 +45,15 @@ func TestDoubleSpendRejected(t *testing.T) {
 	rootKey1, err := w.DeriveNodeKey(0, nil, nil)
 	require.NoError(t, err, "derive root node key 1")
 
-	mtx1, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey1.PublicKey,
-		NodePrivKey: rootKey1.PrivateKey,
-		Payload:     []byte("first root tx"),
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	batch1 := tx.NewMutationBatch()
+	batch1.AddCreateRoot(rootKey1.PublicKey, []byte("first root tx"))
+	batch1.AddFeeInput(feeUTXO)
+	batch1.SetChange(feeKey.PublicKey.Hash())
+	batch1.SetFeeRate(1)
+	result1, err := batch1.Build()
 	require.NoError(t, err, "build first root tx")
 
-	hex1, err := tx.SignMetanetTx(mtx1, []*tx.UTXO{feeUTXO})
+	hex1, err := batch1.Sign(result1)
 	require.NoError(t, err, "sign first root tx")
 
 	txid1, err := node.SendRawTransaction(ctx, hex1)
@@ -68,17 +66,15 @@ func TestDoubleSpendRejected(t *testing.T) {
 	rootKey2, err := w.DeriveNodeKey(0, []uint32{0}, nil)
 	require.NoError(t, err, "derive root node key 2")
 
-	mtx2, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey2.PublicKey,
-		NodePrivKey: rootKey2.PrivateKey,
-		Payload:     []byte("second root tx - double spend"),
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	batch2 := tx.NewMutationBatch()
+	batch2.AddCreateRoot(rootKey2.PublicKey, []byte("second root tx - double spend"))
+	batch2.AddFeeInput(feeUTXO)
+	batch2.SetChange(feeKey.PublicKey.Hash())
+	batch2.SetFeeRate(1)
+	result2, err := batch2.Build()
 	require.NoError(t, err, "build second root tx")
 
-	hex2, err := tx.SignMetanetTx(mtx2, []*tx.UTXO{feeUTXO})
+	hex2, err := batch2.Sign(result2)
 	require.NoError(t, err, "sign second root tx")
 
 	_, err = node.SendRawTransaction(ctx, hex2)
@@ -139,14 +135,12 @@ func TestInsufficientFeeUTXO(t *testing.T) {
 		PrivateKey:   feeKey.PrivateKey,
 	}
 
-	_, err = tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     []byte("insufficient funds test"),
-		FeeUTXO:     dustOnlyUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	batch := tx.NewMutationBatch()
+	batch.AddCreateRoot(rootKey.PublicKey, []byte("insufficient funds test"))
+	batch.AddFeeInput(dustOnlyUTXO)
+	batch.SetChange(feeKey.PublicKey.Hash())
+	batch.SetFeeRate(1)
+	_, err = batch.Build()
 	require.Error(t, err, "tx build with dust-only UTXO should fail with insufficient funds")
 	t.Logf("insufficient fee correctly rejected: %v", err)
 }

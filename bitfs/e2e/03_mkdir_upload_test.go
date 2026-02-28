@@ -86,18 +86,16 @@ func TestMkdirUpload(t *testing.T) {
 	// ==================================================================
 	rootPayload := []byte("bitfs root directory")
 
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
-	require.NotEmpty(t, rootMtx.RawTx)
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
+	require.NoError(t, err, "build root tx batch")
+	require.NotEmpty(t, rootResult.RawTx)
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -107,15 +105,11 @@ func TestMkdirUpload(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare the root's NodeUTXO for spending as the parent edge in step 4.
-	// rootMtx.NodeUTXO has Vout=1, Amount=DustLimit, TxID set by SignMetanetTx.
-	rootNodeUTXO := rootMtx.NodeUTXO
-	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
-	require.NoError(t, err, "build root P2PKH script")
-	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare the change UTXO from root tx as next fee input.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err, "build change P2PKH script")
@@ -132,25 +126,16 @@ func TestMkdirUpload(t *testing.T) {
 	// ==================================================================
 	childDirPayload := []byte("bitfs directory: docs")
 
-	childDirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    childDirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID, // 32-byte link to root
-		Payload:       childDirPayload,
-		ParentUTXO:    rootNodeUTXO,            // Input 0: P_root UTXO (Metanet edge)
-		ParentPrivKey: rootKey.PrivateKey,       // Sign Input 0
-		FeeUTXO:       changeUTXO,              // Input 1: fee chain
-		ParentPubKey:  rootKey.PublicKey,        // Output 2: P_root refresh
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned child dir tx")
-	require.NotEmpty(t, childDirMtx.RawTx)
+	childDirBatch := tx.NewMutationBatch()
+	childDirBatch.AddCreateChild(childDirKey.PublicKey, rootResult.TxID, childDirPayload, rootNodeUTXO, rootKey.PrivateKey)
+	childDirBatch.AddFeeInput(changeUTXO)
+	childDirBatch.SetChange(feeKey.PublicKey.Hash())
+	childDirBatch.SetFeeRate(1)
+	childDirResult, err := childDirBatch.Build()
+	require.NoError(t, err, "build child dir tx batch")
+	require.NotEmpty(t, childDirResult.RawTx)
 
-	// Sign: Input 0 = rootNodeUTXO (parent key), Input 1 = changeUTXO (fee key)
-	childDirSignedHex, err := tx.SignMetanetTx(childDirMtx, []*tx.UTXO{
-		rootNodeUTXO, // Input 0
-		changeUTXO,   // Input 1
-	})
+	childDirSignedHex, err := childDirBatch.Sign(childDirResult)
 	require.NoError(t, err, "sign child dir tx")
 
 	childDirTxIDStr, err := node.SendRawTransaction(ctx, childDirSignedHex)
@@ -160,14 +145,11 @@ func TestMkdirUpload(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare child dir's NodeUTXO for spending as parent edge in step 5.
-	childDirNodeUTXO := childDirMtx.NodeUTXO
-	childDirNodeUTXOScript, err := tx.BuildP2PKHScript(childDirKey.PublicKey)
-	require.NoError(t, err, "build child dir P2PKH script")
-	childDirNodeUTXO.ScriptPubKey = childDirNodeUTXOScript
+	childDirNodeUTXO := childDirResult.NodeOps[0].NodeUTXO
 	childDirNodeUTXO.PrivateKey = childDirKey.PrivateKey
 
 	// Prepare change from child dir tx as next fee input.
-	childDirChangeUTXO := childDirMtx.ChangeUTXO
+	childDirChangeUTXO := childDirResult.ChangeUTXO
 	require.NotNil(t, childDirChangeUTXO, "child dir tx should have a change output")
 	childDirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err, "build child dir change script")
@@ -196,25 +178,16 @@ func TestMkdirUpload(t *testing.T) {
 	// ==================================================================
 	// Step 6: Build, sign, broadcast FILE NODE tx.
 	// ==================================================================
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    childDirMtx.TxID,         // 32-byte link to docs dir
-		Payload:       filePayload,
-		ParentUTXO:    childDirNodeUTXO,          // Input 0: P_docs UTXO (Metanet edge)
-		ParentPrivKey: childDirKey.PrivateKey,     // Sign Input 0
-		FeeUTXO:       childDirChangeUTXO,         // Input 1: fee chain
-		ParentPubKey:  childDirKey.PublicKey,       // Output 2: P_docs refresh
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned file tx")
-	require.NotEmpty(t, fileMtx.RawTx)
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, childDirResult.TxID, filePayload, childDirNodeUTXO, childDirKey.PrivateKey)
+	fileBatch.AddFeeInput(childDirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
+	require.NoError(t, err, "build file tx batch")
+	require.NotEmpty(t, fileResult.RawTx)
 
-	// Sign: Input 0 = childDirNodeUTXO (docs key), Input 1 = childDirChangeUTXO (fee key)
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		childDirNodeUTXO,    // Input 0
-		childDirChangeUTXO,  // Input 1
-	})
+	fileSignedHex, err := fileBatch.Sign(fileResult)
 	require.NoError(t, err, "sign file tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
@@ -282,8 +255,8 @@ func TestMkdirUpload(t *testing.T) {
 	assert.Equal(t, childDirPayload, childDirNode.payload, "child dir payload should match")
 
 	// The parentTxID in the child dir's OP_RETURN should match the root's TxID.
-	// rootMtx.TxID is in internal (little-endian) byte order.
-	assert.Equal(t, rootMtx.TxID, childDirNode.parentTxID,
+	// rootResult.TxID is in internal (little-endian) byte order.
+	assert.Equal(t, rootResult.TxID, childDirNode.parentTxID,
 		"child dir's parentTxID should link to root tx")
 
 	// File: parent TxID should be child dir's TxID, P_node = file pubkey.
@@ -291,7 +264,7 @@ func TestMkdirUpload(t *testing.T) {
 		"file P_node should match file key")
 
 	// The parentTxID in the file's OP_RETURN should match the child dir's TxID.
-	assert.Equal(t, childDirMtx.TxID, fileNode.parentTxID,
+	assert.Equal(t, childDirResult.TxID, fileNode.parentTxID,
 		"file's parentTxID should link to child dir tx")
 
 	// Verify the encrypted payload can be decrypted.
@@ -446,25 +419,20 @@ func TestMkdirUpload_ChildTxStructure(t *testing.T) {
 		PrivateKey:   feeKey.PrivateKey,
 	}
 
-	mtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    childKey.PublicKey,
-		ParentTxID:    parentTxID,
-		Payload:       []byte("test child node"),
-		ParentUTXO:    parentUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       feeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	require.NoError(t, err, "build unsigned child tx")
-	require.NotEmpty(t, mtx.RawTx, "should have raw tx bytes")
+	batch := tx.NewMutationBatch()
+	batch.AddCreateChild(childKey.PublicKey, parentTxID, []byte("test child node"), parentUTXO, rootKey.PrivateKey)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(feeKey.PublicKey.Hash())
+	batch.SetFeeRate(1)
+	batchResult, err := batch.Build()
+	require.NoError(t, err, "build child tx batch")
+	require.NotEmpty(t, batchResult.RawTx, "should have raw tx bytes")
 
 	// Parse the unsigned tx.
-	parsedTx, err := transaction.NewTransactionFromBytes(mtx.RawTx)
+	parsedTx, err := transaction.NewTransactionFromBytes(batchResult.RawTx)
 	require.NoError(t, err, "parse unsigned child tx")
 
-	// Verify structure: 2 inputs, 4 outputs (OP_RETURN, P_child, P_parent, change).
+	// Verify structure: 2 inputs, 3 outputs (OP_RETURN, P_child, change).
 	assert.Equal(t, 2, parsedTx.InputCount(), "child tx should have 2 inputs")
 	assert.GreaterOrEqual(t, parsedTx.OutputCount(), 3,
 		"child tx should have at least 3 outputs")
@@ -478,10 +446,6 @@ func TestMkdirUpload_ChildTxStructure(t *testing.T) {
 	assert.Equal(t, tx.DustLimit, parsedTx.Outputs[1].Satoshis,
 		"output 1 should be P_child dust")
 
-	// Output 2: P_parent refresh dust.
-	assert.Equal(t, tx.DustLimit, parsedTx.Outputs[2].Satoshis,
-		"output 2 should be P_parent refresh dust")
-
 	// OP_RETURN should contain MetaFlag.
 	scriptBytes := []byte(*parsedTx.Outputs[0].LockingScript)
 	assert.True(t, bytes.Contains(scriptBytes, tx.MetaFlagBytes),
@@ -492,18 +456,18 @@ func TestMkdirUpload_ChildTxStructure(t *testing.T) {
 		"OP_RETURN should contain ParentTxID")
 
 	// Sign the tx and verify it produces valid signed hex.
-	signedHex, err := tx.SignMetanetTx(mtx, []*tx.UTXO{parentUTXO, feeUTXO})
+	signedHex, err := batch.Sign(batchResult)
 	require.NoError(t, err, "sign child tx")
 	require.NotEmpty(t, signedHex)
 
-	// Verify TxID is set.
-	assert.Len(t, mtx.TxID, 32, "TxID should be 32 bytes after signing")
+	// Verify TxID is set after signing.
+	assert.Len(t, batchResult.TxID, 32, "TxID should be 32 bytes after signing")
 
-	// Verify NodeUTXO, ParentUTXO, ChangeUTXO have TxID set.
-	assert.NotNil(t, mtx.NodeUTXO, "NodeUTXO should be set")
-	assert.Equal(t, mtx.TxID, mtx.NodeUTXO.TxID, "NodeUTXO.TxID should match")
-	assert.NotNil(t, mtx.ParentUTXO, "ParentUTXO should be set")
-	assert.Equal(t, mtx.TxID, mtx.ParentUTXO.TxID, "ParentUTXO.TxID should match")
+	// Verify NodeUTXO and ChangeUTXO have TxID set.
+	assert.NotNil(t, batchResult.NodeOps[0].NodeUTXO, "NodeUTXO should be set")
+	assert.Equal(t, batchResult.TxID, batchResult.NodeOps[0].NodeUTXO.TxID, "NodeUTXO.TxID should match")
+	assert.NotNil(t, batchResult.ChangeUTXO, "ChangeUTXO should be set")
+	assert.Equal(t, batchResult.TxID, batchResult.ChangeUTXO.TxID, "ChangeUTXO.TxID should match")
 
 	t.Logf("child tx structure verified: 2 inputs, %d outputs, signed hex=%d chars",
 		parsedTx.OutputCount(), len(signedHex))

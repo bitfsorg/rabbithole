@@ -10,7 +10,7 @@ import (
 
 	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/stretchr/testify/require"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 	"github.com/tongxiaofeng/libbitfs-go/storage"
 	"github.com/tongxiaofeng/libbitfs-go/tx"
 	"github.com/tongxiaofeng/libbitfs-go/wallet"
@@ -22,7 +22,7 @@ import (
 //
 // Returns the engine and the temporary data directory path. The caller does
 // not need to clean up the temp directory; t.TempDir() handles that.
-func SetupTestEngine(t *testing.T) (*engine.Engine, string) {
+func SetupTestEngine(t *testing.T) (*vault.Vault, string) {
 	t.Helper()
 
 	dataDir := t.TempDir()
@@ -47,9 +47,9 @@ func SetupTestEngine(t *testing.T) (*engine.Engine, string) {
 
 	// Create empty local state (nodes + UTXOs).
 	localStatePath := filepath.Join(dataDir, "nodes.json")
-	localState := engine.NewLocalState(localStatePath)
+	localState := vault.NewLocalState(localStatePath)
 
-	eng := &engine.Engine{
+	eng := &vault.Vault{
 		Wallet:  w,
 		WState:  wState,
 		Store:   store,
@@ -70,7 +70,7 @@ func SetupTestEngine(t *testing.T) (*engine.Engine, string) {
 // the regtest node, mines 101 blocks to make coinbase spendable, sends
 // 0.01 BSV to the derived address, mines 1 confirmation block, and adds
 // the resulting UTXO to the engine's local state.
-func FundEngineWallet(t *testing.T, eng *engine.Engine, node *RegtestNode) {
+func FundEngineWallet(t *testing.T, eng *vault.Vault, node *RegtestNode) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -126,7 +126,7 @@ func FundEngineWallet(t *testing.T, eng *engine.Engine, node *RegtestNode) {
 	amountSat := uint64(regtestUTXO.Amount * 1e8)
 
 	// Add the UTXO to the engine's local state.
-	eng.State.AddUTXO(&engine.UTXOState{
+	eng.State.AddUTXO(&vault.UTXOState{
 		TxID:         hex.EncodeToString(txidBytes),
 		Vout:         regtestUTXO.Vout,
 		Amount:       amountSat,

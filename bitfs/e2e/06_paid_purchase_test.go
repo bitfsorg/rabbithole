@@ -86,17 +86,15 @@ func TestPaidPurchaseFlow(t *testing.T) {
 
 	// Build and broadcast root directory tx.
 	rootPayload := []byte("bitfs seller root")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  sellerRootKey.PublicKey,
-		NodePrivKey: sellerRootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     sellerFeeUTXO,
-		ChangeAddr:  sellerFeeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(sellerRootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(sellerFeeUTXO)
+	rootBatch.SetChange(sellerFeeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
 	require.NoError(t, err, "build seller root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{sellerFeeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign seller root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -105,13 +103,13 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root node UTXO and change UTXO for child tx.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(sellerRootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = sellerRootKey.PrivateKey
 
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have change output")
 	changeScript, err := tx.BuildP2PKHScript(sellerFeeKey.PublicKey)
 	require.NoError(t, err)
@@ -145,20 +143,15 @@ func TestPaidPurchaseFlow(t *testing.T) {
 	filePayload = append(filePayload, encResult.KeyHash...)
 	filePayload = append(filePayload, encResult.Ciphertext...)
 
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    sellerFileKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: sellerRootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  sellerRootKey.PublicKey,
-		ChangeAddr:    sellerFeeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(sellerFileKey.PublicKey, rootResult.TxID, filePayload, rootNodeUTXO, sellerRootKey.PrivateKey)
+	fileBatch.AddFeeInput(changeUTXO)
+	fileBatch.SetChange(sellerFeeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
 	require.NoError(t, err, "build file node tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{rootNodeUTXO, changeUTXO})
+	fileSignedHex, err := fileBatch.Sign(fileResult)
 	require.NoError(t, err, "sign file node tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)

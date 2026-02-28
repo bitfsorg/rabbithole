@@ -141,26 +141,24 @@ func TestMetanetRootTx(t *testing.T) {
 		feeUTXO.TxID, feeUTXO.Vout, feeUTXO.Amount)
 
 	// ------------------------------------------------------------------
-	// Step 3: Build a root directory tx using BuildUnsignedCreateRootTx.
+	// Step 3: Build a root directory tx using MutationBatch.
 	// ------------------------------------------------------------------
 	payload := []byte("bitfs root directory")
-	mtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  nodeKey.PublicKey,
-		NodePrivKey: nodeKey.PrivateKey,
-		Payload:     payload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
-	require.NoError(t, err, "build unsigned root tx")
-	require.NotEmpty(t, mtx.RawTx, "unsigned tx bytes should not be empty")
-	t.Logf("unsigned tx size: %d bytes", len(mtx.RawTx))
+	batch := tx.NewMutationBatch()
+	batch.AddCreateRoot(nodeKey.PublicKey, payload)
+	batch.AddFeeInput(feeUTXO)
+	batch.SetChange(feeKey.PublicKey.Hash())
+	batch.SetFeeRate(1)
+	batchResult, err := batch.Build()
+	require.NoError(t, err, "build root tx batch")
+	require.NotEmpty(t, batchResult.RawTx, "unsigned tx bytes should not be empty")
+	t.Logf("unsigned tx size: %d bytes", len(batchResult.RawTx))
 
 	// ------------------------------------------------------------------
-	// Step 4: Sign with SignMetanetTx.
+	// Step 4: Sign the batch.
 	// ------------------------------------------------------------------
-	signedHex, err := tx.SignMetanetTx(mtx, []*tx.UTXO{feeUTXO})
-	require.NoError(t, err, "sign metanet tx")
+	signedHex, err := batch.Sign(batchResult)
+	require.NoError(t, err, "sign root tx batch")
 	require.NotEmpty(t, signedHex, "signed hex should not be empty")
 	t.Logf("signed tx hex: %s", signedHex)
 

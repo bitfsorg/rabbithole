@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/e2e/testutil"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 	"github.com/tongxiaofeng/libbitfs-go/tx"
 	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
@@ -35,7 +35,7 @@ func TestSetPriceOnFile(t *testing.T) {
 	// ------------------------------------------------------------------
 	// Step 1: Create root directory via engine.Mkdir.
 	// ------------------------------------------------------------------
-	rootResult, err := eng.Mkdir(&engine.MkdirOpts{
+	rootResult, err := eng.Mkdir(&vault.MkdirOpts{
 		VaultIndex: 0,
 		Path:       "/",
 	})
@@ -55,7 +55,7 @@ func TestSetPriceOnFile(t *testing.T) {
 	err = os.WriteFile(localFile, content, 0600)
 	require.NoError(t, err, "write local file")
 
-	putResult, err := eng.PutFile(&engine.PutOpts{
+	putResult, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/testfile.bin",
@@ -79,7 +79,7 @@ func TestSetPriceOnFile(t *testing.T) {
 	// ------------------------------------------------------------------
 	pricePerKB := uint64(500) // 500 sats/KB
 
-	sellResult, err := eng.Sell(&engine.SellOpts{
+	sellResult, err := eng.Sell(&vault.SellOpts{
 		VaultIndex: 0,
 		Path:       "/testfile.bin",
 		PricePerKB: pricePerKB,
@@ -177,23 +177,20 @@ func TestPriceInNodeState(t *testing.T) {
 		PrivateKey:   feeKP.PrivateKey,
 	}
 
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKP.PublicKey,
-		NodePrivKey: rootKP.PrivateKey,
-		Payload:     []byte("sell-pricing test root"),
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKP.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKP.PublicKey, []byte("sell-pricing test root"))
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKP.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
 	require.NoError(t, err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	_, err = rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	// We don't need to broadcast -- we just need valid TxIDs and UTXOs.
 	// But since Sell builds a tx, the UTXOs must be internally consistent.
-	rootTxIDHex := hex.EncodeToString(rootMtx.TxID)
-	_ = rootSignedHex
+	rootTxIDHex := hex.EncodeToString(rootResult.TxID)
 	t.Logf("root txid: %s", rootTxIDHex)
 
 	// ------------------------------------------------------------------
@@ -202,41 +199,36 @@ func TestPriceInNodeState(t *testing.T) {
 	// Prepare root node UTXO.
 	rootNodeScript, err := tx.BuildP2PKHScript(rootKP.PublicKey)
 	require.NoError(t, err)
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXO.ScriptPubKey = rootNodeScript
 	rootNodeUTXO.PrivateKey = rootKP.PrivateKey
 
 	// Prepare change UTXO from root tx.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKP.PublicKey)
 	require.NoError(t, err)
 	changeUTXO.ScriptPubKey = changeScript
 	changeUTXO.PrivateKey = feeKP.PrivateKey
 
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKP.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       []byte("sell-pricing test file payload"),
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKP.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKP.PublicKey,
-		ChangeAddr:    feeKP.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKP.PublicKey, rootResult.TxID, []byte("sell-pricing test file payload"), rootNodeUTXO, rootKP.PrivateKey)
+	fileBatch.AddFeeInput(changeUTXO)
+	fileBatch.SetChange(feeKP.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
 	require.NoError(t, err, "build file child tx")
 
-	_, err = tx.SignMetanetTx(fileMtx, []*tx.UTXO{rootNodeUTXO, changeUTXO})
+	_, err = fileBatch.Sign(fileResult)
 	require.NoError(t, err, "sign file child tx")
 
-	fileTxIDHex := hex.EncodeToString(fileMtx.TxID)
+	fileTxIDHex := hex.EncodeToString(fileResult.TxID)
 	t.Logf("file txid: %s", fileTxIDHex)
 
 	// ------------------------------------------------------------------
 	// Step 4: Manually populate engine state with root and file nodes.
 	// ------------------------------------------------------------------
-	eng.State.SetNode(rootPubHex, &engine.NodeState{
+	eng.State.SetNode(rootPubHex, &vault.NodeState{
 		PubKeyHex:    rootPubHex,
 		TxID:         rootTxIDHex,
 		Type:         "dir",
@@ -244,7 +236,7 @@ func TestPriceInNodeState(t *testing.T) {
 		Path:         "/",
 		VaultIndex:   0,
 		ChildIndices: nil,
-		Children: []*engine.ChildState{{
+		Children: []*vault.ChildState{{
 			Name:   "testfile.bin",
 			Type:   "file",
 			PubKey: filePubHex,
@@ -256,7 +248,7 @@ func TestPriceInNodeState(t *testing.T) {
 
 	keyHashHex := "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
 
-	eng.State.SetNode(filePubHex, &engine.NodeState{
+	eng.State.SetNode(filePubHex, &vault.NodeState{
 		PubKeyHex:    filePubHex,
 		TxID:         fileTxIDHex,
 		ParentTxID:   rootTxIDHex,
@@ -274,10 +266,10 @@ func TestPriceInNodeState(t *testing.T) {
 	// Add the file node's UTXO from the child tx.
 	fileNodeScript, err := tx.BuildP2PKHScript(fileKP.PublicKey)
 	require.NoError(t, err)
-	eng.State.AddUTXO(&engine.UTXOState{
+	eng.State.AddUTXO(&vault.UTXOState{
 		TxID:         fileTxIDHex,
-		Vout:         fileMtx.NodeUTXO.Vout,
-		Amount:       fileMtx.NodeUTXO.Amount,
+		Vout:         fileResult.NodeOps[0].NodeUTXO.Vout,
+		Amount:       fileResult.NodeOps[0].NodeUTXO.Amount,
 		ScriptPubKey: hex.EncodeToString(fileNodeScript),
 		PubKeyHex:    filePubHex,
 		Type:         "node",
@@ -285,13 +277,13 @@ func TestPriceInNodeState(t *testing.T) {
 	})
 
 	// Add a fee UTXO from the child tx's change output.
-	if fileMtx.ChangeUTXO != nil {
+	if fileResult.ChangeUTXO != nil {
 		fileChangeScript, err := tx.BuildP2PKHScript(feeKP.PublicKey)
 		require.NoError(t, err)
-		eng.State.AddUTXO(&engine.UTXOState{
+		eng.State.AddUTXO(&vault.UTXOState{
 			TxID:         fileTxIDHex,
-			Vout:         fileMtx.ChangeUTXO.Vout,
-			Amount:       fileMtx.ChangeUTXO.Amount,
+			Vout:         fileResult.ChangeUTXO.Vout,
+			Amount:       fileResult.ChangeUTXO.Amount,
 			ScriptPubKey: hex.EncodeToString(fileChangeScript),
 			PubKeyHex:    hex.EncodeToString(feeKP.PublicKey.Compressed()),
 			Type:         "fee",
@@ -311,7 +303,7 @@ func TestPriceInNodeState(t *testing.T) {
 	// ------------------------------------------------------------------
 	pricePerKB := uint64(250)
 
-	sellResult, err := eng.Sell(&engine.SellOpts{
+	sellResult, err := eng.Sell(&vault.SellOpts{
 		VaultIndex: 0,
 		Path:       "/testfile.bin",
 		PricePerKB: pricePerKB,
@@ -385,7 +377,7 @@ func TestPriceInNodeState(t *testing.T) {
 func TestSellNonexistentPath(t *testing.T) {
 	eng, _ := testutil.SetupTestEngine(t)
 
-	_, err := eng.Sell(&engine.SellOpts{
+	_, err := eng.Sell(&vault.SellOpts{
 		VaultIndex: 0,
 		Path:       "/does/not/exist.txt",
 		PricePerKB: 100,

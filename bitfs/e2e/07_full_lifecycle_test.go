@@ -81,17 +81,15 @@ func TestFullLifecycle(t *testing.T) {
 	// Step 2: Create root directory.
 	// ==================================================================
 	rootPayload := []byte("bitfs lifecycle root directory")
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+	rootResult, err := rootBatch.Build()
 	require.NoError(t, err, "build unsigned root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	require.NoError(t, err, "sign root tx")
 
 	rootTxIDStr, err := node.SendRawTransaction(ctx, rootSignedHex)
@@ -100,14 +98,14 @@ func TestFullLifecycle(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare root's NodeUTXO for spending as parent edge.
-	rootNodeUTXO := rootMtx.NodeUTXO
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
 	rootNodeUTXOScript, err := tx.BuildP2PKHScript(rootKey.PublicKey)
 	require.NoError(t, err)
 	rootNodeUTXO.ScriptPubKey = rootNodeUTXOScript
 	rootNodeUTXO.PrivateKey = rootKey.PrivateKey
 
 	// Prepare change UTXO from root tx as next fee input.
-	changeUTXO := rootMtx.ChangeUTXO
+	changeUTXO := rootResult.ChangeUTXO
 	require.NotNil(t, changeUTXO, "root tx should have a change output")
 	changeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -118,23 +116,15 @@ func TestFullLifecycle(t *testing.T) {
 	// Step 3: Mkdir "docs" -- child directory under root.
 	// ==================================================================
 	childDirPayload := []byte("bitfs directory: docs")
-	childDirMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    childDirKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       childDirPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	childDirBatch := tx.NewMutationBatch()
+	childDirBatch.AddCreateChild(childDirKey.PublicKey, rootResult.TxID, childDirPayload, rootNodeUTXO, rootKey.PrivateKey)
+	childDirBatch.AddFeeInput(changeUTXO)
+	childDirBatch.SetChange(feeKey.PublicKey.Hash())
+	childDirBatch.SetFeeRate(1)
+	childDirResult, err := childDirBatch.Build()
 	require.NoError(t, err, "build unsigned child dir tx")
 
-	childDirSignedHex, err := tx.SignMetanetTx(childDirMtx, []*tx.UTXO{
-		rootNodeUTXO,
-		changeUTXO,
-	})
+	childDirSignedHex, err := childDirBatch.Sign(childDirResult)
 	require.NoError(t, err, "sign child dir tx")
 
 	childDirTxIDStr, err := node.SendRawTransaction(ctx, childDirSignedHex)
@@ -143,25 +133,19 @@ func TestFullLifecycle(t *testing.T) {
 	mineOneBlock(t)
 
 	// Prepare child dir's NodeUTXO for spending as parent edge in step 4.
-	childDirNodeUTXO := childDirMtx.NodeUTXO
+	childDirNodeUTXO := childDirResult.NodeOps[0].NodeUTXO
 	childDirNodeUTXOScript, err := tx.BuildP2PKHScript(childDirKey.PublicKey)
 	require.NoError(t, err)
 	childDirNodeUTXO.ScriptPubKey = childDirNodeUTXOScript
 	childDirNodeUTXO.PrivateKey = childDirKey.PrivateKey
 
 	// Prepare change from child dir tx as next fee input.
-	childDirChangeUTXO := childDirMtx.ChangeUTXO
+	childDirChangeUTXO := childDirResult.ChangeUTXO
 	require.NotNil(t, childDirChangeUTXO, "child dir tx should have change output")
 	childDirChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
 	childDirChangeUTXO.ScriptPubKey = childDirChangeScript
 	childDirChangeUTXO.PrivateKey = feeKey.PrivateKey
-
-	// Also capture the refreshed root NodeUTXO (output 2 of child dir tx).
-	rootNodeUTXORefresh := childDirMtx.ParentUTXO
-	require.NotNil(t, rootNodeUTXORefresh, "child dir tx should refresh parent UTXO")
-	rootNodeUTXORefresh.ScriptPubKey = rootNodeUTXOScript
-	rootNodeUTXORefresh.PrivateKey = rootKey.PrivateKey
 
 	// ==================================================================
 	// Step 4: Put "docs/hello.txt" (Free) -- encrypt and build file node tx.
@@ -180,23 +164,19 @@ func TestFullLifecycle(t *testing.T) {
 	filePayload = append(filePayload, encResult.KeyHash...)
 	filePayload = append(filePayload, encResult.Ciphertext...)
 
-	fileMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    fileKey.PublicKey,
-		ParentTxID:    childDirMtx.TxID,
-		Payload:       filePayload,
-		ParentUTXO:    childDirNodeUTXO,
-		ParentPrivKey: childDirKey.PrivateKey,
-		FeeUTXO:       childDirChangeUTXO,
-		ParentPubKey:  childDirKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	fileBatch := tx.NewMutationBatch()
+	fileBatch.AddCreateChild(fileKey.PublicKey, childDirResult.TxID, filePayload, childDirNodeUTXO, childDirKey.PrivateKey)
+	// Also refresh the docs dir UTXO (parent) so step 10 can update it.
+	// The old API produced a parent refresh automatically; the batch API
+	// requires an explicit SelfUpdate op sharing the same parent input (deduped).
+	fileBatch.AddSelfUpdate(childDirKey.PublicKey, rootResult.TxID, childDirPayload, childDirNodeUTXO, childDirKey.PrivateKey)
+	fileBatch.AddFeeInput(childDirChangeUTXO)
+	fileBatch.SetChange(feeKey.PublicKey.Hash())
+	fileBatch.SetFeeRate(1)
+	fileResult, err := fileBatch.Build()
 	require.NoError(t, err, "build unsigned file tx")
 
-	fileSignedHex, err := tx.SignMetanetTx(fileMtx, []*tx.UTXO{
-		childDirNodeUTXO,
-		childDirChangeUTXO,
-	})
+	fileSignedHex, err := fileBatch.Sign(fileResult)
 	require.NoError(t, err, "sign file tx")
 
 	fileTxIDStr, err := node.SendRawTransaction(ctx, fileSignedHex)
@@ -226,7 +206,7 @@ func TestFullLifecycle(t *testing.T) {
 		// Verify node pubkey.
 		assert.Equal(t, fileKey.PublicKey.Compressed(), pNode, "P_node should match file key")
 		// Verify parent link.
-		assert.Equal(t, childDirMtx.TxID, parentTxID, "parentTxID should link to docs dir")
+		assert.Equal(t, childDirResult.TxID, parentTxID, "parentTxID should link to docs dir")
 
 		// Decrypt.
 		require.True(t, len(payload) > 32, "payload should contain keyHash + ciphertext")
@@ -258,15 +238,15 @@ func TestFullLifecycle(t *testing.T) {
 	updatedPayload = append(updatedPayload, updatedEncResult.KeyHash...)
 	updatedPayload = append(updatedPayload, updatedEncResult.Ciphertext...)
 
-	// Prepare file node UTXO for self-update (output 1 from file tx).
-	fileNodeUTXO := fileMtx.NodeUTXO
+	// Prepare file node UTXO for self-update (NodeOps[0] from file tx).
+	fileNodeUTXO := fileResult.NodeOps[0].NodeUTXO
 	fileNodeUTXOScript, err := tx.BuildP2PKHScript(fileKey.PublicKey)
 	require.NoError(t, err)
 	fileNodeUTXO.ScriptPubKey = fileNodeUTXOScript
 	fileNodeUTXO.PrivateKey = fileKey.PrivateKey
 
 	// Prepare change from file tx as fee input.
-	fileChangeUTXO := fileMtx.ChangeUTXO
+	fileChangeUTXO := fileResult.ChangeUTXO
 	require.NotNil(t, fileChangeUTXO, "file tx should have change output")
 	fileChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 	require.NoError(t, err)
@@ -274,24 +254,16 @@ func TestFullLifecycle(t *testing.T) {
 	fileChangeUTXO.PrivateKey = feeKey.PrivateKey
 
 	// Build self-update tx: spends file's NodeUTXO, preserves parentTxID.
-	updateMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-		NodePubKey:  fileKey.PublicKey,
-		NodePrivKey: fileKey.PrivateKey,
-		ParentTxID:  childDirMtx.TxID, // preserve original parent link
-		Payload:     updatedPayload,
-		NodeUTXO:    fileNodeUTXO,
-		FeeUTXO:     fileChangeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	updateBatch := tx.NewMutationBatch()
+	updateBatch.AddSelfUpdate(fileKey.PublicKey, childDirResult.TxID, updatedPayload, fileNodeUTXO, fileKey.PrivateKey)
+	updateBatch.AddFeeInput(fileChangeUTXO)
+	updateBatch.SetChange(feeKey.PublicKey.Hash())
+	updateBatch.SetFeeRate(1)
+	updateResult, err := updateBatch.Build()
 	require.NoError(t, err, "build unsigned self-update tx")
-	require.NotEmpty(t, updateMtx.RawTx)
+	require.NotEmpty(t, updateResult.RawTx)
 
-	// Sign: Input 0 = fileNodeUTXO (file key), Input 1 = fileChangeUTXO (fee key).
-	updateSignedHex, err := tx.SignMetanetTx(updateMtx, []*tx.UTXO{
-		fileNodeUTXO,
-		fileChangeUTXO,
-	})
+	updateSignedHex, err := updateBatch.Sign(updateResult)
 	require.NoError(t, err, "sign self-update tx")
 
 	updateTxIDStr, err := node.SendRawTransaction(ctx, updateSignedHex)
@@ -321,7 +293,7 @@ func TestFullLifecycle(t *testing.T) {
 		// SelfUpdate preserves P_node and parentTxID.
 		assert.Equal(t, fileKey.PublicKey.Compressed(), pNode,
 			"updated P_node should still be file key")
-		assert.Equal(t, childDirMtx.TxID, parentTxID,
+		assert.Equal(t, childDirResult.TxID, parentTxID,
 			"updated parentTxID should still link to docs dir")
 
 		// Verify the update tx has correct structure:
@@ -447,14 +419,15 @@ func TestFullLifecycle(t *testing.T) {
 		// We simulate this by building a SelfUpdate on the docs directory with
 		// a payload that omits the file reference.
 
-		// Prepare docs dir's refreshed NodeUTXO (from the file tx, output 2).
-		docsRefreshUTXO := fileMtx.ParentUTXO
+		// Prepare docs dir's refreshed NodeUTXO (NodeOps[1] from file tx,
+		// produced by the SelfUpdate op we added for parent refresh).
+		docsRefreshUTXO := fileResult.NodeOps[1].NodeUTXO
 		require.NotNil(t, docsRefreshUTXO, "file tx should have refreshed docs dir UTXO")
 		docsRefreshUTXO.ScriptPubKey = childDirNodeUTXOScript
 		docsRefreshUTXO.PrivateKey = childDirKey.PrivateKey
 
 		// Prepare change from update tx as fee input.
-		updateChangeUTXO := updateMtx.ChangeUTXO
+		updateChangeUTXO := updateResult.ChangeUTXO
 		require.NotNil(t, updateChangeUTXO, "update tx should have change output")
 		updateChangeScript, err := tx.BuildP2PKHScript(feeKey.PublicKey)
 		require.NoError(t, err)
@@ -464,23 +437,16 @@ func TestFullLifecycle(t *testing.T) {
 		// Build a new directory version with empty children (file removed).
 		deletedPayload := []byte("bitfs directory: docs (empty, file deleted)")
 
-		deleteDirMtx, err := tx.BuildUnsignedSelfUpdateTx(&tx.SelfUpdateParams{
-			NodePubKey:  childDirKey.PublicKey,
-			NodePrivKey: childDirKey.PrivateKey,
-			ParentTxID:  rootMtx.TxID, // preserve original parent
-			Payload:     deletedPayload,
-			NodeUTXO:    docsRefreshUTXO,
-			FeeUTXO:     updateChangeUTXO,
-			ChangeAddr:  feeKey.PublicKey.Hash(),
-			FeeRate:     1,
-		})
+		deleteBatch := tx.NewMutationBatch()
+		deleteBatch.AddSelfUpdate(childDirKey.PublicKey, rootResult.TxID, deletedPayload, docsRefreshUTXO, childDirKey.PrivateKey)
+		deleteBatch.AddFeeInput(updateChangeUTXO)
+		deleteBatch.SetChange(feeKey.PublicKey.Hash())
+		deleteBatch.SetFeeRate(1)
+		deleteResult, err := deleteBatch.Build()
 		require.NoError(t, err, "build unsigned delete-dir tx")
-		require.NotEmpty(t, deleteDirMtx.RawTx)
+		require.NotEmpty(t, deleteResult.RawTx)
 
-		deleteSignedHex, err := tx.SignMetanetTx(deleteDirMtx, []*tx.UTXO{
-			docsRefreshUTXO,
-			updateChangeUTXO,
-		})
+		deleteSignedHex, err := deleteBatch.Sign(deleteResult)
 		require.NoError(t, err, "sign delete-dir tx")
 
 		deleteTxIDStr, err := node.SendRawTransaction(ctx, deleteSignedHex)
@@ -507,7 +473,7 @@ func TestFullLifecycle(t *testing.T) {
 		// Verify the new dir version still has the same P_node and parent link.
 		assert.Equal(t, childDirKey.PublicKey.Compressed(), pNode,
 			"updated dir P_node should still be docs dir key")
-		assert.Equal(t, rootMtx.TxID, parentTxID,
+		assert.Equal(t, rootResult.TxID, parentTxID,
 			"updated dir parentTxID should still link to root")
 		assert.Equal(t, deletedPayload, payload,
 			"updated dir payload should reflect deletion")
