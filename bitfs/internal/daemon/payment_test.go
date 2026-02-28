@@ -279,6 +279,7 @@ func TestHandleGetBuyInfo_Expired(t *testing.T) {
 
 func TestHandleSubmitHTLC_Success(t *testing.T) {
 	d, _, _, _ := newTestDaemon(t)
+	d.SetChain(&mockChainService{})
 
 	capsuleData := []byte("test-capsule-ecdh-secret-32bytes!")
 	totalPrice := x402.CalculatePrice(75, 2048)
@@ -422,6 +423,7 @@ func TestHandleSubmitHTLC_EmptyBody(t *testing.T) {
 
 func TestHandleSubmitHTLC_NoCapsule(t *testing.T) {
 	d, _, _, _ := newTestDaemon(t)
+	d.SetChain(&mockChainService{})
 
 	totalPrice := x402.CalculatePrice(50, 1024)
 	// Create invoice with no capsule (e.g., node had no PNode).
@@ -551,6 +553,7 @@ func TestHandleSubmitHTLC_WrongAddress(t *testing.T) {
 
 func TestFullPurchaseFlow(t *testing.T) {
 	d, _, store, meta := newTestDaemon(t)
+	d.SetChain(&mockChainService{})
 	d.config.X402.Enabled = true
 
 	keyHash := make([]byte, 32)
@@ -655,6 +658,7 @@ func TestFullPurchaseFlow(t *testing.T) {
 
 func TestHandleSubmitHTLC_ConcurrentDoublePayment(t *testing.T) {
 	d, _, _, _ := newTestDaemon(t)
+	d.SetChain(&mockChainService{})
 
 	capsuleData := []byte("test-capsule-ecdh-secret-32bytes!")
 	totalPrice := x402.CalculatePrice(75, 2048)

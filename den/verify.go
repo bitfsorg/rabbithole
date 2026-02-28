@@ -57,6 +57,10 @@ func VerifySPVProof(proof *network.MerkleProof, headerBytes []byte) *SPVVerifica
 		result.Error = fmt.Sprintf("invalid txid: %v", err)
 		return result
 	}
+	if len(txidBytes) != 32 {
+		result.Error = "invalid txid: expected 32 bytes"
+		return result
+	}
 	// Reverse for internal byte order
 	txidInternal := make([]byte, 32)
 	for i, b := range txidBytes {

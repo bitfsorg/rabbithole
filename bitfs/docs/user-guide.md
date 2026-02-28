@@ -281,7 +281,7 @@ Options:
 | Flag | Description |
 |------|-------------|
 | `--buy` | Attempt to purchase paid content |
-| `--wallet-key` | Hex-encoded buyer private key (32 or 33 bytes) |
+| `--wallet-key` | Hex-encoded buyer private key (32 bytes (raw scalar)) |
 
 ### bget -- download file to disk
 

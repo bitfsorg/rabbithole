@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/buy"
@@ -366,7 +367,7 @@ func TestPaid_WithBuy_SubmitHTLCFails(t *testing.T) {
 	keyHashHex := hex.EncodeToString(encResult.KeyHash)
 	capsuleHashHex := hex.EncodeToString(capsuleHash)
 	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
-	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+	sellerAddr := func() string { a, _ := script.NewAddressFromPublicKey(nodePriv.PubKey(), false); return a.AddressString }()
 	sellerPubKeyHex := nodePubHex
 
 	// Build a mock UTXO for the buyer (txid:vout:amount).
@@ -436,7 +437,7 @@ func TestPaid_WithBuy_Success(t *testing.T) {
 	capsuleHashHex := hex.EncodeToString(capsuleHash)
 	capsuleHex := hex.EncodeToString(capsule)
 	nodePubHex := hex.EncodeToString(nodePriv.PubKey().Compressed())
-	sellerAddr := hex.EncodeToString(nodePriv.PubKey().Hash())
+	sellerAddr := func() string { a, _ := script.NewAddressFromPublicKey(nodePriv.PubKey(), false); return a.AddressString }()
 	sellerPubKeyHex := nodePubHex
 
 	// Build a mock UTXO for the buyer (txid:vout:amount).
@@ -1226,7 +1227,7 @@ func newPaidTestSetup(t *testing.T, plaintext []byte) *paidTestSetup {
 		CapsuleHashHex:  hex.EncodeToString(capsuleHash),
 		KeyHashHex:      hex.EncodeToString(encResult.KeyHash),
 		NodePubHex:      hex.EncodeToString(nodePriv.PubKey().Compressed()),
-		SellerAddr:      hex.EncodeToString(nodePriv.PubKey().Hash()),
+		SellerAddr:      func() string { a, _ := script.NewAddressFromPublicKey(nodePriv.PubKey(), false); return a.AddressString }(),
 		SellerPubKeyHex: hex.EncodeToString(nodePriv.PubKey().Compressed()),
 		UTXOFlag:        utxoTxID + ":0:100000",
 	}

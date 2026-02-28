@@ -107,28 +107,30 @@ func main() {
 	rootPayload, err := metanet.SerializePayload(rootNode)
 	must(err, "serialize root payload")
 
-	rootMtx, err := tx.BuildUnsignedCreateRootTx(&tx.CreateRootParams{
-		NodePubKey:  rootKey.PublicKey,
-		NodePrivKey: rootKey.PrivateKey,
-		Payload:     rootPayload,
-		FeeUTXO:     feeUTXO,
-		ChangeAddr:  feeKey.PublicKey.Hash(),
-		FeeRate:     1,
-	})
+	rootBatch := tx.NewMutationBatch()
+	rootBatch.AddCreateRoot(rootKey.PublicKey, rootPayload)
+	rootBatch.AddFeeInput(feeUTXO)
+	rootBatch.SetChange(feeKey.PublicKey.Hash())
+	rootBatch.SetFeeRate(1)
+
+	rootResult, err := rootBatch.Build()
 	must(err, "build root tx")
 
-	rootSignedHex, err := tx.SignMetanetTx(rootMtx, []*tx.UTXO{feeUTXO})
+	rootSignedHex, err := rootBatch.Sign(rootResult)
 	must(err, "sign root tx")
 
 	rootTxIDStr, err := rpc.BroadcastTx(ctx, rootSignedHex)
 	must(err, "broadcast root tx")
-	fmt.Printf("✓ ROOT dir tx:  %s\n", rootTxIDStr)
+	fmt.Printf("ROOT dir tx:  %s\n", rootTxIDStr)
 
 	mine(ctx, rpc, 1, mineAddr)
 
 	// Prepare UTXOs for next tx.
-	rootNodeUTXO := prepareNodeUTXO(rootMtx.NodeUTXO, rootKey)
-	changeUTXO := prepareChangeUTXO(rootMtx.ChangeUTXO, feeKey)
+	rootNodeUTXO := rootResult.NodeOps[0].NodeUTXO
+	prepareUTXO(rootNodeUTXO, rootKey)
+
+	changeUTXO := rootResult.ChangeUTXO
+	prepareUTXO(changeUTXO, feeKey)
 
 	// ── 4. Create DOCS child directory ──────────────────────────────
 	docsNode := &metanet.Node{
@@ -149,41 +151,40 @@ func main() {
 	docsPayload, err := metanet.SerializePayload(docsNode)
 	must(err, "serialize docs payload")
 
-	docsMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    docsKey.PublicKey,
-		ParentTxID:    rootMtx.TxID,
-		Payload:       docsPayload,
-		ParentUTXO:    rootNodeUTXO,
-		ParentPrivKey: rootKey.PrivateKey,
-		FeeUTXO:       changeUTXO,
-		ParentPubKey:  rootKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
+	docsBatch := tx.NewMutationBatch()
+	docsBatch.AddCreateChild(docsKey.PublicKey, rootResult.TxID, docsPayload, rootNodeUTXO, rootKey.PrivateKey)
+	docsBatch.AddFeeInput(changeUTXO)
+	docsBatch.SetChange(feeKey.PublicKey.Hash())
+	docsBatch.SetFeeRate(1)
+
+	docsResult, err := docsBatch.Build()
 	must(err, "build docs tx")
 
-	docsSignedHex, err := tx.SignMetanetTx(docsMtx, []*tx.UTXO{rootNodeUTXO, changeUTXO})
+	docsSignedHex, err := docsBatch.Sign(docsResult)
 	must(err, "sign docs tx")
 
 	docsTxIDStr, err := rpc.BroadcastTx(ctx, docsSignedHex)
 	must(err, "broadcast docs tx")
-	fmt.Printf("✓ DOCS dir tx:  %s\n", docsTxIDStr)
+	fmt.Printf("DOCS dir tx:  %s\n", docsTxIDStr)
 
 	mine(ctx, rpc, 1, mineAddr)
 
-	docsNodeUTXO := prepareNodeUTXO(docsMtx.NodeUTXO, docsKey)
-	changeUTXO2 := prepareChangeUTXO(docsMtx.ChangeUTXO, feeKey)
+	docsNodeUTXO := docsResult.NodeOps[0].NodeUTXO
+	prepareUTXO(docsNodeUTXO, docsKey)
 
-	// ── 5. Create hello.txt file ────────────────────────────────────
-	helloContent := []byte("Hello, BitFS! This is a file stored on the BSV blockchain.\nDecentralized. Encrypted. Permanent.")
+	changeUTXO2 := docsResult.ChangeUTXO
+	prepareUTXO(changeUTXO2, feeKey)
 
+	// ── 5. Create hello.txt and readme.md (both children of docs) ──
+	// Both children share the same parent (docs), so they are combined
+	// into one atomic batch. The docs UTXO is consumed once (deduped).
 	helloNode := &metanet.Node{
 		Version:     1,
 		Type:        metanet.NodeTypeFile,
 		Op:          metanet.OpCreate,
 		Access:      metanet.AccessFree,
 		MimeType:    "text/plain",
-		FileSize:    uint64(len(helloContent)),
+		FileSize:    uint64(len([]byte("Hello, BitFS! This is a file stored on the BSV blockchain.\nDecentralized. Encrypted. Permanent."))),
 		Description: "A greeting from BitFS",
 		Timestamp:   uint64(time.Now().Unix()),
 		Parent:      docsKey.PublicKey.Compressed(),
@@ -193,34 +194,6 @@ func main() {
 	helloPayload, err := metanet.SerializePayload(helloNode)
 	must(err, "serialize hello payload")
 
-	helloMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    helloKey.PublicKey,
-		ParentTxID:    docsMtx.TxID,
-		Payload:       helloPayload,
-		ParentUTXO:    docsNodeUTXO,
-		ParentPrivKey: docsKey.PrivateKey,
-		FeeUTXO:       changeUTXO2,
-		ParentPubKey:  docsKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	must(err, "build hello tx")
-
-	helloSignedHex, err := tx.SignMetanetTx(helloMtx, []*tx.UTXO{docsNodeUTXO, changeUTXO2})
-	must(err, "sign hello tx")
-
-	helloTxIDStr, err := rpc.BroadcastTx(ctx, helloSignedHex)
-	must(err, "broadcast hello tx")
-	fmt.Printf("✓ hello.txt tx: %s\n", helloTxIDStr)
-
-	mine(ctx, rpc, 1, mineAddr)
-
-	docsNodeUTXO2 := prepareNodeUTXO(helloMtx.ParentUTXO, docsKey)
-	changeUTXO3 := prepareChangeUTXO(helloMtx.ChangeUTXO, feeKey)
-
-	// ── 6. Create readme.md file (PAID access) ─────────────────────
-	readmeContent := []byte("# BitFS README\n\nBitFS is a Unix-style decentralized encrypted file system on BSV.\n\n## Features\n- Method 42 encryption\n- SPV verification\n- Metanet DAG\n")
-
 	readmeNode := &metanet.Node{
 		Version:     1,
 		Type:        metanet.NodeTypeFile,
@@ -228,7 +201,7 @@ func main() {
 		Access:      metanet.AccessPaid,
 		PricePerKB:  100,
 		MimeType:    "text/markdown",
-		FileSize:    uint64(len(readmeContent)),
+		FileSize:    uint64(len([]byte("# BitFS README\n\nBitFS is a Unix-style decentralized encrypted file system on BSV.\n\n## Features\n- Method 42 encryption\n- SPV verification\n- Metanet DAG\n"))),
 		Description: "BitFS project README",
 		Keywords:    "bitfs,readme,documentation",
 		Timestamp:   uint64(time.Now().Unix()),
@@ -239,25 +212,25 @@ func main() {
 	readmePayload, err := metanet.SerializePayload(readmeNode)
 	must(err, "serialize readme payload")
 
-	readmeMtx, err := tx.BuildUnsignedCreateChildTx(&tx.CreateChildParams{
-		NodePubKey:    readmeKey.PublicKey,
-		ParentTxID:    docsMtx.TxID,
-		Payload:       readmePayload,
-		ParentUTXO:    docsNodeUTXO2,
-		ParentPrivKey: docsKey.PrivateKey,
-		FeeUTXO:       changeUTXO3,
-		ParentPubKey:  docsKey.PublicKey,
-		ChangeAddr:    feeKey.PublicKey.Hash(),
-		FeeRate:       1,
-	})
-	must(err, "build readme tx")
+	childBatch := tx.NewMutationBatch()
+	childBatch.AddCreateChild(helloKey.PublicKey, docsResult.TxID, helloPayload, docsNodeUTXO, docsKey.PrivateKey)
+	childBatch.AddCreateChild(readmeKey.PublicKey, docsResult.TxID, readmePayload, docsNodeUTXO, docsKey.PrivateKey)
+	childBatch.AddFeeInput(changeUTXO2)
+	childBatch.SetChange(feeKey.PublicKey.Hash())
+	childBatch.SetFeeRate(1)
 
-	readmeSignedHex, err := tx.SignMetanetTx(readmeMtx, []*tx.UTXO{docsNodeUTXO2, changeUTXO3})
-	must(err, "sign readme tx")
+	childResult, err := childBatch.Build()
+	must(err, "build children tx")
 
-	readmeTxIDStr, err := rpc.BroadcastTx(ctx, readmeSignedHex)
-	must(err, "broadcast readme tx")
-	fmt.Printf("✓ readme.md tx: %s\n", readmeTxIDStr)
+	childSignedHex, err := childBatch.Sign(childResult)
+	must(err, "sign children tx")
+
+	childTxIDStr, err := rpc.BroadcastTx(ctx, childSignedHex)
+	must(err, "broadcast children tx")
+
+	helloTxIDStr := childTxIDStr
+	readmeTxIDStr := childTxIDStr
+	fmt.Printf("hello.txt + readme.md tx: %s\n", childTxIDStr)
 
 	mine(ctx, rpc, 1, mineAddr)
 
@@ -307,20 +280,11 @@ func convertUTXO(u *network.UTXO, kp *wallet.KeyPair) *tx.UTXO {
 	}
 }
 
-func prepareNodeUTXO(utxo *tx.UTXO, kp *wallet.KeyPair) *tx.UTXO {
+func prepareUTXO(utxo *tx.UTXO, kp *wallet.KeyPair) {
 	s, err := tx.BuildP2PKHScript(kp.PublicKey)
-	must(err, "build node p2pkh")
+	must(err, "build p2pkh for utxo")
 	utxo.ScriptPubKey = s
 	utxo.PrivateKey = kp.PrivateKey
-	return utxo
-}
-
-func prepareChangeUTXO(utxo *tx.UTXO, kp *wallet.KeyPair) *tx.UTXO {
-	s, err := tx.BuildP2PKHScript(kp.PublicKey)
-	must(err, "build change p2pkh")
-	utxo.ScriptPubKey = s
-	utxo.PrivateKey = kp.PrivateKey
-	return utxo
 }
 
 func reverseBytes(b []byte) {

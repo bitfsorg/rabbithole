@@ -2029,18 +2029,12 @@ func TestHandlePayInvoice_EmptyBody(t *testing.T) {
 	w := httptest.NewRecorder()
 	d.Handler().ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "EMPTY_BODY")
 
-	var resp map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Equal(t, "paid", resp["status"])
-	assert.Equal(t, "inv-pay-1", resp["invoice_id"])
-
-	// Verify the invoice is marked paid.
+	// Verify the invoice is NOT marked paid.
 	d.invoicesMu.RLock()
-	assert.True(t, d.invoices["inv-pay-1"].Paid)
+	assert.False(t, d.invoices["inv-pay-1"].Paid)
 	d.invoicesMu.RUnlock()
 }
 

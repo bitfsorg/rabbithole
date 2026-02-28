@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/tongxiaofeng/libbitfs-go/network"
 )
@@ -157,9 +158,8 @@ func (e *Explorer) GetRecentBlocks(ctx context.Context, count int) ([]*BlockInfo
 
 // SearchQuery determines the type of a search query and returns a redirect path.
 func (e *Explorer) SearchQuery(ctx context.Context, q string) (string, error) {
-	// Try as block height (numeric)
-	var height int64
-	if _, err := fmt.Sscanf(q, "%d", &height); err == nil && height >= 0 {
+	// Try as block height (strict numeric parse).
+	if height, err := strconv.ParseInt(q, 10, 64); err == nil && height >= 0 {
 		hash, err := e.GetBlockHash(ctx, height)
 		if err == nil {
 			return "/block/" + hash, nil

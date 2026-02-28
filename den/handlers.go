@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -103,7 +104,10 @@ func (s *Server) handleTx(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try to decode as Metanet tx
-	rawBytes, _ := s.explorer.rpc.GetRawTx(ctx, txid)
+	rawBytes, err := s.explorer.rpc.GetRawTx(ctx, txid)
+	if err != nil {
+		log.Printf("handlers: GetRawTx(%s): %v", truncHash(txid), err)
+	}
 	var decoded *DecodedMetanet
 	if rawBytes != nil {
 		decoded = DecodeMetanetTx(rawBytes)
@@ -195,7 +199,10 @@ func (s *Server) handleSPV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	headerBytes, _ := s.explorer.rpc.GetBlockHeader(ctx, proof.BlockHash)
+	headerBytes, err := s.explorer.rpc.GetBlockHeader(ctx, proof.BlockHash)
+	if err != nil {
+		log.Printf("handlers: GetBlockHeader(%s): %v", truncHash(proof.BlockHash), err)
+	}
 	verification := VerifySPVProof(proof, headerBytes)
 
 	data := map[string]interface{}{

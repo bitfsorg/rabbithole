@@ -1,13 +1,15 @@
 # 待办任务
 
-## 遗留问题
+暂无待办任务。
 
-### 1. ~~bitfs engine 集成 PRIVATE 元数据加密 API~~ (DONE)
-- **来源**: P0 §3.2 修复后遗留
-- **现状**: 已完成。添加 `serializePayloadForChain()` helper，PRIVATE 节点的 TLV 自动加密为 EncPayload
-- **修改文件**: `bitfs/internal/engine/helpers.go`（新 helper）, `put.go`, `encrypt.go`, `copy.go`, `move.go`（4 处调用点）
+## 已完成计划
 
-### 2. ~~设计文档同步 — PRIVATE 元数据 salt 公式~~ (DONE)
-- **来源**: P0 §3.2 修复后遗留
-- **现状**: 已完成。所有设计文档和代码注释已更新为 `salt = random(16B)`
-- **已更新文件**: `design/bitfs/5-TransactionSpec.zh.md`, `design/bitfs/3-DetailedDesign.zh.md`, `design/bitfs/2-SystemDesign.zh.md`, `libbitfs-go/metanet/node.go`, `bitfs/docs/spec/03-metanet.md`, `docs/audits/2026-02-27-architecture-review.md`
+- [x] Polish: Test Coverage + Spec Audit (`docs/plans/2026-02-28-polish.md`)
+- [x] Vault Extraction (`docs/plans/2026-02-28-vault-extraction.md`)
+- [x] Dashboard (`docs/plans/2026-02-28-dashboard.md`)
+- [x] Paymail Completion (`docs/plans/2026-02-28-paymail-completion.md`)
+- [x] Design Consistency Fixes (`docs/plans/2026-02-26-design-consistency-fixes.md`)
+- [x] P0 Security Fixes (`docs/plans/2026-02-26-audit-fixes.md`)
+- [x] B* Tools + Shell Compliance (`docs/plans/2026-02-27-btools-shell-compliance.md`)
+- [x] Atomic Tx Builder (`docs/plans/2026-02-27-atomic-tx-builder.md`)
+- [x] libbitfs-go Feature Completion (`docs/plans/2026-02-27-libbitfs-completion.md`)

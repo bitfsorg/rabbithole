@@ -10,12 +10,25 @@ import (
 	"testing"
 
 	ec "github.com/bsv-blockchain/go-sdk/primitives/ec"
+	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/network"
 	"github.com/tongxiaofeng/libbitfs-go/x402"
 )
+
+// testAddr returns a base58 P2PKH address from a 20-byte PKH (testnet).
+func testAddr(pkh []byte) string {
+	addr, _ := script.NewAddressFromPublicKeyHash(pkh, false)
+	return addr.AddressString
+}
+
+// testPubKeyAddr returns a base58 P2PKH address from a public key (testnet).
+func testPubKeyAddr(pub *ec.PublicKey) string {
+	addr, _ := script.NewAddressFromPublicKey(pub, false)
+	return addr.AddressString
+}
 
 func TestBuyParams_Validate(t *testing.T) {
 	tests := []struct {
@@ -108,12 +121,12 @@ func TestBuy_InvalidCapsuleHashHex(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid capsule hash hex")
 }
 
-func TestBuy_InvalidPaymentAddrHex(t *testing.T) {
+func TestBuy_InvalidPaymentAddr(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(client.BuyInfo{
 			CapsuleHash:  strings.Repeat("aa", 32),
 			Price:        100,
-			PaymentAddr:  "not-hex!",
+			PaymentAddr:  "not-a-valid-address!",
 			SellerPubKey: strings.Repeat("bb", 33),
 		})
 	}))
@@ -125,15 +138,16 @@ func TestBuy_InvalidPaymentAddrHex(t *testing.T) {
 		Config: &BuyerConfig{PrivKey: testPrivKey(t)},
 	})
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid payment address hex")
+	assert.Contains(t, err.Error(), "invalid payment address")
 }
 
 func TestBuy_InvalidSellerPubKeyHex(t *testing.T) {
+	pkhBytes, _ := hex.DecodeString(strings.Repeat("aa", 20))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(client.BuyInfo{
 			CapsuleHash:  strings.Repeat("aa", 32),
 			Price:        100,
-			PaymentAddr:  strings.Repeat("aa", 20),
+			PaymentAddr:  testAddr(pkhBytes),
 			SellerPubKey: "not-hex!",
 		})
 	}))
@@ -149,11 +163,12 @@ func TestBuy_InvalidSellerPubKeyHex(t *testing.T) {
 }
 
 func TestBuy_ResolveUTXOsError(t *testing.T) {
+	pkhBytes, _ := hex.DecodeString(strings.Repeat("aa", 20))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(client.BuyInfo{
 			CapsuleHash:  strings.Repeat("aa", 32),
 			Price:        100,
-			PaymentAddr:  strings.Repeat("aa", 20),
+			PaymentAddr:  testAddr(pkhBytes),
 			SellerPubKey: strings.Repeat("bb", 33),
 		})
 	}))
@@ -183,7 +198,7 @@ func TestBuy_SubmitHTLCError(t *testing.T) {
 			json.NewEncoder(w).Encode(client.BuyInfo{
 				CapsuleHash:  strings.Repeat("aa", 32),
 				Price:        100,
-				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				PaymentAddr:  testPubKeyAddr(pk.PubKey()),
 				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
 			})
 		} else {
@@ -220,7 +235,7 @@ func TestBuy_SuccessFlow(t *testing.T) {
 			json.NewEncoder(w).Encode(client.BuyInfo{
 				CapsuleHash:  strings.Repeat("aa", 32),
 				Price:        100,
-				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				PaymentAddr:  testPubKeyAddr(pk.PubKey()),
 				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
 			})
 		} else {
@@ -259,7 +274,7 @@ func TestBuy_SuccessWithoutNonce(t *testing.T) {
 			json.NewEncoder(w).Encode(client.BuyInfo{
 				CapsuleHash:  strings.Repeat("aa", 32),
 				Price:        100,
-				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				PaymentAddr:  testPubKeyAddr(pk.PubKey()),
 				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
 			})
 		} else {
@@ -294,7 +309,7 @@ func TestBuy_InvalidCapsuleHexInResponse(t *testing.T) {
 			json.NewEncoder(w).Encode(client.BuyInfo{
 				CapsuleHash:  strings.Repeat("aa", 32),
 				Price:        100,
-				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				PaymentAddr:  testPubKeyAddr(pk.PubKey()),
 				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
 			})
 		} else {
@@ -329,7 +344,7 @@ func TestBuy_InvalidNonceHexInResponse(t *testing.T) {
 			json.NewEncoder(w).Encode(client.BuyInfo{
 				CapsuleHash:  strings.Repeat("aa", 32),
 				Price:        100,
-				PaymentAddr:  hex.EncodeToString(buyerPKH),
+				PaymentAddr:  testPubKeyAddr(pk.PubKey()),
 				SellerPubKey: hex.EncodeToString(pk.PubKey().Compressed()),
 			})
 		} else {

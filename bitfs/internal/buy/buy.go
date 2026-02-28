@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/bsv-blockchain/go-sdk/script"
 	"github.com/tongxiaofeng/bitfs/internal/client"
 	"github.com/tongxiaofeng/libbitfs-go/network"
 	"github.com/tongxiaofeng/libbitfs-go/x402"
@@ -63,11 +64,12 @@ func Buy(params *BuyParams) (*BuyResult, error) {
 		return nil, fmt.Errorf("buyer: invalid capsule hash hex: %w", err)
 	}
 
-	// Decode seller payment address (20-byte pubkey hash, hex-encoded).
-	sellerAddr, err := hex.DecodeString(buyInfo.PaymentAddr)
+	// Decode seller payment address (base58 P2PKH) to 20-byte pubkey hash.
+	sellerAddrObj, err := script.NewAddressFromString(buyInfo.PaymentAddr)
 	if err != nil {
-		return nil, fmt.Errorf("buyer: invalid payment address hex: %w", err)
+		return nil, fmt.Errorf("buyer: invalid payment address: %w", err)
 	}
+	sellerAddr := []byte(sellerAddrObj.PublicKeyHash)
 
 	// Decode seller pubkey (33-byte compressed, hex-encoded).
 	sellerPubKey, err := hex.DecodeString(buyInfo.SellerPubKey)
@@ -163,9 +165,11 @@ func resolveUTXOs(params *BuyParams, price uint64) ([]*x402.HTLCUTXO, error) {
 		return nil, fmt.Errorf("buyer: no UTXOs available (provide --utxo or configure blockchain service)")
 	}
 
-	// Derive the buyer's P2PKH address for UTXO lookup.
-	buyerPKH := params.Config.PrivKey.PubKey().Hash()
-	address := hex.EncodeToString(buyerPKH)
+	// Derive the buyer's P2PKH address (base58) for UTXO lookup.
+	addrObj, err := script.NewAddressFromPublicKey(params.Config.PrivKey.PubKey(), params.Config.Network == "mainnet")
+	if err != nil {
+		return nil, fmt.Errorf("buyer: derive address: %w", err)
+	}
 
-	return SelectUTXOs(context.Background(), params.Blockchain, address, price, defaultFeeRate)
+	return SelectUTXOs(context.Background(), params.Blockchain, addrObj.AddressString, price, defaultFeeRate)
 }

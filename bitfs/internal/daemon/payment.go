@@ -343,23 +343,35 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 	d.usedTxIDsMu.Unlock()
 
 	// Broadcast the payment transaction to the blockchain before revealing capsule.
-	if d.chain != nil {
-		txHex := hex.EncodeToString(htlcBody)
-		_, broadcastErr := d.chain.BroadcastTx(r.Context(), txHex)
-		if broadcastErr != nil {
-			// Rollback replay tracking and paid flag on broadcast failure.
-			d.usedTxIDsMu.Lock()
-			delete(d.usedTxIDs, submittedTxID)
-			d.usedTxIDsMu.Unlock()
-			rollbackPaid()
-			writeJSONError(w, http.StatusBadRequest, "BROADCAST_FAILED",
-				fmt.Sprintf("Payment tx not accepted: %v", broadcastErr))
-			return
-		}
+	if d.chain == nil {
+		d.usedTxIDsMu.Lock()
+		delete(d.usedTxIDs, submittedTxID)
+		d.usedTxIDsMu.Unlock()
+		rollbackPaid()
+		writeJSONError(w, http.StatusServiceUnavailable, "NO_CHAIN",
+			"Blockchain service not configured; cannot verify payment broadcast")
+		return
+	}
+	txHex := hex.EncodeToString(htlcBody)
+	_, broadcastErr := d.chain.BroadcastTx(r.Context(), txHex)
+	if broadcastErr != nil {
+		// Rollback replay tracking and paid flag on broadcast failure.
+		d.usedTxIDsMu.Lock()
+		delete(d.usedTxIDs, submittedTxID)
+		d.usedTxIDsMu.Unlock()
+		rollbackPaid()
+		writeJSONError(w, http.StatusBadRequest, "BROADCAST_FAILED",
+			fmt.Sprintf("Payment tx not accepted: %v", broadcastErr))
+		return
 	}
 
 	// Return the capsule (ECDH shared secret).
 	if len(invoice.Capsule) == 0 {
+		// Rollback: undo usedTxIDs entry and paid flag.
+		d.usedTxIDsMu.Lock()
+		delete(d.usedTxIDs, submittedTxID)
+		d.usedTxIDsMu.Unlock()
+		rollbackPaid()
 		writeJSONError(w, http.StatusInternalServerError, "NO_CAPSULE", "No capsule computed for this invoice")
 		return
 	}
@@ -382,8 +394,7 @@ func (d *Daemon) handleSubmitHTLC(w http.ResponseWriter, r *http.Request) {
 
 // handlePayInvoice handles POST /_bitfs/pay/{invoice_id}.
 // Accepts x402 bandwidth payment for a previously issued invoice.
-// Current version: empty body marks invoice as paid (dev/test).
-// Production: body contains raw transaction hex for verification.
+// Body must contain a raw transaction hex (JSON or plain) for verification.
 func (d *Daemon) handlePayInvoice(w http.ResponseWriter, r *http.Request) {
 	invoiceID := r.PathValue("invoice_id")
 	if invoiceID == "" {
@@ -391,6 +402,16 @@ func (d *Daemon) handlePayInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read body BEFORE acquiring lock (I/O should not hold locks).
+	defer func() { _ = r.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxHTLCBodySize))
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "INVALID_REQUEST", "Failed to read request body")
+		return
+	}
+
+	// Check invoice state under lock first (allows idempotent/expired responses
+	// regardless of body content).
 	d.invoicesMu.Lock()
 	invoice, ok := d.invoices[invoiceID]
 	if !ok {
@@ -413,59 +434,89 @@ func (d *Daemon) handlePayInvoice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read optional payment proof (raw transaction hex).
-	body, _ := io.ReadAll(io.LimitReader(r.Body, maxHTLCBodySize))
-
-	if len(body) > 0 {
-		// Parse body as JSON { "raw_tx": "<hex>" } or raw hex string.
-		var rawTxHex string
-		var req struct {
-			RawTx string `json:"raw_tx"`
-		}
-		if json.Unmarshal(body, &req) == nil && req.RawTx != "" {
-			rawTxHex = req.RawTx
-		} else {
-			rawTxHex = strings.TrimSpace(string(body))
-		}
-
-		rawTx, err := hex.DecodeString(rawTxHex)
-		if err != nil {
-			d.invoicesMu.Unlock()
-			writeJSONError(w, http.StatusBadRequest, "INVALID_TX", "Invalid transaction hex")
-			return
-		}
-
-		// Verify P2PKH payment to seller address.
-		proof := &x402.PaymentProof{RawTx: rawTx}
-		x402Inv := &x402.Invoice{
-			ID:          invoice.ID,
-			Price:       invoice.TotalPrice,
-			PaymentAddr: invoice.PaymentAddr,
-		}
-		if err := x402.VerifyPayment(proof, x402Inv); err != nil {
-			d.invoicesMu.Unlock()
-			writeJSONError(w, http.StatusBadRequest, "VERIFICATION_FAILED", err.Error())
-			return
-		}
-
-		// Replay protection.
-		tx, _ := transaction.NewTransactionFromBytes(rawTx)
-		if tx != nil {
-			txid := tx.TxID().String()
-			d.usedTxIDsMu.Lock()
-			if _, used := d.usedTxIDs[txid]; used {
-				d.usedTxIDsMu.Unlock()
-				d.invoicesMu.Unlock()
-				writeJSONError(w, http.StatusConflict, "REPLAY", "Transaction already used")
-				return
-			}
-			d.usedTxIDs[txid] = invoiceID
-			d.usedTxIDsMu.Unlock()
-		}
+	// Require non-empty body for new payments.
+	if len(body) == 0 {
+		d.invoicesMu.Unlock()
+		writeJSONError(w, http.StatusBadRequest, "EMPTY_BODY", "Payment transaction body is required")
+		return
 	}
 
+	// Mark paid immediately to prevent concurrent claims (optimistic lock).
 	invoice.Paid = true
 	d.invoicesMu.Unlock()
+
+	// Parse body as JSON { "raw_tx": "<hex>" } or raw hex string.
+	var rawTxHex string
+	var req struct {
+		RawTx string `json:"raw_tx"`
+	}
+	if json.Unmarshal(body, &req) == nil && req.RawTx != "" {
+		rawTxHex = req.RawTx
+	} else {
+		rawTxHex = strings.TrimSpace(string(body))
+	}
+
+	// Rollback helper for any failure after marking paid.
+	rollbackPaid := func() {
+		d.invoicesMu.Lock()
+		invoice.Paid = false
+		d.invoicesMu.Unlock()
+	}
+
+	rawTx, err := hex.DecodeString(rawTxHex)
+	if err != nil {
+		rollbackPaid()
+		writeJSONError(w, http.StatusBadRequest, "INVALID_TX", "Invalid transaction hex")
+		return
+	}
+
+	// Verify P2PKH payment to seller address.
+	proof := &x402.PaymentProof{RawTx: rawTx}
+	x402Inv := &x402.Invoice{
+		ID:          invoice.ID,
+		Price:       invoice.TotalPrice,
+		PaymentAddr: invoice.PaymentAddr,
+		Expiry:      invoice.Expiry.Unix(),
+	}
+	if err := x402.VerifyPayment(proof, x402Inv); err != nil {
+		rollbackPaid()
+		writeJSONError(w, http.StatusBadRequest, "VERIFICATION_FAILED", err.Error())
+		return
+	}
+
+	// Replay protection.
+	parsedTx, parseErr := transaction.NewTransactionFromBytes(rawTx)
+	if parseErr != nil {
+		rollbackPaid()
+		writeJSONError(w, http.StatusBadRequest, "INVALID_TX", "Cannot parse transaction")
+		return
+	}
+	submittedTxID := parsedTx.TxID().String()
+
+	d.usedTxIDsMu.Lock()
+	if _, used := d.usedTxIDs[submittedTxID]; used {
+		d.usedTxIDsMu.Unlock()
+		rollbackPaid()
+		writeJSONError(w, http.StatusConflict, "REPLAY", "Transaction already used")
+		return
+	}
+	d.usedTxIDs[submittedTxID] = invoiceID
+	d.usedTxIDsMu.Unlock()
+
+	// Broadcast the payment transaction to the blockchain.
+	if d.chain != nil {
+		txHex := hex.EncodeToString(rawTx)
+		_, broadcastErr := d.chain.BroadcastTx(r.Context(), txHex)
+		if broadcastErr != nil {
+			d.usedTxIDsMu.Lock()
+			delete(d.usedTxIDs, submittedTxID)
+			d.usedTxIDsMu.Unlock()
+			rollbackPaid()
+			writeJSONError(w, http.StatusBadRequest, "BROADCAST_FAILED",
+				fmt.Sprintf("Payment tx not accepted: %v", broadcastErr))
+			return
+		}
+	}
 
 	_ = d.persistInvoice(invoice)
 
