@@ -14,7 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/bitfs/internal/publish"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // =============================================================================
@@ -29,13 +30,13 @@ func TestShell_MkdirAndLs(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
 	// Create root.
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/"})
 	require.NoError(t, err)
 
 	// Create nested dirs.
-	_, err = eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/photos"})
+	_, err = eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/photos"})
 	require.NoError(t, err)
-	_, err = eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/docs"})
+	_, err = eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/docs"})
 	require.NoError(t, err)
 
 	// Verify root has 2 children.
@@ -60,7 +61,7 @@ func TestShell_PutAndCat(t *testing.T) {
 	content := []byte("Hello BitFS from shell test")
 	localFile := createTempFile(t, content)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/hello.txt",
@@ -74,7 +75,7 @@ func TestShell_PutAndCat(t *testing.T) {
 	assert.Equal(t, uint64(len(content)), node.FileSize)
 
 	// Cat should decrypt and return content.
-	reader, info, err := eng.Cat(&engine.CatOpts{Path: "/hello.txt"})
+	reader, info, err := eng.Cat(&vault.CatOpts{Path: "/hello.txt"})
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
@@ -102,7 +103,7 @@ func TestShell_PutWithAccessModes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			content := []byte("content for " + tt.name)
 			localFile := createTempFile(t, content)
-			_, err := eng.PutFile(&engine.PutOpts{
+			_, err := eng.PutFile(&vault.PutOpts{
 				VaultIndex: 0,
 				LocalFile:  localFile,
 				RemotePath: tt.path,
@@ -126,7 +127,7 @@ func TestShell_RmFile(t *testing.T) {
 
 	content := []byte("to be deleted")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/temp.txt",
@@ -135,7 +136,7 @@ func TestShell_RmFile(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove the file.
-	_, err = eng.Remove(&engine.RemoveOpts{
+	_, err = eng.Remove(&vault.RemoveOpts{
 		VaultIndex: 0,
 		Path:       "/temp.txt",
 	})
@@ -156,12 +157,12 @@ func TestShell_RmRecursive(t *testing.T) {
 	eng := initIntegrationEngine(t)
 	seedFeeUTXOs(t, eng, 30, 10_000)
 
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/dir"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/dir"})
 	require.NoError(t, err)
 
 	content := []byte("nested file")
 	localFile := createTempFile(t, content)
-	_, err = eng.PutFile(&engine.PutOpts{
+	_, err = eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/dir/file.txt",
@@ -170,10 +171,10 @@ func TestShell_RmRecursive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Remove child first, then dir (simulating rm -r).
-	_, err = eng.Remove(&engine.RemoveOpts{VaultIndex: 0, Path: "/dir/file.txt"})
+	_, err = eng.Remove(&vault.RemoveOpts{VaultIndex: 0, Path: "/dir/file.txt"})
 	require.NoError(t, err)
 
-	_, err = eng.Remove(&engine.RemoveOpts{VaultIndex: 0, Path: "/dir"})
+	_, err = eng.Remove(&vault.RemoveOpts{VaultIndex: 0, Path: "/dir"})
 	require.NoError(t, err)
 
 	// Verify /dir is removed from root's children.
@@ -191,7 +192,7 @@ func TestShell_MvSameDir(t *testing.T) {
 
 	content := []byte("to be moved")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/old.txt",
@@ -199,7 +200,7 @@ func TestShell_MvSameDir(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = eng.Move(&engine.MoveOpts{
+	_, err = eng.Move(&vault.MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/old.txt",
 		DstPath:    "/new.txt",
@@ -216,14 +217,14 @@ func TestShell_MvCrossDir(t *testing.T) {
 	eng := initIntegrationEngine(t)
 	seedFeeUTXOs(t, eng, 30, 10_000)
 
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/src"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/src"})
 	require.NoError(t, err)
-	_, err = eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/dst"})
+	_, err = eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/dst"})
 	require.NoError(t, err)
 
 	content := []byte("cross dir move")
 	localFile := createTempFile(t, content)
-	_, err = eng.PutFile(&engine.PutOpts{
+	_, err = eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/src/file.txt",
@@ -231,7 +232,7 @@ func TestShell_MvCrossDir(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = eng.Move(&engine.MoveOpts{
+	_, err = eng.Move(&vault.MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/src/file.txt",
 		DstPath:    "/dst/file.txt",
@@ -255,7 +256,7 @@ func TestShell_CpFile(t *testing.T) {
 
 	content := []byte("to be copied")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/orig.txt",
@@ -263,7 +264,7 @@ func TestShell_CpFile(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = eng.Copy(&engine.CopyOpts{
+	_, err = eng.Copy(&vault.CopyOpts{
 		VaultIndex: 0,
 		SrcPath:    "/orig.txt",
 		DstPath:    "/copy.txt",
@@ -289,7 +290,7 @@ func TestShell_SoftLink(t *testing.T) {
 
 	content := []byte("link target")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/target.txt",
@@ -300,7 +301,7 @@ func TestShell_SoftLink(t *testing.T) {
 	targetNode := eng.State.FindNodeByPath("/target.txt")
 	require.NotNil(t, targetNode)
 
-	_, err = eng.Link(&engine.LinkOpts{
+	_, err = eng.Link(&vault.LinkOpts{
 		VaultIndex: 0,
 		TargetPath: "/target.txt",
 		LinkPath:   "/link.txt",
@@ -322,7 +323,7 @@ func TestShell_HardLink(t *testing.T) {
 
 	content := []byte("hard link target")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/target.txt",
@@ -333,7 +334,7 @@ func TestShell_HardLink(t *testing.T) {
 	targetNode := eng.State.FindNodeByPath("/target.txt")
 	require.NotNil(t, targetNode)
 
-	_, err = eng.Link(&engine.LinkOpts{
+	_, err = eng.Link(&vault.LinkOpts{
 		VaultIndex: 0,
 		TargetPath: "/target.txt",
 		LinkPath:   "/hardlink.txt",
@@ -371,7 +372,7 @@ func TestShell_EncryptDecrypt(t *testing.T) {
 
 	content := []byte("encrypt me")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/secret.txt",
@@ -380,7 +381,7 @@ func TestShell_EncryptDecrypt(t *testing.T) {
 	require.NoError(t, err)
 
 	// Encrypt: Free -> Private.
-	_, err = eng.EncryptNode(&engine.EncryptOpts{
+	_, err = eng.EncryptNode(&vault.EncryptOpts{
 		VaultIndex: 0,
 		Path:       "/secret.txt",
 	})
@@ -391,7 +392,7 @@ func TestShell_EncryptDecrypt(t *testing.T) {
 	assert.Equal(t, "private", node.Access, "access should be private after encrypt")
 
 	// Decrypt: Private -> Free.
-	_, err = eng.DecryptNode(&engine.DecryptOpts{
+	_, err = eng.DecryptNode(&vault.DecryptOpts{
 		Path: "/secret.txt",
 	})
 	require.NoError(t, err)
@@ -408,7 +409,7 @@ func TestShell_SellFile(t *testing.T) {
 
 	content := []byte("premium content")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/premium.txt",
@@ -416,7 +417,7 @@ func TestShell_SellFile(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = eng.Sell(&engine.SellOpts{
+	_, err = eng.Sell(&vault.SellOpts{
 		VaultIndex: 0,
 		Path:       "/premium.txt",
 		PricePerKB: 50,
@@ -435,13 +436,13 @@ func TestShell_SellRecursive(t *testing.T) {
 	eng := initIntegrationEngine(t)
 	seedFeeUTXOs(t, eng, 40, 10_000)
 
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/premium"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/premium"})
 	require.NoError(t, err)
 
 	for _, name := range []string{"a.txt", "b.txt"} {
 		content := []byte("content of " + name)
 		localFile := createTempFile(t, content)
-		_, err = eng.PutFile(&engine.PutOpts{
+		_, err = eng.PutFile(&vault.PutOpts{
 			VaultIndex: 0,
 			LocalFile:  localFile,
 			RemotePath: "/premium/" + name,
@@ -454,7 +455,7 @@ func TestShell_SellRecursive(t *testing.T) {
 	dir := eng.State.FindNodeByPath("/premium")
 	require.NotNil(t, dir)
 	for _, child := range dir.Children {
-		_, err = eng.Sell(&engine.SellOpts{
+		_, err = eng.Sell(&vault.SellOpts{
 			VaultIndex: 0,
 			Path:       "/premium/" + child.Name,
 			PricePerKB: 100,
@@ -478,7 +479,7 @@ func TestShell_MputMultipleFiles(t *testing.T) {
 	eng := initIntegrationEngine(t)
 	seedFeeUTXOs(t, eng, 30, 10_000)
 
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/uploads"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/uploads"})
 	require.NoError(t, err)
 
 	// Create local directory with files.
@@ -488,16 +489,19 @@ func TestShell_MputMultipleFiles(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Mput all files.
-	mputResult, err := eng.Mput(&engine.MputOpts{
-		VaultIndex: 0,
-		LocalDir:   localDir,
-		RemoteDir:  "/uploads",
-		Access:     "free",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, 3, mputResult.FilesUploaded)
-	assert.Empty(t, mputResult.Errors)
+	// Upload all files (inline mput logic: putfile per entry).
+	filesUploaded := 0
+	for _, name := range []string{"file1.txt", "file2.txt", "file3.txt"} {
+		_, putErr := eng.PutFile(&vault.PutOpts{
+			VaultIndex: 0,
+			LocalFile:  filepath.Join(localDir, name),
+			RemotePath: "/uploads/" + name,
+			Access:     "free",
+		})
+		require.NoError(t, putErr)
+		filesUploaded++
+	}
+	assert.Equal(t, 3, filesUploaded)
 
 	// Verify all uploaded.
 	for _, name := range []string{"file1.txt", "file2.txt", "file3.txt"} {
@@ -513,7 +517,7 @@ func TestShell_GetFile(t *testing.T) {
 
 	content := []byte("download me")
 	localFile := createTempFile(t, content)
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/download.txt",
@@ -524,7 +528,7 @@ func TestShell_GetFile(t *testing.T) {
 	// Get to local.
 	outDir := t.TempDir()
 	outPath := filepath.Join(outDir, "downloaded.txt")
-	_, err = eng.Get(&engine.GetOpts{
+	_, err = eng.Get(&vault.GetOpts{
 		RemotePath: "/download.txt",
 		LocalPath:  outPath,
 	})
@@ -542,11 +546,11 @@ func TestShell_GetFile(t *testing.T) {
 func TestShell_MkdirExistingPath(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/existing"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/existing"})
 	require.NoError(t, err)
 
 	// Creating same dir again should error.
-	_, err = eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/existing"})
+	_, err = eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/existing"})
 	assert.Error(t, err)
 }
 
@@ -555,7 +559,7 @@ func TestShell_MkdirExistingPath(t *testing.T) {
 func TestShell_RmNonExistent(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, err := eng.Remove(&engine.RemoveOpts{VaultIndex: 0, Path: "/ghost.txt"})
+	_, err := eng.Remove(&vault.RemoveOpts{VaultIndex: 0, Path: "/ghost.txt"})
 	assert.Error(t, err)
 }
 
@@ -564,7 +568,7 @@ func TestShell_RmNonExistent(t *testing.T) {
 func TestShell_CatNonExistent(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, _, err := eng.Cat(&engine.CatOpts{Path: "/nope.txt"})
+	_, _, err := eng.Cat(&vault.CatOpts{Path: "/nope.txt"})
 	assert.Error(t, err)
 }
 
@@ -573,7 +577,7 @@ func TestShell_CatNonExistent(t *testing.T) {
 func TestShell_MvNonExistent(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, err := eng.Move(&engine.MoveOpts{VaultIndex: 0, SrcPath: "/nope.txt", DstPath: "/dest.txt"})
+	_, err := eng.Move(&vault.MoveOpts{VaultIndex: 0, SrcPath: "/nope.txt", DstPath: "/dest.txt"})
 	assert.Error(t, err)
 }
 
@@ -582,7 +586,7 @@ func TestShell_MvNonExistent(t *testing.T) {
 func TestShell_CpNonExistent(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, err := eng.Copy(&engine.CopyOpts{VaultIndex: 0, SrcPath: "/nope.txt", DstPath: "/dest.txt"})
+	_, err := eng.Copy(&vault.CopyOpts{VaultIndex: 0, SrcPath: "/nope.txt", DstPath: "/dest.txt"})
 	assert.Error(t, err)
 }
 
@@ -597,7 +601,7 @@ func TestShell_CpNonExistent(t *testing.T) {
 func TestShell_PublishBindDomain(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	result, err := eng.Publish(&engine.PublishOpts{
+	result, err := publish.Publish(eng, nil, &publish.PublishOpts{
 		VaultIndex: 0,
 		Domain:     "example.com",
 	})
@@ -622,13 +626,13 @@ func TestShell_PublishListBindings(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
 	// Publish two domains.
-	_, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: "alpha.com"})
+	_, err := publish.Publish(eng, nil, &publish.PublishOpts{VaultIndex: 0, Domain: "alpha.com"})
 	require.NoError(t, err)
-	_, err = eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: "beta.org"})
+	_, err = publish.Publish(eng, nil, &publish.PublishOpts{VaultIndex: 0, Domain: "beta.org"})
 	require.NoError(t, err)
 
 	// List bindings (empty domain).
-	result, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: ""})
+	result, err := publish.Publish(eng, nil, &publish.PublishOpts{VaultIndex: 0, Domain: ""})
 	require.NoError(t, err)
 
 	assert.Contains(t, result.Message, "alpha.com")
@@ -641,7 +645,7 @@ func TestShell_PublishListBindings(t *testing.T) {
 func TestShell_PublishNoBindings(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	result, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: ""})
+	result, err := publish.Publish(eng, nil, &publish.PublishOpts{VaultIndex: 0, Domain: ""})
 	require.NoError(t, err)
 	assert.Contains(t, result.Message, "No publish bindings")
 }
@@ -652,7 +656,7 @@ func TestShell_PublishInvalidDomain(t *testing.T) {
 
 	tests := []string{"nodot", "has space.com", "has\ttab.com"}
 	for _, domain := range tests {
-		_, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: domain})
+		_, err := publish.Publish(eng, nil, &publish.PublishOpts{VaultIndex: 0, Domain: domain})
 		assert.Error(t, err, "domain %q should be rejected", domain)
 	}
 }
@@ -665,12 +669,12 @@ func TestShell_UnpublishDomain(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
 	// Publish a domain.
-	_, err := eng.Publish(&engine.PublishOpts{VaultIndex: 0, Domain: "remove-me.com"})
+	_, err := publish.Publish(eng, nil, &publish.PublishOpts{VaultIndex: 0, Domain: "remove-me.com"})
 	require.NoError(t, err)
 	require.NotNil(t, eng.State.GetPublishBinding("remove-me.com"))
 
 	// Unpublish it.
-	result, err := eng.Unpublish(&engine.UnpublishOpts{Domain: "remove-me.com"})
+	result, err := publish.Unpublish(eng, &publish.UnpublishOpts{Domain: "remove-me.com"})
 	require.NoError(t, err)
 	assert.Contains(t, result.Message, "Removed")
 	assert.Contains(t, result.Message, "remove-me.com")
@@ -684,7 +688,7 @@ func TestShell_UnpublishDomain(t *testing.T) {
 func TestShell_UnpublishNonExistent(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, err := eng.Unpublish(&engine.UnpublishOpts{Domain: "ghost.com"})
+	_, err := publish.Unpublish(eng, &publish.UnpublishOpts{Domain: "ghost.com"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no publish binding")
 }
@@ -694,7 +698,7 @@ func TestShell_UnpublishNonExistent(t *testing.T) {
 func TestShell_UnpublishEmptyDomain(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, err := eng.Unpublish(&engine.UnpublishOpts{Domain: ""})
+	_, err := publish.Unpublish(eng, &publish.UnpublishOpts{Domain: ""})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "domain is required")
 }
@@ -754,7 +758,7 @@ func TestShell_DecryptFile(t *testing.T) {
 	localFile := createTempFile(t, content)
 
 	// Upload as free.
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/decrypt-test.txt",
@@ -768,7 +772,7 @@ func TestShell_DecryptFile(t *testing.T) {
 	originalKeyHash := node.KeyHash
 
 	// Encrypt: FREE -> PRIVATE.
-	encResult, err := eng.EncryptNode(&engine.EncryptOpts{
+	encResult, err := eng.EncryptNode(&vault.EncryptOpts{
 		VaultIndex: 0,
 		Path:       "/decrypt-test.txt",
 	})
@@ -780,7 +784,7 @@ func TestShell_DecryptFile(t *testing.T) {
 	assert.Equal(t, "private", node.Access)
 
 	// Decrypt: PRIVATE -> FREE.
-	decResult, err := eng.DecryptNode(&engine.DecryptOpts{
+	decResult, err := eng.DecryptNode(&vault.DecryptOpts{
 		Path: "/decrypt-test.txt",
 	})
 	require.NoError(t, err)
@@ -808,7 +812,7 @@ func TestShell_DecryptAlreadyFree(t *testing.T) {
 	content := []byte("already free file")
 	localFile := createTempFile(t, content)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/free-file.txt",
@@ -816,7 +820,7 @@ func TestShell_DecryptAlreadyFree(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = eng.DecryptNode(&engine.DecryptOpts{Path: "/free-file.txt"})
+	_, err = eng.DecryptNode(&vault.DecryptOpts{Path: "/free-file.txt"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already free")
 }
@@ -826,7 +830,7 @@ func TestShell_DecryptAlreadyFree(t *testing.T) {
 func TestShell_DecryptNonExistent(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
-	_, err := eng.DecryptNode(&engine.DecryptOpts{Path: "/ghost.txt"})
+	_, err := eng.DecryptNode(&vault.DecryptOpts{Path: "/ghost.txt"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }

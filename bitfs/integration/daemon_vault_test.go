@@ -13,32 +13,27 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/tongxiaofeng/bitfs/internal/daemon"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // createDaemonWithEngine creates a real Engine wired into a Daemon via adapters
 // and returns the engine plus an httptest.Server ready for HTTP assertions.
 // The server and engine are cleaned up automatically when the test finishes.
-func createDaemonWithEngine(t *testing.T) (*engine.Engine, *httptest.Server) {
+func createDaemonWithEngine(t *testing.T) (*vault.Vault, *httptest.Server) {
 	t.Helper()
 
 	eng := initIntegrationEngine(t)
 
 	// Create root directory so that Metanet path resolution works.
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/"})
 	require.NoError(t, err, "Mkdir /")
 
-	// Wire adapters.
-	walletAdapter := engine.NewWalletAdapter(eng)
-	storeAdapter := engine.NewStoreAdapter(eng)
-	metanetAdapter := engine.NewMetanetAdapter(eng)
-
-	// Configure daemon with rate limiting disabled.
+	// Wire vault adapters.
 	cfg := daemon.DefaultConfig()
 	cfg.Security.RateLimit.RPM = 0
 	cfg.Security.RateLimit.Burst = 0
 
-	d, err := daemon.New(cfg, walletAdapter, storeAdapter, metanetAdapter)
+	d, err := daemon.New(cfg, &testWalletAdapter{v: eng}, &testStoreAdapter{v: eng}, &testMetanetAdapter{v: eng})
 	require.NoError(t, err, "daemon.New")
 
 	ts := httptest.NewServer(d.Handler())
@@ -55,7 +50,7 @@ func TestDaemonSeesEngineMkdir(t *testing.T) {
 	eng, ts := createDaemonWithEngine(t)
 
 	// Create /docs directory.
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/docs"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/docs"})
 	require.NoError(t, err, "Mkdir /docs")
 
 	// Query the daemon for /docs via content negotiation (default=JSON).
@@ -87,7 +82,7 @@ func TestDaemonReflectsRemove(t *testing.T) {
 	plaintext := []byte("content to be removed")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/removeme.txt",
@@ -102,7 +97,7 @@ func TestDaemonReflectsRemove(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, "file should be accessible before remove")
 
 	// Remove the file via engine.
-	_, err = eng.Remove(&engine.RemoveOpts{VaultIndex: 0, Path: "/removeme.txt"})
+	_, err = eng.Remove(&vault.RemoveOpts{VaultIndex: 0, Path: "/removeme.txt"})
 	require.NoError(t, err, "Remove /removeme.txt")
 
 	// Document current behavior: Remove does NOT purge state, so daemon still finds the node.
@@ -134,7 +129,7 @@ func TestDaemonContentNegotiationWithEngine(t *testing.T) {
 	eng, ts := createDaemonWithEngine(t)
 
 	// Create a subdirectory so we have something to negotiate over.
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/mydir"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/mydir"})
 	require.NoError(t, err, "Mkdir /mydir")
 
 	tests := []struct {
@@ -205,7 +200,7 @@ func TestDaemonPriceInResponse(t *testing.T) {
 	plaintext := []byte("premium content for daemon price test")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/premium.txt",
@@ -214,7 +209,7 @@ func TestDaemonPriceInResponse(t *testing.T) {
 	require.NoError(t, err, "PutFile /premium.txt")
 
 	// Sell the file at 1000 sats/KB.
-	_, err = eng.Sell(&engine.SellOpts{
+	_, err = eng.Sell(&vault.SellOpts{
 		VaultIndex: 0,
 		Path:       "/premium.txt",
 		PricePerKB: 1000,

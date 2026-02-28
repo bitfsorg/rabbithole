@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 	"github.com/tongxiaofeng/libbitfs-go/method42"
 )
 
@@ -26,7 +26,7 @@ func TestEnginePutAndRetrieve(t *testing.T) {
 	localFile := createTempFile(t, plaintext)
 
 	// Put file to remote path.
-	result, err := eng.PutFile(&engine.PutOpts{
+	result, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/hello.txt",
@@ -73,7 +73,7 @@ func TestEngineMkdirNested(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
 	// Create root (implicitly created by Mkdir("/")).
-	rootResult, err := eng.Mkdir(&engine.MkdirOpts{
+	rootResult, err := eng.Mkdir(&vault.MkdirOpts{
 		VaultIndex: 0,
 		Path:       "/",
 	})
@@ -85,7 +85,7 @@ func TestEngineMkdirNested(t *testing.T) {
 	assert.Equal(t, "dir", rootState.Type)
 
 	// Create /docs.
-	docsResult, err := eng.Mkdir(&engine.MkdirOpts{
+	docsResult, err := eng.Mkdir(&vault.MkdirOpts{
 		VaultIndex: 0,
 		Path:       "/docs",
 	})
@@ -104,7 +104,7 @@ func TestEngineMkdirNested(t *testing.T) {
 	assert.Equal(t, "dir", rootState.Children[0].Type)
 
 	// Create /docs/sub.
-	subResult, err := eng.Mkdir(&engine.MkdirOpts{
+	subResult, err := eng.Mkdir(&vault.MkdirOpts{
 		VaultIndex: 0,
 		Path:       "/docs/sub",
 	})
@@ -133,7 +133,7 @@ func TestEngineMoveFile(t *testing.T) {
 	plaintext := []byte("content to be moved")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/original.txt",
@@ -146,7 +146,7 @@ func TestEngineMoveFile(t *testing.T) {
 	origKeyHash := origNode.KeyHash
 
 	// Rename within the same directory.
-	moveResult, err := eng.Move(&engine.MoveOpts{
+	moveResult, err := eng.Move(&vault.MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/original.txt",
 		DstPath:    "/renamed.txt",
@@ -186,17 +186,17 @@ func TestEngineCrossDirectoryMove(t *testing.T) {
 	eng := initIntegrationEngine(t)
 
 	// Create /src and /dst directories.
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/src"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/src"})
 	require.NoError(t, err, "Mkdir /src")
 
-	_, err = eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/dst"})
+	_, err = eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/dst"})
 	require.NoError(t, err, "Mkdir /dst")
 
 	// Put a file into /src.
 	plaintext := []byte("file being moved across directories")
 	localFile := createTempFile(t, plaintext)
 
-	_, err = eng.PutFile(&engine.PutOpts{
+	_, err = eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/src/data.txt",
@@ -209,7 +209,7 @@ func TestEngineCrossDirectoryMove(t *testing.T) {
 	origPubKey := origNode.PubKeyHex
 
 	// Move from /src/data.txt to /dst/data.txt.
-	moveResult, err := eng.Move(&engine.MoveOpts{
+	moveResult, err := eng.Move(&vault.MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/src/data.txt",
 		DstPath:    "/dst/data.txt",
@@ -246,7 +246,7 @@ func TestEngineCopyFile(t *testing.T) {
 	plaintext := []byte("content to be copied to a new location")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/source.txt",
@@ -258,7 +258,7 @@ func TestEngineCopyFile(t *testing.T) {
 	require.NotNil(t, srcNode)
 
 	// Copy the file.
-	copyResult, err := eng.Copy(&engine.CopyOpts{
+	copyResult, err := eng.Copy(&vault.CopyOpts{
 		VaultIndex: 0,
 		SrcPath:    "/source.txt",
 		DstPath:    "/copy.txt",
@@ -310,7 +310,7 @@ func TestEngineRemoveFile(t *testing.T) {
 	plaintext := []byte("file to be deleted")
 	localFile := createTempFile(t, plaintext)
 
-	putResult, err := eng.PutFile(&engine.PutOpts{
+	putResult, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/todelete.txt",
@@ -324,7 +324,7 @@ func TestEngineRemoveFile(t *testing.T) {
 	preTxID := nodeState.TxID
 
 	// Remove the file.
-	removeResult, err := eng.Remove(&engine.RemoveOpts{
+	removeResult, err := eng.Remove(&vault.RemoveOpts{
 		VaultIndex: 0,
 		Path:       "/todelete.txt",
 	})
@@ -352,7 +352,7 @@ func TestEngineSoftLink(t *testing.T) {
 	plaintext := []byte("link target content")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/target.txt",
@@ -364,7 +364,7 @@ func TestEngineSoftLink(t *testing.T) {
 	require.NotNil(t, targetNode)
 
 	// Create soft link.
-	linkResult, err := eng.Link(&engine.LinkOpts{
+	linkResult, err := eng.Link(&vault.LinkOpts{
 		VaultIndex: 0,
 		TargetPath: "/target.txt",
 		LinkPath:   "/shortcut.txt",
@@ -405,7 +405,7 @@ func TestEngineSellAndPrice(t *testing.T) {
 	plaintext := []byte("premium content worth selling")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/premium.txt",
@@ -419,7 +419,7 @@ func TestEngineSellAndPrice(t *testing.T) {
 	assert.Equal(t, uint64(0), nodeState.PricePerKB, "initially no price")
 
 	// Sell the file.
-	sellResult, err := eng.Sell(&engine.SellOpts{
+	sellResult, err := eng.Sell(&vault.SellOpts{
 		VaultIndex: 0,
 		Path:       "/premium.txt",
 		PricePerKB: 500,
@@ -447,7 +447,7 @@ func TestEngineEncryptTransition(t *testing.T) {
 	plaintext := []byte("content transitioning from free to private encryption")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/transition.txt",
@@ -469,7 +469,7 @@ func TestEngineEncryptTransition(t *testing.T) {
 	assert.True(t, oldExists, "old ciphertext should exist before encrypt")
 
 	// Encrypt: Free -> Private.
-	encResult, err := eng.EncryptNode(&engine.EncryptOpts{
+	encResult, err := eng.EncryptNode(&vault.EncryptOpts{
 		VaultIndex: 0,
 		Path:       "/transition.txt",
 	})
@@ -525,7 +525,7 @@ func TestEngineOfflineMode(t *testing.T) {
 	plaintext := []byte("offline mode test content")
 	localFile := createTempFile(t, plaintext)
 
-	putResult, err := eng.PutFile(&engine.PutOpts{
+	putResult, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/offline.txt",

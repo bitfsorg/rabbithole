@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // --- Test 1: TestStateConsistencyAfterMutations ---
@@ -25,7 +25,7 @@ func TestStateConsistencyAfterMutations(t *testing.T) {
 	seedFeeUTXOs(t, eng, 30, 10_000)
 
 	// Step 1: Mkdir /
-	rootResult, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/"})
+	rootResult, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/"})
 	require.NoError(t, err, "Mkdir /")
 	require.NotEmpty(t, rootResult.NodePub, "root NodePub")
 
@@ -35,7 +35,7 @@ func TestStateConsistencyAfterMutations(t *testing.T) {
 	assert.Empty(t, rootState.Children, "root should start with no children")
 
 	// Step 2: Mkdir /docs
-	_, err = eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/docs"})
+	_, err = eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/docs"})
 	require.NoError(t, err, "Mkdir /docs")
 
 	docsState := eng.State.FindNodeByPath("/docs")
@@ -51,7 +51,7 @@ func TestStateConsistencyAfterMutations(t *testing.T) {
 	plaintext := []byte("Hello, this is the readme content for state consistency test.")
 	localFile := createTempFile(t, plaintext)
 
-	_, err = eng.PutFile(&engine.PutOpts{
+	_, err = eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/docs/readme.txt",
@@ -72,7 +72,7 @@ func TestStateConsistencyAfterMutations(t *testing.T) {
 	assert.Equal(t, "readme.txt", docsState.Children[0].Name)
 
 	// Step 4: Move /docs/readme.txt -> /docs/README.md
-	_, err = eng.Move(&engine.MoveOpts{
+	_, err = eng.Move(&vault.MoveOpts{
 		VaultIndex: 0,
 		SrcPath:    "/docs/readme.txt",
 		DstPath:    "/docs/README.md",
@@ -97,7 +97,7 @@ func TestStateConsistencyAfterMutations(t *testing.T) {
 	assert.Equal(t, "README.md", docsState.Children[0].Name)
 
 	// Step 5: Copy /docs/README.md -> /docs/backup.md
-	_, err = eng.Copy(&engine.CopyOpts{
+	_, err = eng.Copy(&vault.CopyOpts{
 		VaultIndex: 0,
 		SrcPath:    "/docs/README.md",
 		DstPath:    "/docs/backup.md",
@@ -124,7 +124,7 @@ func TestStateConsistencyAfterMutations(t *testing.T) {
 	assert.True(t, childNames["backup.md"], "backup.md should be in children")
 
 	// Step 6: Remove /docs/backup.md
-	removeResult, err := eng.Remove(&engine.RemoveOpts{
+	removeResult, err := eng.Remove(&vault.RemoveOpts{
 		VaultIndex: 0,
 		Path:       "/docs/backup.md",
 	})
@@ -171,12 +171,12 @@ func TestCrossVaultIsolation(t *testing.T) {
 		"vault 0 and vault 1 should have different root keys")
 
 	// Create root on vault 0.
-	result0, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/"})
+	result0, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/"})
 	require.NoError(t, err, "Mkdir / on vault 0")
 	require.NotEmpty(t, result0.NodePub)
 
 	// Create root on vault 1.
-	result1, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 1, Path: "/"})
+	result1, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 1, Path: "/"})
 	require.NoError(t, err, "Mkdir / on vault 1")
 	require.NotEmpty(t, result1.NodePub)
 
@@ -208,7 +208,7 @@ func TestFeeKeyRotation(t *testing.T) {
 	initialChangeIdx := eng.WState.NextChangeIndex
 
 	// Create root (consumes 1 change key).
-	_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/"})
+	_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/"})
 	require.NoError(t, err, "Mkdir /")
 
 	afterRoot := eng.WState.NextChangeIndex
@@ -222,7 +222,7 @@ func TestFeeKeyRotation(t *testing.T) {
 		content := []byte("fee rotation test content " + string(rune('A'+i)))
 		localFile := createTempFile(t, content)
 
-		_, err := eng.PutFile(&engine.PutOpts{
+		_, err := eng.PutFile(&vault.PutOpts{
 			VaultIndex: 0,
 			LocalFile:  localFile,
 			RemotePath: "/file" + string(rune('0'+i)) + ".txt",
@@ -278,7 +278,7 @@ func TestUTXOChainRefresh(t *testing.T) {
 	seedFeeUTXOs(t, eng, 30, 10_000)
 
 	// Create root.
-	rootResult, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: "/"})
+	rootResult, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: "/"})
 	require.NoError(t, err, "Mkdir /")
 
 	rootPubHex := rootResult.NodePub
@@ -291,7 +291,7 @@ func TestUTXOChainRefresh(t *testing.T) {
 	// Create 3 children under root.
 	childNames := []string{"/alpha", "/beta", "/gamma"}
 	for _, name := range childNames {
-		_, err := eng.Mkdir(&engine.MkdirOpts{VaultIndex: 0, Path: name})
+		_, err := eng.Mkdir(&vault.MkdirOpts{VaultIndex: 0, Path: name})
 		require.NoError(t, err, "Mkdir %s", name)
 	}
 

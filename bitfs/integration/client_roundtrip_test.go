@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/tongxiaofeng/bitfs/internal/client"
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 )
 
 // --- Test 1: TestClientGetMeta ---
@@ -25,7 +25,7 @@ func TestClientGetMeta(t *testing.T) {
 	plaintext := []byte("client roundtrip metadata test content")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/meta-test.txt",
@@ -83,7 +83,7 @@ func TestClientGetDirectoryListing(t *testing.T) {
 	plaintext := []byte("file inside root for directory listing test")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/listing.txt",
@@ -128,7 +128,7 @@ func TestClientGetData(t *testing.T) {
 	plaintext := []byte("encrypted data retrieval test via client HTTP roundtrip")
 	localFile := createTempFile(t, plaintext)
 
-	_, err := eng.PutFile(&engine.PutOpts{
+	_, err := eng.PutFile(&vault.PutOpts{
 		VaultIndex: 0,
 		LocalFile:  localFile,
 		RemotePath: "/data-test.txt",
@@ -177,7 +177,7 @@ func TestClientMultipleRequests(t *testing.T) {
 	// Create all 3 files.
 	for _, f := range files {
 		localFile := createTempFile(t, []byte(f.content))
-		_, err := eng.PutFile(&engine.PutOpts{
+		_, err := eng.PutFile(&vault.PutOpts{
 			VaultIndex: 0,
 			LocalFile:  localFile,
 			RemotePath: f.name,

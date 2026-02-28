@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/tongxiaofeng/bitfs/internal/engine"
+	"github.com/tongxiaofeng/libbitfs-go/vault"
 	"github.com/tongxiaofeng/libbitfs-go/tx"
 	"github.com/tongxiaofeng/libbitfs-go/wallet"
 )
@@ -24,7 +24,7 @@ const integrationPassword = "integration-test"
 //   - 20 fee UTXOs seeded (10,000 sats each)
 //   - Content-addressed file store in temp directory
 //   - Empty local state
-func initIntegrationEngine(t *testing.T) *engine.Engine {
+func initIntegrationEngine(t *testing.T) *vault.Vault {
 	t.Helper()
 	dataDir := t.TempDir()
 
@@ -57,7 +57,7 @@ func initIntegrationEngine(t *testing.T) *engine.Engine {
 	require.NoError(t, err, "write state.json")
 
 	// Open engine via the standard constructor (reads wallet.enc + state.json).
-	eng, err := engine.New(dataDir, integrationPassword)
+	eng, err := vault.New(dataDir, integrationPassword)
 	require.NoError(t, err, "engine.New")
 
 	t.Cleanup(func() { eng.Close() })
@@ -71,7 +71,7 @@ func initIntegrationEngine(t *testing.T) *engine.Engine {
 // seedFeeUTXOs creates count fake fee UTXOs with the given amount (in satoshis).
 // Each UTXO uses an actual derived fee key so that lookupPrivKey succeeds when
 // the engine later tries to spend them.
-func seedFeeUTXOs(t *testing.T, eng *engine.Engine, count int, amount uint64) {
+func seedFeeUTXOs(t *testing.T, eng *vault.Vault, count int, amount uint64) {
 	t.Helper()
 
 	for i := 0; i < count; i++ {
@@ -90,7 +90,7 @@ func seedFeeUTXOs(t *testing.T, eng *engine.Engine, count int, amount uint64) {
 		// Create a synthetic UTXO. The TxID is a deterministic fake (32 bytes).
 		fakeTxID := fmt.Sprintf("%064x", idx+1) // e.g. "0000...0001"
 
-		eng.State.AddUTXO(&engine.UTXOState{
+		eng.State.AddUTXO(&vault.UTXOState{
 			TxID:         fakeTxID,
 			Vout:         0,
 			Amount:       amount,
