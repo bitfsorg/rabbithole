@@ -4,6 +4,7 @@
 
 ## 已完成计划
 
+- [x] Comprehensive Audit Fixes — 37 issues (`docs/plans/2026-03-01-comprehensive-audit-fixes.md`)
 - [x] Polish: Test Coverage + Spec Audit (`docs/plans/2026-02-28-polish.md`)
 - [x] Vault Extraction (`docs/plans/2026-02-28-vault-extraction.md`)
 - [x] Dashboard (`docs/plans/2026-02-28-dashboard.md`)
