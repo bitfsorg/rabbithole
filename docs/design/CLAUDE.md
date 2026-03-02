@@ -7,7 +7,7 @@
 ```
 design/
 ├── CLAUDE.md                          ← 本文件
-├── 0-OverallDesign.zh.md              ← 整体设计: 两产品生态、界面划分
+├── OverallDesign.zh.md              ← 整体设计: 两产品生态、界面划分
 ├── bitfs/                             ← BitFS 文件系统协议设计
 │   ├── 1-ConceptDesign.zh.md            概念设计 (愿景, 架构, 设计决策)
 │   ├── 2-SystemDesign.zh.md             系统设计 (模块, 接口, 数据流)
@@ -48,7 +48,7 @@ design/
 3. **详细设计** — 算法细节、数据结构、协议规范、交易格式
 4. **测试设计** — 按模块组织的测试用例，覆盖正常/边界/异常场景
 
-`0-OverallDesign.zh.md` 是顶层文件，定义两产品的职责边界和共享设计原则。
+`OverallDesign.zh.md` 是顶层文件，定义两产品的职责边界和共享设计原则。
 
 ## Markdown 编写规范
 

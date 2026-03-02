@@ -126,7 +126,7 @@ libbitfs-go/
 
 ```
 design/
-├── 0-OverallDesign.zh.md        ← 本文档: 整体设计, 界面划分
+├── OverallDesign.zh.md          ← 本文档: 整体设计, 界面划分
 ├── bitfs/                       ← BitFS 文件系统协议设计
 │   ├── 1-ConceptDesign.zh.md       概念设计 (愿景, 架构, 设计决策)
 │   ├── 2-SystemDesign.zh.md        系统设计 (模块, 接口, 数据流)

@@ -143,7 +143,7 @@ libbitfs-go 的 TypeScript 镜像，目标: 浏览器 + Node.js 环境。ESM 优
 | 3-详细设计 | 算法细节、Bitcoin Script、x402 协议、BIP32 访问控制 (103KB) | 共识机制、挖矿协议、结算流程 (14KB) |
 | 4-测试设计 | ~980 测试用例 (55KB) | ~20 测试用例 (8KB) |
 
-**其他**: `0-OverallDesign.zh.md`（总体设计）、`diagrams/`（8 个 Mermaid .mmd + 7 个 SVG）、`pdf/`（9 个生成的 PDF + HTML 模板）
+**其他**: `OverallDesign.zh.md`（总体设计）、`diagrams/`（8 个 Mermaid .mmd + 7 个 SVG）、`pdf/`（9 个生成的 PDF + HTML 模板）
 
 ### docs/whitepaper/ — 白皮书
 
