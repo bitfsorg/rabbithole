@@ -6,6 +6,7 @@
 
 ## P2 — 协议/架构
 
+- [ ] **BSV ↔ 稳定币兑换工具** — 独立库 + CLI，让用户/Agent 在 BSV 与 USDC/USDT 之间兑换（EVM 兼容链 + Solana）。解决 BSV 流动性和入金问题。可参考 purl.dev (Stripe/Coinbase x402) 的三方模型。实现路径: HTLC 原子跨链交换（BSV Script ↔ EVM Solidity ↔ Solana Anchor）或 CEX API 聚合，底层做通用兑换库，上层可集成进 BitFS daemon 多币支付流程
 - [ ] **早期 PoW 安全性** — Metanet Chain 早期算力低，51% 攻击成本低。方案: 初期 PoA / 最低难度阈值 / BSV checkpoint 锚定
 - [ ] **存储证明批量提交** — 1000 合约时 12,000 笔/天链上交易，需批量 Merkle root 或 rollup
 - [ ] **Oracle 角色定位** — ECDH 分发 / 挑战管理两职责均可消除或合并，三种方案待深入分析
