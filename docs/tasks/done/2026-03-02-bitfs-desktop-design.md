@@ -1,6 +1,7 @@
 # BitFS Desktop — 设计文档
 
 Date: 2026-03-02
+Status: COMPLETED (2026-03-02) — MVP implemented in `bitfs-desktop/`
 
 ## Overview
 

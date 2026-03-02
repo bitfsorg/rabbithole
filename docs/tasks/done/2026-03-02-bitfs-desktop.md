@@ -1,14 +1,20 @@
 # BitFS Desktop Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status: COMPLETED** (2026-03-02) — All 10 tasks implemented. 9 Go tests passing, production build verified (12MB macOS .app).
 
 **Goal:** Build a cross-platform desktop client for BitFS using Wails v2 (Go + React), connecting directly to libbitfs-go for all operations.
 
 **Architecture:** Wails v2 app with Go backend directly importing libbitfs-go for wallet/file operations. React 19 frontend with BitFS Dark Botanical theme. Single binary output. Daemon mode optional (Phase 2).
 
-**Tech Stack:** Go 1.25, Wails v2, libbitfs-go, React 19, TypeScript 5, Vite 6, Tailwind CSS 4, React Router v7, Lucide React
+**Tech Stack:** Go 1.25, Wails v2, libbitfs-go, React 19, TypeScript 5, Vite 7, Tailwind CSS 4, React Router v7, Lucide React
 
-**Design Doc:** `docs/tasks/2026-03-02-bitfs-desktop-design.md`
+**Design Doc:** `docs/tasks/done/2026-03-02-bitfs-desktop-design.md`
+
+**Implementation Notes:**
+- `vault.SaveWalletState` doesn't exist — used manual `json.Marshal` + `os.WriteFile` in `writeWalletFiles()` helper
+- `kp.PublicKey.Address()` doesn't exist — used `script.NewAddressFromPublicKey(kp.PublicKey, isMainnet)` from go-sdk
+- Vite 7 (not 6) was installed as latest version
+- All code lives in `bitfs-desktop/` (independent Git repo, not a branch of RabbitHole)
 
 ---
 
