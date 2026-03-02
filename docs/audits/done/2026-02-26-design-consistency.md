@@ -27,6 +27,8 @@
 3. **TLV 协议格式** — tag 编号偏移、PRIVATE 模式字段未实现
 
 > **2026-02-28 更新**: 23 个不一致项已修复/关闭（C2, C3, H1, H2, H3, H4, H8, H11, H12, L1, L5, L6, L7, M1, M2, M3, M4, M5, M6, M7, M8，以及 spec/10-cmd-bitfs.md cobra/viper→标准库 flag）。详见各项末尾的 ✅ 标记。
+>
+> **2026-03-03 Closure**: All 40 findings confirmed fixed/closed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md`. Remaining items (C1, C4-C9, H7, H10, L3, L4, L8, M11) all addressed in batch fixes. Report archived to `done/`.
 
 ---
 
@@ -46,6 +48,8 @@ Method 42 密钥派生的 HKDF domain separator 在文档间不一致。
 **影响**: HKDF info 是域分隔符，不同值会产生不兼容的 AES 密钥，导致加密内容无法互通。
 **权威来源**: 代码和 L3 详细设计一致使用 `"bitfs-file-encryption"`。
 **修复**: 更新 `design/bitfs/2-SystemDesign.zh.md:466` 的 info 值。
+
+✅ **已修复** (2026-03-02): `2-SystemDesign.zh.md:466` info 值已更正为 `"bitfs-file-encryption"`，与代码和 L3 详细设计一致。
 
 ---
 
@@ -120,6 +124,8 @@ BSV 已移除 dust limit，项目代码和详细设计已更新为 1 sat，但�
 **影响**: 白皮书发布错误的协议参数。`integration/tx_build_extra_test.go:547` 的 `assert.Equal(t, uint64(546), tx.DustLimit)` 断言会失败。
 **修复**: 更新白皮书、git-remote-bitfs/CLAUDE.md、spec/TASKS.md；修复失败的集成测试。
 
+✅ **已修复** (2026-03-02): 白皮书、git-remote-bitfs/CLAUDE.md、spec/TASKS.md 中 DustLimit 已更正为 1 sat。集成测试已修复。
+
 ---
 
 ### C5. Metanet 网站：Staking 必需 vs 设计/白皮书：无需 Staking
@@ -144,6 +150,8 @@ BSV 已移除 dust limit，项目代码和详细设计已更新为 1 sat，但�
 **影响**: 外部面向公众的文档与内部设计呈现完全相反的产品定位。
 **修复**: 需要做产品决策——Staking 是否纳入设计。然后统一所有文档。
 
+✅ **已修复** (2026-03-02): 产品决策统一为无需 Staking。网站大纲已更正移除 staking 相关内容。
+
 ---
 
 ### C6. 检索费货币：网站说 MNT，设计/白皮书说 BSV
@@ -165,6 +173,8 @@ Micro-fees paid in MNT for each content retrieval.
 
 **影响**: 违反双币模型核心设计原则。双币模型的设计意图是用户使用 BSV 支付（降低门槛），MNT 仅用于运营商间的激励/治理。
 **修复**: 网站检索费描述改为 BSV。
+
+✅ **已修复** (2026-03-02): 网站大纲中检索费描述已更正为 BSV。
 
 ---
 
@@ -189,6 +199,8 @@ Layer 3: CDN Layer           ← 其他文档中不存在此层
 **影响**: 架构描述根本性矛盾。开发者和投资者看到两套不同的架构。
 **修复**: 统一网站的三层架构描述，恢复 Daemon 层。
 
+✅ **已修复** (2026-03-02): 网站大纲三层架构已恢复为 L1:BSV / L2:Daemon / L3:Metanet Chain，与设计文档和白皮书一致。
+
 ---
 
 ### C8. HTLC 发起方：网站说 Seller，白皮书/设计说 Buyer
@@ -209,6 +221,8 @@ Layer 3: CDN Layer           ← 其他文档中不存在此层
 **影响**: HTLC 协议流程的发起方是核心设计决策——谁承担链上手续费、谁先锁定资金。网站描述的是相反的协议。
 **修复**: 网站更正为 Buyer 发起 HTLC。
 
+✅ **已修复** (2026-03-02): 网站大纲 HTLC 流程已更正为 Buyer 发起。
+
 ---
 
 ### C9. 钱包文件名：wallet.db vs wallet.enc
@@ -225,6 +239,8 @@ Layer 3: CDN Layer           ← 其他文档中不存在此层
 白皮书还错误地描述 `wallet.db` 包含 "HD 密钥 + UTXO 集合"，而实际 `wallet.enc` 只包含 Argon2id 加密的 HD seed。
 
 **修复**: 白皮书改为 `wallet.enc`，修正功能描述。`3-DetailedDesign.zh.md:1606` 修正笔误。
+
+✅ **已修复** (2026-03-02): 白皮书和 `3-DetailedDesign.zh.md:1606` 中 `wallet.db` 已更正为 `wallet.enc`。
 
 ---
 
@@ -319,18 +335,22 @@ L4 测试 T9.5.2 与 Section 9-B 一致（SOFT 链接方案）。
 
 **说明**: 部分为尚未实现的功能（Rabin、分片、ISO），属于路线图中的计划项。PRIVATE 模式字段已通过设计决策 #10 废弃（改用 enc_payload），不再需要。其余 H5 字段在后续开发中已全部实现。
 
+✅ **已修复** (2026-03-02): `2-SystemDesign.zh.md` 中 TLV 字段编号已从 protobuf 风格十进制编号更新为与 `parser.go` 一致的十六进制 tag 值 (0x1E-0x30)。添加 0x20-0x26 Anchor 保留区间注释。所有字段已在代码中实现。
+
 ---
 
 ### H6. Daemon 缺失设计中定义的端点
 
 | 设计中的端点 | 用途 | 状态 |
 |-------------|------|------|
-| `POST /_bitfs/pay/{invoice_id}` | x402 CDN 带宽费 (简单 P2PKH) | 未实现 |
+| `POST /_bitfs/pay/{invoice_id}` | x402 CDN 带宽费 (简单 P2PKH) | ~~未实现~~ 已实现 |
 | `POST /_bitfs/git/push` | Git push 通过 daemon | 未实现 (git-remote-bitfs 独立) |
 | `GET /_bitfs/git/refs/{path}` | Git refs 查询 | 未实现 |
-| Paymail `a9f510c16bde` | Verify Public Key capability | 未实现 |
+| Paymail `a9f510c16bde` | Verify Public Key capability | ~~未实现~~ 已实现 |
 
 反向: 代码实现了 `GET /_bitfs/spv/proof/{txid}` (M11)，但设计文档中未记载。
+
+✅ **已修复** (2026-03-02): `2-SystemDesign.zh.md` HTTP API 列表已更新为与 `routes.go` 完全一致的 30 个端点 (含 Paymail verify, SPV proof, dashboard, sales, versions)。`POST /_bitfs/pay` 和 Paymail verify_pubkey 均已实现。Git push/refs 标注为"计划中 (git-remote-bitfs 独立实现)"。`3-DetailedDesign.zh.md §十三-B.A` 的路由列表已包含完整端点。
 
 ---
 
@@ -346,6 +366,8 @@ L4 测试 T9.5.2 与 Section 9-B 一致（SOFT 链接方案）。
 代码和用户指南一致，Spec 过时。
 
 **修复**: 更新 `spec/10-cmd-bitfs.md` exit code 定义以匹配代码。
+
+✅ **已修复** (2026-03-02): `spec/10-cmd-bitfs.md` exit code 定义已更新为与代码一致。
 
 ---
 
@@ -384,6 +406,8 @@ L4 测试 T9.5.2 与 Section 9-B 一致（SOFT 链接方案）。
 **影响**: 运行时不兼容——publish 设置 `_bitfs.`，paymail 验证查找 `_bitfs_pubkey.`。
 **修复**: 统一为一种方案，建议采用更语义化的 `_bitfs.{domain}` + `bitfs=<pubkey>` 格式。
 
+✅ **已修复** (2026-03-02): 代码 (`paymail/dns.go`) 和所有活跃文档 (设计文档、白皮书、spec) 均已统一为 `_bitfs.{domain}` TXT 记录 + `bitfs=<pubkey>` 值格式。旧 `_bitfs_pubkey.{domain}` 格式仅残留在历史审查报告和 done/ 归档文件中 (不修改)。`2-SystemDesign.zh.md §六` 已使用正确格式。
+
 ---
 
 ### H10. 网站 BIP32 路径简化错误
@@ -402,6 +426,8 @@ m/44'/236'/1' -- Vault #0 根目录
 ```
 
 网站的简化路径缺少 purpose(`44'`) 和 coin_type(`236'`) 层级，且 "identity" 概念在设计中不存在。
+
+✅ **已修复** (2026-03-02): 网站大纲 BIP32 路径已更正为完整 BIP44 路径 `m/44'/236'/...`。
 
 ---
 
@@ -538,6 +564,8 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 | 目录级 BIP32 xpub 解锁 | `S_child = S_parent + offset * P_buyer` |
 | BSV Anchor 交易 (Metanet) | 锚定格式、字段验证 |
 
+✅ **已修复** (2026-03-02): `4-TestDesign.zh.md` 新增 T28-T32 共 5 组测试用例 (36 个测试用例), 覆盖 Koblitz 加密 (T28, 8 例)、内容压缩 (T29, 6 例)、CLTV 时锁访问 (T30, 8 例)、Hash Chain Token (T31, 8 例)、目录级 BIP32 访问控制 (T32, 6 例)。BSV Anchor 交易测试已在 Metanet 独立测试文档和 git-remote-bitfs e2e 测试中覆盖。
+
 ---
 
 ### M10. Slides 字体/颜色偏离 VI 系统
@@ -549,11 +577,15 @@ aes_key = HKDF-SHA256(point.x, key_hash)
 
 Slides 还引入了 VI 中不存在的 `--accent-pink: #e8b4b8` 和 `--accent-gold: #c9b896`。
 
+✅ **已修复** (2026-03-02): `BitFS-presentation.html` 已更新: 正文字体 IBM Plex Sans → Inter, 展示字体 Cormorant → Cormorant Garamond (与 VI 一致), 强调色 `#d4a574` → `#c9956b`, 非 VI 颜色 `#e8b4b8` → `#dbb08a` (--b-gold-light), `#c9b896` → `#a07548` (--b-gold-dark)。Google Fonts 引用已同步更新。
+
 ---
 
 ### M11. SPV Proof 端点：代码有但设计无
 
 `bitfs/internal/daemon/routes.go:35` 实现了 `GET /_bitfs/spv/proof/{txid}`，但没有任何设计文档提及此端点。反向不一致。
+
+✅ **已修复** (2026-03-02): SPV proof 端点已添加到 `2-SystemDesign.zh.md` 和 `3-DetailedDesign.zh.md` 的 HTTP API 列表中（见 H6 修复）。
 
 ---
 
@@ -581,6 +613,8 @@ Slides 还引入了 VI 中不存在的 `--accent-pink: #e8b4b8` 和 `--accent-go
 
 `bitfs put` 默认创建公开免费文件。`bput` 继承父目录设置。同一操作通过两种接口有不同默认行为。
 
+✅ **已关闭** (2026-03-02): 行为差异已在用户指南和帮助文本中明确记录。CLI 默认 free（显式操作），shell/bput 继承（便捷操作）是合理的设计选择。
+
 ### L5. Paymail profile URL 路径不匹配
 
 设计: `/api/v1/profile/{alias}@{domain.tld}`。代码: `/api/v1/public-profile/...`。且代码中该路径无实际 handler。
@@ -605,7 +639,7 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 - `revshare/` 在 L0 整体设计中列出但无任何描述或链接
 - L4 TestDesign 中的测试文件路径引用 pre-extraction 结构（如 `src/internal/method42/encrypt_test.go`）
 
-✅ **已修复** (2026-02-28): `revshare/` 已在 L0 中有描述（`0-OverallDesign.zh.md:72`）。`4-TestDesign.zh.md` 中 50 处 `src/internal/` 旧路径已批量更新为正确位置（libbitfs-go/、bitfs/internal/、bitfs/cmd/bitfs/、bitfs/integration/）。Metanet x402 交叉引用属低优先级，留待 Metanet 文档更新时处理。
+✅ **已修复** (2026-02-28, 2026-03-02): `revshare/` 已在 L0 中有描述（`0-OverallDesign.zh.md:72`）。`4-TestDesign.zh.md` 中 50 处 `src/internal/` 旧路径已批量更新为正确位置（libbitfs-go/、bitfs/internal/、bitfs/cmd/bitfs/、bitfs/integration/）。Metanet x402 交叉引用已补充。
 
 ---
 
@@ -655,3 +689,5 @@ TASKS.md 等 spec 文件引用 `libbitfs/method42/` 等路径，实际 Go module
 L1-L8 和其余 MEDIUM 项。可在相关功能开发时顺便修复。
 
 > ✅ 2026-02-28 已修复/关闭共 23 项: C2, C3, H1, H2, H3, H4, H8, H11, H12, L1, L5, L6, L7, M1, M2, M3, M4, M5, M6, M7, M8，以及 spec/10 cobra/viper→flag。
+>
+> ✅ 2026-03-02 已修复/关闭共 5 项: H5 (TLV 字段编号与代码对齐), H6 (Daemon HTTP API 列表完善), H9 (DNS TXT 记录格式统一), M9 (新增 T28-T32 共 36 个测试用例), M10 (Slides 字体/颜色与 VI 系统对齐)。

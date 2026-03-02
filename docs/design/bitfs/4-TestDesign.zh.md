@@ -49,7 +49,12 @@
 | T25 | 收益权/ISO | 十一-f | `revenue/iso_test.go` | 0 | 8 |
 | T26 | 同步与批量发布 (bsync/bput) | 二十三 | `sync/bsync_test.go` | 0 | 6 |
 | T27 | Paymail 集成 | 六, 十六-B | `paymail/paymail_test.go` | 0 | 6 |
-| | **合计** | | | **649** | **~980** |
+| T28 | Koblitz 加密 | 五-B | `method42/koblitz_test.go` | 0 | 8 |
+| T29 | 内容压缩 | 八-B.D | `metanet/compression_test.go` | 0 | 6 |
+| T30 | CLTV 时锁访问 | 七-B | `method42/cltv_test.go` | 0 | 8 |
+| T31 | Hash Chain Token | 十一-B | `method42/hashchain_test.go` | 0 | 8 |
+| T32 | 目录级 BIP32 访问控制 | 十五-B | `method42/bip32access_test.go` | 0 | 6 |
+| | **合计** | | | **649** | **~1022** |
 
 > **注**: T8 与 T10 共享 `metanet/metanet_test.go`，T8 覆盖节点构建器测试，T10 覆盖路径解析器测试。
 
@@ -863,6 +868,157 @@ Paymail (bsvalias) 协议集成测试, 验证身份发现、公钥查询与 BitF
 
 ---
 
+## T28. Koblitz 加密 ★
+
+**设计参照**: 第五-B节 (Koblitz 加密详细设计)
+**代码文件**: `libbitfs-go/method42/koblitz_test.go`
+**测试函数数**: 现有 0 / 目标 8
+
+Koblitz 椭圆曲线 (secp256k1 ECC) 对称密钥加密的正确性和安全性测试。
+
+### T28.1: 点映射
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T28.1.1 | 字节→曲线点映射: 0-255 所有字节 | 无 | 对 0-255 每个字节执行 Koblitz 映射 | 所有 256 个字节均映射到 secp256k1 曲线上的有效点, 且映射唯一 (无冲突) | [unit] |
+| T28.1.2 | 点→字节逆映射: 往返正确性 | 已映射的曲线点 | 从 P_b 的 x 坐标恢复字节 b = x / k | 恢复的字节值与原始字节完全一致, 256 个字节全部可逆 | [property] |
+
+### T28.2: 加密/解密
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T28.2.1 | 对称密钥加密+解密往返 | 随机 32 字节 S_k, 接收方密钥对 | Koblitz 加密 S_k → encrypted_S_k, 用 D_recipient 解密 | 解密结果与原始 S_k 完全一致 | [unit] |
+| T28.2.2 | 非接收方无法解密 | 加密给 P_recipient_A | 用 D_recipient_B 解密 | 解密失败或产生错误结果 | [security] |
+| T28.2.3 | 密文膨胀率验证 | 32 字节 S_k | Koblitz 加密 | 密文大小 ~2KB (32 字节 × ~64 个 ECC 点, 每点 33 字节) | [unit] |
+
+### T28.3: 混合加密集成
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T28.3.1 | Koblitz + AES-256-GCM 混合加密端到端 | 随机明文, 密钥对 | 生成 S_k → Koblitz 加密 S_k → AES-GCM 加密内容 → 接收方 Koblitz 解密 S_k → AES-GCM 解密内容 | 解密后明文与原始一致 | [integration] |
+| T28.3.2 | 密文不可篡改 (GCM tag 验证) | 已加密的密文 | 修改密文任意字节 → 解密 | AES-GCM tag 校验失败, 返回认证错误 | [security] |
+| T28.3.3 | Koblitz 加密不确定性 | 同一 S_k, 同一 P_recipient | 两次加密 | 因随机 ephemeral 密钥 r, 两次密文不同 (不可关联) | [property] |
+
+---
+
+## T29. 内容压缩 ★
+
+**设计参照**: 第八-B.D节 (数据压缩)
+**代码文件**: `libbitfs-go/metanet/compression_test.go`
+**测试函数数**: 现有 0 / 目标 6
+
+内容压缩方案的正确性、往返一致性和 key_hash 计算基准测试。
+
+### T29.1: 压缩/解压
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T29.1.1 | 4 种方案压缩+解压往返 | 各种大小的测试明文 | 分别用 NONE/LZW/GZIP/ZSTD 压缩 → 解压 | 所有方案解压后与原始明文完全一致 | [unit] |
+| T29.1.2 | 空内容压缩 | 空字节切片 | 各压缩方案处理空内容 | NONE 返回空, 其他方案正确处理零长度输入 (无 panic) | [edge] |
+| T29.1.3 | 不可压缩数据 | 随机 bytes (高熵) | GZIP/ZSTD/LZW 压缩 | 压缩后大小 >= 原始大小 (不因无法压缩而报错), 解压后仍正确 | [edge] |
+
+### T29.2: 加密管线集成
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T29.2.1 | key_hash 基于原始明文 (非压缩后) | 明文 "Hello World" | 压缩 → 加密; key_hash = SHA256(SHA256(plaintext)) | key_hash 始终基于原始明文计算, 与压缩方案无关 | [property] |
+| T29.2.2 | 压缩→加密→解密→解压端到端 | 明文 + compression=GZIP | 完整管线: compress → encrypt → decrypt → decompress | 最终输出与原始明文一致 | [integration] |
+| T29.2.3 | TLV compression 字段序列化 | node.Compression = ZSTD (3) | SerializePayload → DeserializePayload | 往返后 compression 字段值保持不变 | [unit] |
+
+---
+
+## T30. CLTV 时锁访问 ★
+
+**设计参照**: 第七-B节 (CLTV 区块高度权限详细设计)
+**代码文件**: `libbitfs-go/method42/cltv_test.go`
+**测试函数数**: 现有 0 / 目标 8
+
+OP_CHECKLOCKTIMEVERIFY 三种使用模式 (Embargo/Expiry/Subscription) 的访问控制测试。
+
+### T30.1: 基础访问控制
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T30.1.1 | cltv_height=0: 无时间限制 | 节点 cltv_height=0 | check_cltv_access(node, any_height) | ACCESS_ALLOWED | [unit] |
+| T30.1.2 | 未到达区块高度: 拒绝访问 | 节点 cltv_height=1000, current_height=999 | check_cltv_access | ACCESS_DENIED_UNTIL(1000) | [unit] |
+| T30.1.3 | 已到达区块高度: 允许访问 | 节点 cltv_height=1000, current_height=1000 | check_cltv_access | ACCESS_ALLOWED | [unit] |
+| T30.1.4 | 刚好到达: 边界 | 节点 cltv_height=N, current_height=N | check_cltv_access | ACCESS_ALLOWED (>= 语义) | [edge] |
+
+### T30.2: 三种模式
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T30.2.1 | Embargo 模式: 定时发布 | 文件 cltv_height=未来高度 | Daemon GET /data 请求 | 返回 403 Forbidden + X-CLTV-Height + X-Current-Height, 到达高度后返回 200 | [integration] |
+| T30.2.2 | Expiry 模式: 限时访问脚本 | CLTV + P_buyer 组合脚本 | 过期前 P_buyer 签名花费 | 过期前成功, 过期后 P_buyer 签名花费失败 (需等待 Seller 回收) | [unit] |
+| T30.2.3 | Subscription 模式: 周期 CLTV | H_0→H_1 周期 1, H_1→H_2 周期 2 | 周期 1 内访问 → 周期 2 内访问 | 各周期独立验证, 需各自有效 Token | [unit] |
+| T30.2.4 | TLV cltv_height 字段序列化 | cltv_height=850000 | SerializePayload → DeserializePayload | 往返后 cltv_height 值不变 | [unit] |
+
+---
+
+## T31. Hash Chain Token ★
+
+**设计参照**: 第十一-B节 (Token 系统详细设计)
+**代码文件**: `libbitfs-go/method42/hashchain_test.go`
+**测试函数数**: 现有 0 / 目标 8
+
+Hash Chain 批量预购令牌的生成、验证和兑换测试。
+
+### T31.1: 令牌链生成
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T31.1.1 | Hash Chain 生成: N=100 | 随机种子 Y | 生成 T_0=Y, T_i=SHA256(T_{i-1}) (i=1..100) | 链长 101 (含种子), T_100 为锚点, SHA256^100(Y) == T_100 | [unit] |
+| T31.1.2 | 令牌验证: 有效令牌 | 已知锚点 T_N | 提交 T_{N-k}, 验证 SHA256^k(T_{N-k}) == T_N | 验证通过 | [unit] |
+| T31.1.3 | 令牌验证: 无效令牌 | 已知锚点 T_N | 提交随机 32 字节 | 验证失败: SHA256^k(random) != T_N | [security] |
+
+### T31.2: 兑换流程
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T31.2.1 | 按序兑换: 第 1 到第 N 次 | N=10 的 Hash Chain | 按序提交 T_{N-1}, T_{N-2}, ..., T_0 | 每个令牌验证通过, 使用次数递增 | [unit] |
+| T31.2.2 | 重放攻击: 重复使用同一令牌 | 令牌 T_{N-1} 已使用 | 再次提交 T_{N-1} | 拒绝: 令牌已使用 | [security] |
+| T31.2.3 | 跳序兑换: 跳过中间令牌 | 已使用 T_{N-1} (第 1 次) | 提交 T_{N-3} (跳过第 2 次) | 验证通过 (无需严格按序, 但 Seller 损失跳过的令牌) | [edge] |
+
+### T31.3: 合约集成
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T31.3.1 | 预购合约: 锁定 N × price 金额 | N=10, price=100 sat | 构建预购交易 | 交易锁定 1000 sat, 包含 T_N 锚点和 P_seller | [unit] |
+| T31.3.2 | 令牌领取: Seller 用令牌花费对应输出 | 有效 Token T_{N-k} | Seller 签名 + 令牌提交 | Script 验证通过, Seller 领取 1/N 金额 | [integration] |
+
+---
+
+## T32. 目录级 BIP32 访问控制 ★
+
+**设计参照**: 第十五-B节 (目录树购买与 BIP32 访问控制详细设计)
+**代码文件**: `libbitfs-go/method42/bip32access_test.go`
+**测试函数数**: 现有 0 / 目标 6
+
+基于 BIP32 非硬化派生的目录树级购买和密钥推导测试。
+
+### T32.1: ECDH 传递性
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T32.1.1 | ECDH 传递性: S_child 从 S_parent 推导 | 已知 S_parent, chaincode, P_buyer | 计算 offset, S_child = S_parent + offset × P_buyer | S_child 与直接 ECDH(D_child, P_buyer) 结果一致 | [property] |
+| T32.1.2 | 递归推导: 任意深度 | 3 层嵌套目录 (parent/child/grandchild) | 从 S_parent 递归推导 S_child → S_grandchild | 与直接 ECDH 计算结果一致, 3 层均正确 | [unit] |
+
+### T32.2: 目录购买
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T32.2.1 | 买方购买目录后解密子文件 | 目录含 3 个文件, 买方获得目录 capsule | 用 S_parent + offset 推导各子文件 aes_key → 解密 | 3 个子文件均解密成功 | [integration] |
+| T32.2.2 | 购买目录不影响硬化子节点 | 目录含普通文件和硬化文件 | 买方尝试推导硬化子节点密钥 | 普通子节点解密成功, 硬化子节点无法推导 (需单独购买) | [security] |
+
+### T32.3: 与 CLTV 组合
+
+| ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
+|----|---------|---------|------|---------|------|
+| T32.3.1 | 目录购买 + CLTV = 限时订阅 | 目录 cltv_height 周期性设置 | 买方购买当期目录 | 当期文件可解密, 下一期文件需重新购买 | [integration] |
+| T32.3.2 | xpub 推导不泄露私钥 | Buyer 持有 S_parent + xpub (不含 D_parent) | 尝试从 S_parent 和 xpub 推导 D_parent | 无法推导私钥, 仅能推导 ECDH 共享密钥 | [security] |
+
+---
+
 > Metanet Chain 测试用例已移至独立文档: [../metanet/4-TestDesign.zh.md](../metanet/4-TestDesign.zh.md)
 
 ---
@@ -900,3 +1056,8 @@ Paymail (bsvalias) 协议集成测试, 验证身份发现、公钥查询与 BitF
 | T25 收益权/ISO | 十一-f (收益权表与 ISO) | `libbitfs-go/revshare/iso_test.go` |
 | T26 同步与批量发布 (bsync/bput) | 二十三 (bsync/bput) | `bitfs/internal/sync/bsync_test.go` |
 | T27 Paymail 集成 | 六 (DNSLink/Paymail), 十六-B (Paymail 详细设计) | `libbitfs-go/paymail/paymail_test.go` |
+| T28 Koblitz 加密 | 五-B (Koblitz 加密详细设计) | `libbitfs-go/method42/koblitz_test.go` |
+| T29 内容压缩 | 八-B.D (数据压缩) | `libbitfs-go/metanet/compression_test.go` |
+| T30 CLTV 时锁访问 | 七-B (CLTV 区块高度权限) | `libbitfs-go/method42/cltv_test.go` |
+| T31 Hash Chain Token | 十一-B (Token 系统详细设计) | `libbitfs-go/method42/hashchain_test.go` |
+| T32 目录级 BIP32 访问控制 | 十五-B (目录树购买与 BIP32 访问控制) | `libbitfs-go/method42/bip32access_test.go` |

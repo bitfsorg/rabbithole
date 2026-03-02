@@ -5,6 +5,8 @@
 **Method:** 4 parallel agents, full source code review (non-test .go files only)
 **Branch:** fix/audit-medium-batch3 (post batch 3 fixes)
 
+> **2026-03-03 Closure**: All 40 findings (1C + 10H + 17M + 12L) confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` section 2.4 (Concurrency Safety). Engine-level mutex (H-1), daemon snapshot-by-value (C-1), SPV ErrDuplicateHeader tolerance (H-10), atomic state save (M-8), and all remaining items addressed. Report archived to `done/`.
+
 ---
 
 ## Executive Summary
@@ -49,7 +51,7 @@ The following packages are **fully safe for concurrent use** — all functions a
 | **File** | `bitfs/internal/daemon/payment.go:124-327` |
 | **Severity** | CRITICAL |
 | **Category** | Data race (confirmed by analysis, detectable by `-race`) |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -103,7 +105,7 @@ Alternatively, add a per-record `sync.RWMutex` to `InvoiceRecord`.
 | **File** | `bitfs/internal/engine/` (global), `bitfs/cmd/bitfs/cmd_daemon.go` |
 | **Severity** | HIGH |
 | **Category** | Missing synchronization (architectural) |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -126,7 +128,7 @@ This means every engine write method (`PutFile`, `Mkdir`, `Remove`, `Move`, `Cop
 | **File** | `bitfs/internal/engine/engine.go:217-226` |
 | **Severity** | HIGH |
 | **Category** | Race condition |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -155,7 +157,7 @@ Concurrent calls (e.g., two simultaneous `put` requests via daemon) both read th
 | **File** | `bitfs/internal/engine/move.go:273` |
 | **Severity** | HIGH |
 | **Category** | Race condition / data loss |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -184,7 +186,7 @@ This bypasses `LocalState.mu` entirely. If a concurrent operation appends UTXOs 
 | **File** | `bitfs/internal/engine/helpers.go:144-146` |
 | **Severity** | HIGH |
 | **Category** | Broken encapsulation / race risk |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -210,7 +212,7 @@ This defeats the purpose of the guarded accessor pattern and makes lock ordering
 | **File** | `bitfs/internal/daemon/payment.go:171-174 vs 249-267` |
 | **Severity** | HIGH |
 | **Category** | Data race |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -227,7 +229,7 @@ This defeats the purpose of the guarded accessor pattern and makes lock ordering
 | **File** | `bitfs/internal/daemon/daemon.go:397-414` |
 | **Severity** | HIGH |
 | **Category** | TOCTOU |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -267,7 +269,7 @@ if expired { ... delete under Lock ... }
 | **File** | `bitfs/internal/daemon/daemon.go:287-293` |
 | **Severity** | HIGH |
 | **Category** | Race condition |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -289,7 +291,7 @@ Both fields are read by HTTP handlers (`spv.go:25`, `payment.go:297`). Go interf
 | **File** | `bitfs/internal/daemon/payment.go:237-310` |
 | **Severity** | HIGH |
 | **Category** | Atomicity violation |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -308,7 +310,7 @@ A concurrent request with the same transaction ID could slip through during the 
 | **File** | `libbitfs-go/metanet/directory.go:39-136`, `node.go:128` |
 | **Severity** | HIGH |
 | **Category** | Race condition |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 
@@ -337,7 +339,7 @@ dirNode.Children = append(dirNode.Children[:i], dirNode.Children[i+1:]...)
 | **File** | `libbitfs-go/network/spvclient.go:68-83, 130-186` |
 | **Severity** | HIGH |
 | **Category** | TOCTOU / missing error handling |
-| **Status** | OPEN |
+| **Status** | FIXED |
 
 **Description:**
 

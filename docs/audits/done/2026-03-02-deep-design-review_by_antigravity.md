@@ -1,7 +1,8 @@
 # RabbitHole 项目深度设计审查报告
 
-> 审查时间：2026-03-02  
+> 审查时间：2026-03-02
 > 审查范围：libbitfs-go, bitfs, docs/design, docs/specs
+> 状态：All 8 findings resolved — #1,#5,#6,#7,#8 fixed in code; #2 retained by design (Anchor for git-remote-bitfs); #3 HTLC CLTV deferred (see `deferred.md`); #4 O(N) directory deferred (see `deferred.md`). Archived 2026-03-03.
 
 ---
 

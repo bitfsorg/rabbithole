@@ -332,26 +332,27 @@ K+1         1B        Hardened flag (bool, 0|1)
   // 原 field 28-29 (private_key_hash, private_file_index) 已废弃。
 
   // 元信息扩展
-  map<string, string> metadata = 30; // 自定义键值对 (灵活扩展)
-  bytes version_log = 31;            // 指向版本记录 Metanet 节点的 P_node
-  bytes share_list = 32;             // 指向共享列表 Metanet 节点的 P_node
+  map<string, string> metadata = 0x1E; // tag 30: 自定义键值对 (灵活扩展)
+  bytes version_log = 0x1F;            // tag 31: 指向版本记录 Metanet 节点的 P_node
+  // 注: tag 0x20-0x26 保留给 Anchor 节点 (见 L2 文档 Anchor TLV 定义)
+  bytes share_list = 0x27;             // tag 39: 指向共享列表 Metanet 节点的 P_node
 
   // 内容分片 (链上大文件)
-  uint32 chunk_index = 33;                 // 本 chunk 序号 (0-based)
-  uint32 total_chunks = 34;                // 总 chunk 数 (0 = 非分片)
-  bytes recombination_hash = 35;           // SHA256(chunk0 || chunk1 || ...) 单次哈希
+  uint32 chunk_index = 0x28;                 // tag 40: 本 chunk 序号 (0-based)
+  uint32 total_chunks = 0x29;                // tag 41: 总 chunk 数 (0 = 非分片)
+  bytes recombination_hash = 0x2A;           // tag 42: SHA256(chunk0 || chunk1 || ...) 单次哈希
 
   // Rabin 签名 (内容认证)
-  bytes rabin_signature = 36;              // Rabin 签名 (S, U) 序列化
-  bytes rabin_pubkey = 37;                 // Rabin 公钥 n
+  bytes rabin_signature = 0x2B;              // tag 43: Rabin 签名 (S, U) 序列化
+  bytes rabin_pubkey = 0x2C;                 // tag 44: Rabin 公钥 n
 
   // 收益权表 (Revenue Share)
-  bytes registry_txid              = 38;  // 指向 Registry UTXO 所在交易
-  uint32 registry_vout             = 39;  // Registry UTXO 的输出索引
-  ISOConfig iso                    = 40;  // ISO 配置 (可选, 仅 ISO 发起时写入)
+  bytes registry_txid              = 0x2D;  // tag 45: 指向 Registry UTXO 所在交易
+  uint32 registry_vout             = 0x2E;  // tag 46: Registry UTXO 的输出索引
+  ISOConfig iso                    = 0x2F;  // tag 47: ISO 配置 (可选, 仅 ISO 发起时写入)
 
   // ACL 引用
-  bytes acl_ref = 41;                  // ACL 引用 (群签名公钥哈希或 ACL 规则 TxID)
+  bytes acl_ref = 0x30;                  // tag 48: ACL 引用 (群签名公钥哈希或 ACL 规则 TxID)
 }
 ```
 
@@ -1682,18 +1683,44 @@ Daemon 作为 **LFCP (Local Full-Copy Peer)**, 是 Owner 节点数据的本地�
 ### HTTP API
 
 ```
-监听地址: 标准 HTTP/HTTPS 端口 (80/443, 生产环境建议反向代理 + TLS)
+监听地址: :8080 (默认, 生产环境建议反向代理 + TLS)
 
-GET  /                              根路径 (Content Negotiation: HTML/Markdown, 见 Agent 支持)
-GET  /{path}                        路径访问 (Content Negotiation, 目录返回 index.html)
-GET  /_bitfs/data/{hash}            获取加密数据 (可能触发 x402)
-GET  /_bitfs/meta/{pnode}/{path}    查询 Metanet 元数据
-GET  /_bitfs/health                 健康检查
+--- 系统端点 ---
+GET  /_bitfs/health                       健康检查
 
-POST /_bitfs/handshake              Method 42 ECDH 握手 (双向身份验证, 建立 session)
-POST /_bitfs/pay/{invoice_id}       提交 BSV 交易 (x402 CDN 带宽费, 见下方验证流程)
-GET  /_bitfs/buy/{txid}             获取购买信息 (capsule_hash, 价格)
-POST /_bitfs/buy/{txid}             提交 HTLC, Seller 揭示 capsule
+--- 内容端点 ---
+GET  /                                     根路径 (Content Negotiation: HTML/Markdown/JSON)
+GET  /{path}                               路径访问 (Content Negotiation, 目录返回 index.html)
+GET  /_bitfs/data/{hash}                   获取加密数据 (可能触发 x402)
+GET  /_bitfs/meta/{pnode}/{path}           查询 Metanet 元数据
+GET  /_bitfs/versions/{pnode}/{path}       版本历史
+
+--- 身份与握手 ---
+POST /_bitfs/handshake                     Method 42 ECDH 握手 (双向身份验证, 建立 session)
+
+--- 购买与支付 ---
+GET  /_bitfs/buy/{txid}                    获取购买信息 (capsule_hash, 价格)
+POST /_bitfs/buy/{txid}                    提交 HTLC, Seller 揭示 capsule
+POST /_bitfs/pay/{invoice_id}              提交 BSV 交易 (x402 CDN 带宽费, 见下方验证流程)
+
+--- 管理端点 (需 admin_token 认证) ---
+GET  /_bitfs/sales                         销售记录
+GET  /_bitfs/spv/proof/{txid}              SPV Merkle 证明
+GET  /_bitfs/dashboard/status              仪表盘状态
+GET  /_bitfs/dashboard/storage             存储统计
+GET  /_bitfs/dashboard/wallet              钱包信息
+GET  /_bitfs/dashboard/network             网络状态
+GET  /_bitfs/dashboard/logs                日志
+
+--- Paymail (bsvalias) ---
+GET  /.well-known/bsvalias                 Paymail capabilities 发现
+GET  /api/v1/pki/{handle}                  PKI 公钥查询
+GET  /api/v1/public-profile/{handle}       公开资料
+GET  /api/v1/verify/{handle}/{pubkey}      公钥验证 (a9f510c16bde)
+
+--- 计划中 (git-remote-bitfs 独立实现, 未集成到 daemon) ---
+POST /_bitfs/git/push                      接收 packfile + refs 更新
+GET  /_bitfs/git/refs/{path}               读取仓库 refs
 ```
 
 #### `POST /_bitfs/pay/{invoice_id}` 验证流程

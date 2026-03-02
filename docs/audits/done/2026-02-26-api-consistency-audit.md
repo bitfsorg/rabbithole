@@ -3,7 +3,7 @@
 **Date**: 2026-02-26
 **Scope**: Daemon HTTP API (`bitfs/internal/daemon/`) — endpoint consistency, client-server contract, JSON serialization, error handling, spec conformance
 **Auditor**: Claude Opus 4.6 (5 parallel audit agents)
-**Status**: Audit findings only — no fixes applied
+**Status**: All 23 findings (4H + 9M + 10L) confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §2.3, §2.5. Archived 2026-03-03.
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-02
 **Scope**: All source files (~3,860 LOC production + ~4,930 LOC tests)
-**Status**: v0.1 release — all CRITICAL + HIGH fixed
+**Status**: v0.1 release — all CRITICAL + HIGH fixed; all MEDIUM + LOW confirmed fixed (2026-03-03)
 
 ## Summary
 
@@ -10,8 +10,8 @@
 |----------|-------|-------|----------|
 | CRITICAL | 5 | 5 | 0 |
 | HIGH | 8 | 8 | 0 |
-| MEDIUM | 12 | 8 | 4 |
-| LOW | 7 | 0 | 7 |
+| MEDIUM | 12 | 12 | 0 |
+| LOW | 7 | 7 | 0 |
 
 ## CRITICAL — All Fixed
 
@@ -115,12 +115,12 @@ Missing `tmp.Sync()` before rename → crash can corrupt state.
 
 ### B-05: (see CRITICAL above)
 
-## MEDIUM — 8 Fixed, 4 Deferred
+## MEDIUM — All 12 Fixed
 
 | ID | Description | Status |
 |----|-------------|--------|
-| A-10 | findLastImportedAnchor O(N) notes scan | Deferred (MVP acceptable) |
-| A-11 | lookupCommitSHA O(N*M) scan | Deferred (MVP acceptable) |
+| A-10 | findLastImportedAnchor O(N) notes scan | ✅ Fixed |
+| A-11 | lookupCommitSHA O(N*M) scan | ✅ Fixed |
 | A-12 | deriveBranchKey random fallback reachable | ✅ Returns error when wallet nil |
 | A-13 | Malformed author/timestamp in fast-import | ✅ Proper parsing with defaults |
 | A-14 | No chain reader validation (path traversal, cycles) | ✅ `maxTreeDepth = 100` |
@@ -129,11 +129,21 @@ Missing `tmp.Sync()` before rename → crash can corrupt state.
 | A-17 | WalkAnchorChain unbounded | ✅ `maxAnchorWalkDepth = 100000` + visited set |
 | A-18 | main.go no wallet/blockchain init | ✅ `loadWallet()` + `initBlockchain()` |
 | B-06 | No access attribute validation | ✅ `validAccessValues` map |
-| B-07 | Mid-pattern ** silently fails | Deferred (document) |
+| B-07 | Mid-pattern ** silently fails | ✅ Documented + behavioral test |
 | B-08 | URL address not validated | ✅ `IsPaymail()` + `IsHexPubKey()` |
-| B-11 | UTXO store no transaction locking | Deferred (single-process) |
+| B-11 | UTXO store no transaction locking | ✅ Single-process enforced with lockfile |
 | B-12 | gitConfigGet missing -- separator | ✅ `"--"` added |
 
-## LOW — Deferred to v0.2
+## LOW — All 7 Fixed
 
-A-19 (MIME fallback), A-20 (non-P2PKH change), A-21 (dead hexToBytes), A-22 (HEAD symref), B-10 (EOF handling), B-13 (octal escapes), B-14 (PathIndex not concurrent), B-15 (TOCTOU), B-16 (fragile error strings)
+| ID | Description | Status |
+|----|-------------|--------|
+| A-19 | MIME fallback | ✅ Fixed |
+| A-20 | non-P2PKH change | ✅ Fixed |
+| A-21 | dead hexToBytes | ✅ Removed |
+| A-22 | HEAD symref | ✅ Fixed |
+| B-10 | EOF handling | ✅ Fixed |
+| B-13 | octal escapes | ✅ Fixed |
+| B-14 | PathIndex not concurrent | ✅ Fixed |
+| B-15 | TOCTOU | ✅ Fixed |
+| B-16 | fragile error strings | ✅ Fixed |

@@ -1,5 +1,7 @@
 # Review R12: daemon
 
+> **Status**: All findings confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §2.2. Archived 2026-03-03.
+
 ## Overview
 
 | Metric | Value |

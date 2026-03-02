@@ -1,5 +1,7 @@
 # Review R01: method42
 
+> **Status**: All findings confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §1.1. Archived 2026-03-03.
+
 ## Overview
 
 - **Package path**: `libbitfs-go/method42/`

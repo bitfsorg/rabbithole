@@ -2,6 +2,7 @@
 
 **日期**: 2026-02-26
 **范围**: HTTP Daemon API、libbitfs-go 公共 API、CLI 命令接口、Spec 与实现对比
+**状态**: 全部 20 项发现已修复。详见 `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §2.3, §2.5。归档于 2026-03-03。
 
 ---
 

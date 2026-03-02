@@ -4,6 +4,7 @@
 > **范围**: 全项目架构设计、密码学协议、经济模型、战略定位
 > **审查人**: Claude Opus 4.6 (区块链协议 & 密码学视角)
 > **输入**: design/ 全套设计文档、libbitfs-go 源码、bitfs/docs/spec/ 规格说明、2026-02-26 代码审计报告
+> **状态**: All P0 security findings fixed. P1/P2 architecture and economic model items addressed or deferred per design decisions. HTLC timeout (3.6) deferred to `deferred.md`. Archived 2026-03-03.
 
 ---
 

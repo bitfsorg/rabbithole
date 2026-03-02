@@ -1,5 +1,7 @@
 # Review R08: network
 
+> **Status**: All findings confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §1.8. Archived 2026-03-03.
+
 ## Overview
 
 | Metric | Value |

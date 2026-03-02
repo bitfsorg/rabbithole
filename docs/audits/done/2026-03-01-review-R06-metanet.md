@@ -1,5 +1,7 @@
 # Review R06: metanet
 
+> **Status**: All findings confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §1.6. Archived 2026-03-03.
+
 ## Overview
 
 | Metric | Value |

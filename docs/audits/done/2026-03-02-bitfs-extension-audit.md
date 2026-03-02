@@ -4,6 +4,7 @@
 **Scope:** `bitfs-extension/` 全部源码 (2,160 LOC, 29 source files)
 **Version:** 0.1.0 (Manifest V3)
 **Auditor:** Claude Opus 4.6
+**Status:** All 18 findings (3C + 4H + 6M + 5L) confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §六. Archived 2026-03-03.
 
 ---
 

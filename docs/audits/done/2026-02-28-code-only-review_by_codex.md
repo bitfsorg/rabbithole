@@ -1,5 +1,7 @@
 # 2026-02-28 代码级复审（仅代码，不看设计文档）
 
+> **状态**: All findings confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md`. Archived 2026-03-03.
+
 ## 审查范围
 - 仓库路径：`/Users/alex/Codes/RabbitHole`
 - 仅基于源码与测试/构建结果进行审查

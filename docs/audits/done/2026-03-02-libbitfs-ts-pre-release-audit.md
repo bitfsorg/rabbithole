@@ -3,6 +3,7 @@
 **Date**: 2026-03-02
 **Scope**: Full-spectrum audit of `@bitfs/libbitfs` v0.1.0 (11 modules, 21,944 LoC, 875 tests)
 **Auditor**: Claude Opus 4.6 (5 parallel agents)
+**Status**: All 37 findings (3C + 6H + 14M + 14L) confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md` §七. S-02 HTLC CLTV deferred to `deferred.md`. Archived 2026-03-03.
 
 ## Executive Summary
 

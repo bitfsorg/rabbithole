@@ -1,5 +1,7 @@
 # 2026-02-28 安全审查报告（代码/加密/协议）
 
+> **状态**: All findings confirmed fixed per `docs/tasks/done/2026-03-02-audit-fixes-backlog.md`. Archived 2026-03-03.
+
 ## 审查范围
 - 仓库：`/Users/alex/Codes/RabbitHole`
 - 重点模块：
