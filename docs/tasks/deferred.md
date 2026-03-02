@@ -14,10 +14,10 @@
 
 ## P3 — 安全/健壮性
 
-- [ ] **VerifyPayment 签名验证** — x402/verify.go 不验证 Input 签名也不绑定 InvoiceID（WARNING 注释明确标注）。需在上层封装中增加 TxID 去重 + 集成测试 *(Antigravity #1)*
-- [x] **NodeTypeAnchor 保留** — Anchor (NodeType=3) 保留为设计决策 (2026-03-02)。git-remote-bitfs v0.1 使用 Anchor 节点作为分支身份，P2PKH 链提供 CAS 一致性保证。设计文档需更新以反映此决策 *(Antigravity #2, resolved)*
-- [ ] **ComputeCapsuleHash 错误处理** — ecdh.go 已有 len(capsule)!=32 校验，但返回 nil 而非 error，调用方难以区分有效哈希和无效输入 *(Antigravity #5, 部分修复)*
-- [ ] **bitfs-extension 审计修复** — 3 CRITICAL (Content Script 地址泄露, PRIVATE 解密用零 keyHash, OP_RETURN 解析越界) + 4 HIGH。详见 `docs/audits/2026-03-02-bitfs-extension-audit.md`
+- [x] **NodeTypeAnchor 保留** — Anchor (NodeType=3) 保留为设计决策 (2026-03-02)。git-remote-bitfs v0.1 使用 Anchor 节点作为分支身份，P2PKH 链提供 CAS 一致性保证 *(Antigravity #2, resolved)*
+- [x] **bitfs-extension 3C+4H** — 3 CRITICAL + 3 HIGH 已修复 (2026-03-02)，仅剩 H-2 + MEDIUM/LOW。详见审计积压 `docs/tasks/2026-03-02-audit-fixes-backlog.md §六`
+
+> **注意**: VerifyPayment、ComputeCapsuleHash 等问题已移入全量审计积压：`docs/tasks/2026-03-02-audit-fixes-backlog.md`
 
 ## P4 — 优化
 
