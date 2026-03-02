@@ -17,7 +17,7 @@
 |---|------|------|-------|
 | Layer 1 | BSV Main Chain | 文件所有权 (Metanet DAG), HTLC 购买, x402 下载 | BSV |
 | Layer 2 | Self-hosted Daemon | 自托管文件服务, 现有 `bitfs daemon` | 无 (自己的服务器) |
-| Layer 3 | Metanet Chain | 去中心化 CDN, 存储合约, 支付通道 | MNT Token |
+| Layer 3 | Metanet Overlay Network (ON) | 去中心化 CDN, Verify-Then-Pay 存储合约, 支付通道 | MNT Token |
 
 **用户三种选择**:
 
@@ -29,52 +29,43 @@
 
 三种方式可组合: 元数据上链 + 热门内容 Metanet Chain 托管 + 冷门内容自托管。
 
-**两条链的职责划分**:
+**主链与 Overlay 网络的职责划分**:
 
-| | BSV Main Chain | Metanet Chain |
+| | BSV Main Chain | Metanet Overlay Network (ON) |
 |---|---|---|
-| 共识 | SHA256 PoW (原生) | SHA256 PoW (合并挖矿) |
-| 交易格式 | Bitcoin 交易 | 完全相同 |
-| Script 引擎 | Bitcoin Script | 完全相同 |
-| 原生代币 | BSV | MNT Token |
-| 用途 | 文件所有权, 购买/出售 | CDN 激励, 存储合约 |
-| 面向用户 | 终端用户, Agent | Owner, Metanet Node |
-| 数据 | Metanet 元数据 | 存储合约, 存储证明, 支付通道 |
+| 本质 | L1 基础工作量证明链 | 构建在 BSV 上的叠加网络 |
+| 共识 | SHA256 PoW | 纯 SHA256 PoW (独立挖矿竞赛 ML Block 出块权) |
+| 交易格式 | 标准 Bitcoin 交易 | **ML Block 嵌入合法 BSV 交易中被确认** |
+| 验证机制 | 矿工验证 Script | ON 节点验证 Verify-Then-Pay 脚本执行结果 |
+| 代币 | BSV | MNT Token (记录为 ON 维护的底层 UTXO) |
+| 用途 | 文件所有权, 最终性背书, x402 购买 | CDN 激励, MNT 存储合约 (Verify-Then-Pay) |
+| 参与角色 | 终端用户, Agent, BSV 矿工 | Publisher, Storage Provider, Oracle, Miner |
 
 ---
 
-## 二、Metanet Chain 基本设计
+## 二、Metanet Overlay Network (ON) 基本设计
 
-**BSV 完全同构**:
-- 相同的交易格式 (version, inputs, outputs, locktime)
-- 相同的 Script 引擎 (OP_CHECKSIG, OP_HASH256, OP_IF/ELSE, etc.)
-- 不同的创世块 (genesis block)
-- 不需要自定义交易类型 — 所有 "智能合约" 均为标准 Bitcoin Script
+**BSV 上的 ML Overlay**:
+Metanet 基于 Carrier Pair 模型构建为 BSV 的叠加网络。每一笔 ON 交易以及每一个 ML Block (MNT 代币区块) 都是一笔合法的、标准的 BSV 交易。
+- ON 节点无需 fork BSV C++ 代码，通过轻量 Go 服务与 SPV/API 交互。
+- 采用 Verify-Then-Pay 原子模型进行存储合约结算，不需要自定义虚拟机，所有验证都在标准 Bitcoin Script 中完成。
 
-**实现路径**: fork BSV 节点软件, 最小修改:
-1. 替换创世块
-2. 调整区块参数 (大小、间隔)
-3. 添加合并挖矿 (AuxPoW) 支持
-4. 其他一切保持 BSV 原样
+**四角色模型**:
+在 ON 网络中，引入四个解耦角色：
+1. **Miner (矿工)**: 收集 ON 交易，构建 ML Block，执行 SHA256 POW（竞争出块，无任何存储前置条件）。
+2. **Storage Provider (存储节点)**: 存储 Publisher 的加密数据副本，通过提交 Merkle 存储证明来解锁合约付款。
+3. **Oracle (服务提供方)**: 协调建立合约，负责为每个 Provider 生成独立加密副本、构建挑战。
+4. **Publisher (内容发布者)**: 提供数据，支付 MNT 以购买存储服务。
 
 **MNT Token**:
-- 总供应量: 21,000,000 MNT (致敬 Bitcoin)
-- 初始区块奖励: 50 MNT
-- 减半周期: 每 210,000 块
-- 区块时间: ~10 分钟 (与 BSV 同)
+MNT Token 是 ML 链原生 UTXO（账本随 ML Block 嵌入 BSV 交易中，由 ON 节点独立维护）：
+- 总供应量: 21,000,000 MNT
+- 初始区块奖励: 50 MNT (出块时长 5 分钟，是比特币的双倍心跳)
+- 减半周期: 每 210,000 块 (约 2 年减半)，确保前 6 年有足够的 CDN 激励。
 - 最小单位: 1 satoshi = 0.00000001 MNT
 
-**合并挖矿 (Merged Mining)**:
-- SHA256 PoW, 可与 BTC/BSV 同时挖矿
-- 矿工在 BTC/BSV coinbase 中嵌入 Metanet Chain block hash
-- Metanet Chain 验证 AuxPoW 即可确认区块
-- 安全性随参与合并挖矿的算力增长
-
-**BSV 锚定**:
-- 每 ~100 Metanet Chain 块, 将 Merkle root 写入 BSV 交易
-- `OP_RETURN <metanet_anchor_flag> <metanet_chain_merkle_root> <block_range>`
-- 锚定执行: 任何 Metanet Node 均可创建锚定交易（BSV 矿工费由提交者承担）。
-- 作用: 防止 Metanet Chain 长程攻击, 借助 BSV 的安全性
+**安全假设**：
+所有的 ML Block 都直接作为普通 BSV 交易被确认。因此最终性和不可篡改性由 BSV 主网提供，ON 网络不需要额外的合并挖矿或定期的 BSV 锚定。
 
 ---
 
@@ -146,43 +137,42 @@ else:
 
 ---
 
-## 五、冷数据: Archive 合约模式
+## 五、冷数据: Verify-Then-Pay 合约模式
 
-**核心机制**: Owner 与 Metanet Node 签 1-to-1 存储合约, Owner 付 MNT Token。
+**核心机制**: 存储付款预先锁定在具备验证逻辑的 UTXO 中。Storage Provider 只有在提交有效的 Merkle 存储证明时，才能直接触发 Bitcoin Script 原子解锁付款。
 
-**存储合约生命周期**:
+**三方协作流程**:
 
 ```
-1. Owner 选择 Metanet Node, 协商价格和期限
-2. Owner 与 Metanet Node 签存储合约 (Bitcoin Script, Metanet Chain 交易)
-3. Owner 用 ECDH 为该 Metanet Node 重新加密数据, 传输给 Metanet Node
-   注: 若 Owner 与 N 个 Node 签署合约，需分别执行 N 次独立的 ECDH 重加密和数据上传。大文件场景下此开销显著（见详细设计第三节的优化讨论）。
-4. Metanet Node 定期提交存储证明 (Merkle 挑战-响应)
-5. 合约到期: Owner 可续期或让合约过期
+Phase 1: 数据准备 (Oracle 执行)
+1. Publisher 将数据提交给 Oracle 中介
+2. Oracle 进行数据分片，并为每个 Storage Provider 生成独立的防串通双层加密副本
+3. Oracle 为每个副本构建独立的 Merkle 树，并将加密数据分发给对应 Node
+
+Phase 2: 链上合约创建 (ON 交易)
+Oracle 协调各方，创建一笔 ON 交易：
+- 输入：Publisher 付出的总存储费 (MNT)，Storage Provider 存入的违约押金 (MNT)
+- 输出：N 个包含 Verify-Then-Pay 脚本的 Challenge UTXOs（每期一个）；1个押金 UTXO；Oracle 服务费
+
+Phase 3: 合约执行与证明
+1. 每个期数 k 根据该时刻的 BSV 区块哈希提供挑战随机性，以选择被查验的块。
+2. Storage Provider 构建包含其签名和 Merkle Proof 的花费交易。
+3. ON 节点运行标准 Bitcoin Script，一旦证明哈希与承诺哈希匹配，即刻支付该期 Token。
+4. 如果超时仍未提供证明，Oracle 可将此 Challenge UTXO 追回；连续超时将触发押金没收。
 ```
 
-**存储证明**:
-- ECDH 双层加密保证每个 Metanet Node 的副本独特 (无法互相抄袭)
-- 挑战确定性: `challenge_k = SHA256(contract_txid || uint32_le(k))`, k 为期数
-  - 随机性来源于 contract_txid 在合约创建前不可预测
-  - 不使用区块哈希作为随机源 (避免矿工操纵)
-- 合约创建时 Owner 预计算所有 N 期的 `expected_proof_hash`, 编码到单个 StorageDeal 交易的 N 个输出中
-- 数据分块: Owner 将文件分成固定大小的块 (默认 256KB/块)，构建 Merkle 树。合约期数等于文件的块数。
-- Metanet Node 定期提交存储证明: 根据 challenge_k 确定被挑战的数据块, 返回块数据 + Merkle proof
-- 验证者 (任何人) 可验证。初期实现采用简化模式：Script 验证 `OP_SHA256(proof_data) == expected_hash`，完整 Merkle 验证在链下进行；远期可利用 BSV 大 Script 在链上完成完整 Merkle 验证（见详细设计第二节）。
-
-**副本策略**: 协议不管副本策略 — Owner 自己决定冗余度
+**副本策略**: 协议不管副本策略 — Publisher 可向 Oracle 购买不同级别的冗余度 (r ≥ 3)，市场决定。
 
 **与 Filecoin 对比**:
 
-| | Filecoin | Metanet Chain |
+| | Filecoin | Metanet Overlay Network |
 |---|---|---|
-| 副本独立性 | PoRep (zk-SNARK) | ECDH 双层加密 (Method 42) |
-| 持续存储证明 | PoSt (zk-SNARK) | Merkle 挑战-响应 |
-| 计算成本 | GPU 密集, 数小时 | 毫秒级 ECDH + AES |
-| 副本管理 | 协议管理 (最少 N 副本) | Owner 自决 (签几份合约) |
+| 副本独立性 | PoRep (zk-SNARK) | ECDH 防串通加密 (Method 42) |
+| 持续存储证明 | PoSt (zk-SNARK) | Verify-Then-Pay 脚本挑战-响应 |
+| 计算成本 | GPU 密集, 数小时 | 毫秒级 ECDH + Merkle 验证 |
+| 挖矿前置条件 | 大量存储硬件与抵押 | 纯算力竞赛，完全与存储解耦 |
 | 检索激励 | 薄弱 (检索矿工无激励) | 强 (x402 直接收入) |
-| 代币用途 | 存储+检索+抵押 | 仅 CDN 托管+挖矿 (用户用 BSV) |
+| 代币用途 | 存储+检索+抵押 | 仅 CDN 托管+出块 (用户用 BSV) |
 
 ---
 
@@ -220,21 +210,21 @@ Metanet Node 在服务内容时读取此字段，自动按比例分配 x402 收�
 
 ---
 
-## 八、BSV <-> Metanet Chain 交互
+## 八、BSV <-> Overlay Network 交互
 
 **文件发布 + CDN 托管流程**:
 ```
-1. Owner: bitfs put --store metanet myfile.txt
-   ├── BSV 交易: 创建 Metanet 节点
-   ├── Metanet Chain 交易: 创建 StorageDeal
-   └── 数据传输: ECDH 重加密 → 发送给 Metanet Node
+1. Publisher: bitfs put --store metanet myfile.txt
+   ├── 仅需支付少量 MNT，委托给 Oracle
+   ├── Oracle: 数据分片、独立加密、建立多份分发
+   └── ON 交易: Oracle 创建 Verify-Then-Pay Challenge UTXO 集合
 
-2. Metanet Node 存储数据, 定期提交 StorageProof
+2. Storage Provider 存储数据，定期提交含数据块及 Merkle Proof 的解答，原子获取当期 MNT 奖励
 
-3. User: bget bitfs://example.com/myfile.txt
+3. User (Visitor): bget bitfs://example.com/myfile.txt
    ├── 查询 BSV: 解析 Metanet 路径
-   ├── 查询 Metanet Chain: StorageDeal → Metanet Node 列表
-   └── 请求 Metanet Node: x402 支付 → 获取加密数据
+   ├── 查询 ON 交易 / DHT 路由: 发现持有该内容的 Storage Provider 列表
+   └── 请求 Storage Provider: 使用 BSV x402 进行微支付 → 获取加密数据并本地解密
 ```
 
 ---

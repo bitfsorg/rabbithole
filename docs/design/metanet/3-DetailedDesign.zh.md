@@ -15,94 +15,59 @@
 
 ---
 
-## 一、存储合约 Bitcoin Script
+## 一、Verify-Then-Pay 存储合约 Script
 
-存储合约是 Owner 与 Metanet Node 之间的 HTLC 变体, 锁定 Token 作为存储费用:
+存储合约依赖于 Challenge UTXO 和押金 UTXO 的配合：
 
 ```
-StorageDeal UTXO (第 k 期):
+Challenge UTXO 锁定脚本 (每个 epoch k 一个):
 
 OP_IF
-    // Metanet Node 路径: <node_sig> <proof_data> 1
-    <node_pubkey> OP_CHECKSIGVERIFY              // 验证 Metanet Node 签名
-    OP_SHA256 <expected_hash_k> OP_EQUALVERIFY   // 验证存储证明
-    // expected_hash_k = SHA256(MerkleProof_k || chunk[challenge_k % N])
-    OP_TRUE                                      // Metanet Node 领取当期费用
+  // 路径 A: Storage Provider 提交有效 Merkle 证明 → 获得当期 MNT
+  <provider_pubkey> OP_CHECKSIGVERIFY
+
+  // Merkle proof 验证
+  // 解锁脚本提供: chunk_data(b_i), dir_1, s_1, ..., dir_d, s_d
+  OP_SHA256                                         // hash(b_i) → h
+  // Repeat for level j = 1 to d:
+    OP_SWAP                                         // bring dir_j
+    OP_NOTIF                                        // if dir=0 (left child)
+      OP_SWAP                                       // reorder for left
+    OP_ENDIF
+    OP_CAT                                          // concatenate pair
+    OP_SHA256                                       // hash → parent
+  // End repeat
+  <r_M,j> OP_EQUAL                                 // verify Merkle root
+
 OP_ELSE
-    // Owner 退款路径: <owner_sig> 0
-    <expire_block> OP_CHECKLOCKTIMEVERIFY OP_DROP
-    <owner_pubkey> OP_CHECKSIG                   // Owner 取回 Token
+  // 路径 B: 超时未响应 → 回退给 Oracle
+  <τ> OP_CHECKSEQUENCEVERIFY OP_DROP
+  <oracle_pubkey> OP_CHECKSIG
+
 OP_ENDIF
 
-确定性挑战机制:
-
-// 合约创建时: Owner 预计算所有 N 期的证明
-
-contract_txid = <合约交易的 TxID, 创建后确定>
-
-for k := 0; k < N; k++ {
-    // 确定性挑战: 使用 contract_txid 作为熵源
-    challenge_k = SHA256(contract_txid || uint32_le(k))
-    chunk_index = uint32(challenge_k[0:4]) % num_chunks
-
-    // 计算该期的 Merkle 证明
-    proof_k = MerkleProof(data_tree, chunk_index)
-    expected_hash_k = SHA256(proof_k || chunks[chunk_index])
-
-    // 写入第 k 个 UTXO 的 Script
-    utxo_k.script = ... OP_SHA256 <expected_hash_k> OP_EQUAL ...
-}
-
-合约参数:
-  value:              锁定的 MNT Token (当期费用)
-  expire_block:       证明提交截止区块高度
-  expected_hash_k:    第 k 期预计算的证明哈希 (确定性, 嵌入 UTXO)
-  owner_pubkey:       Owner 公钥
-  node_pubkey:        Metanet Node 公钥
-
-合约生命周期:
-  1. Owner 创建 StorageDeal 交易, 锁定 N 期费用 (N 个 UTXO)
-  2. 每期挑战由 contract_txid 确定性派生 (无需链上随机源)
-  3. Metanet Node 提交证明, 解锁当期 UTXO
-  4. 若 Metanet Node 未在截止前提交证明, Owner 可取回该期费用
-  5. 全部期满: 合约自然结束, Owner 可续签
+// 挑战索引生成 (确定性):
+challenge_index_k = H(block_hash_he || epoch_k || provider_id) mod num_chunks
+// block_hash_he 是当前最新 BSV 区块哈希, 保证随机性
 ```
 
-> **设计原理**: "随机性"来源于 contract_txid 在合约创建前不可预测 (依赖交易内容的哈希)。
-> 合约一旦上链, 所有期数的挑战均可确定性计算, 与 UTXO 不可变性完全兼容。
-> Metanet Node 无法提前知道 contract_txid, 因此无法仅存储被挑战的 chunk 而丢弃其他数据。
-
----
-
-## 二、存储证明 Bitcoin Script
-
-存储证明交易验证 Metanet Node 持有正确数据:
-
 ```
-存储证明 Script (StorageProof):
+押金 UTXO 脚本:
 
-// 输入: Metanet Node 提交 Merkle proof
-<node_sig> <chunk_data> <merkle_siblings> <chunk_index>
+OP_IF
+  // 路径 A: 合约正常完成 → 退还给 Storage Provider
+  <contract_end_height> OP_CHECKLOCKTIMEVERIFY OP_DROP
+  <provider_pubkey> OP_CHECKSIG
 
-// 验证逻辑 (Script):
-1. OP_SHA256 <chunk_data>                        → chunk_hash
-2. 从 chunk_index 和 merkle_siblings 逐层计算:
-   for each sibling in merkle_siblings:
-     if bit(chunk_index, i) == 0:
-       OP_CAT <sibling> OP_SHA256              → 左拼接
-     else:
-       OP_SWAP OP_CAT OP_SHA256                → 右拼接
-3. 最终结果与合约中存储的 merkle_root 对比
+OP_ELSE
+  // 路径 B: Provider 违约 (连续未响应) → Oracle 提交违约证据, 押金退回 Publisher
+  <oracle_pubkey> OP_CHECKSIGVERIFY
+  <publisher_pubkey> OP_CHECKSIG
 
-简化实现 (当前阶段):
-  - Script 只验证 OP_SHA256(proof_data) == expected_hash
-  - 完整 Merkle 验证在链下进行, 结果哈希上链
-  - 任何人可链下重放验证
-
-完整 Script 验证 (远期):
-  - 利用 BSV 大 Script 能力, 在 Script 内完成完整 Merkle 验证
-  - 无需信任链下验证者
+OP_ENDIF
 ```
+
+脚本执行与原来不同的地方在于，完整 Merkle 验证被完全放在了 Bitcoin Script 系统内（因为 BSV 允许大脚本）。
 
 ---
 
@@ -267,95 +232,58 @@ Node↔Node MNT 通道结算说明:
 
 ---
 
-## 六、BSV 锚定交易格式
+## 六、ML Block 结构与挖矿
 
-```
-BSV 锚定交易 (Anchor TX):
+基于 Multilevel Blockchain 专利，ON 网络通过载体交易嵌入 BSV 主网，抛弃了合并挖矿模型，采用纯 SHA256 独立竞争出块，并通过 BSV 提供最终性防篡改。
 
-Output 0: OP_RETURN <metanet_anchor_flag> <data>
-Output 1: change (返回 Owner/矿工)
+### 1. BSV 交易内嵌入
+每个 ML Block 均打包为一笔合法的 BSV 交易：
+- **Chain Input**: 花费上一个 Block 的 Chain Output，以形成链式结构
+- **Carrier Pairs**: ON 网络的交易通过 SIGHASH_SINGLE | ANYONECANPAY 附加到交易随行输入中
+- **OP_RETURN Output**: `Output[1]` 中使用 `OP_RETURN` 放置 ML Block Header
+- **Coinbase Output**: `Output[2]` 铸造当前 epoch 规定的 MNT 出块奖励发放给矿工
+- **ON Tx Outputs**: 处理 ON 网络内转移（如 MNT 合约等）的其他合法输出
 
-data 格式:
-  version:          uint8   = 0x01
-  anchor_flag:      bytes4  = "MNTA"  (Metanet Anchor)
-  start_height:     uint32  = Metanet Chain 起始块高度
-  end_height:       uint32  = Metanet Chain 结束块高度
-  merkle_root:      bytes32 = 这批 Metanet Chain 块的 Merkle root
-  block_count:      uint16  = 块数量 (通常 100)
-  prev_anchor_txid: bytes32 = 上一次锚定的 BSV txid (链式引用)
+### 2. ML Block Header 格式
+精确的 96 字节固定数据在 `OP_RETURN` 之后：
 
-锚定频率:
-  每 100 Metanet Chain 块 → 1 笔 BSV 交易
-  ≈ 每 ~16.7 小时一次 (100 × 10 分钟)
-  BSV 矿工费: ~1 sat/byte × ~120 bytes ≈ 120 sat
+| 字段 | 大小 | 说明 |
+|---|---|---|
+| Magic | 4 B | `0x4d4e4d4c` ("MNML") |
+| Version | 4 B | 协议版本，初始为 1 |
+| PrevHash | 32 B | 上一个 ML Block Header 哈希 (SHA256d) |
+| TxMerkleRoot| 32 B | 当前区块打包的所有 ON 交易 Merkle 根 |
+| Timestamp | 4 B | 出块时间 Unix 时间戳 |
+| Difficulty | 4 B | 当前难度目标 (nBits) |
+| Nonce | 4 B | 工作量证明 Nonce 值 |
+| Height | 4 B | 当前区块高度 |
+| Coinbase | 8 B | 本周期应当增发的 MNT 数量 (satoshis) |
 
-验证:
-  任何人可验证: 给定 Metanet Chain 块范围, 计算 Merkle root, 对比 BSV 上的锚定
-  防长程攻击: 攻击者需同时篡改 BSV 上的锚定记录
-```
-
----
-
-## 七、合并挖矿技术细节
-
-```
-合并挖矿 (AuxPoW) 流程:
-
-1. 矿工构建 BTC/BSV 区块时:
-   - 在 coinbase 交易中嵌入: OP_RETURN <aux_magic> <sub_chain_block_hash>
-   - aux_magic = "MNMP" (Metanet Merged PoW)
-
-2. 矿工同时构建 Metanet Chain 区块:
-   - 正常的 Metanet Chain 区块 header
-   - 额外字段: parent_chain_header + coinbase_tx + merkle_branch
-
-3. Metanet Chain 验证:
-   a. 验证 parent_chain_header 满足 Metanet Chain 难度
-   b. 验证 coinbase_tx 在 parent_chain_header 的 Merkle 树中
-   c. 验证 coinbase_tx 包含正确的 sub_chain_block_hash
-   d. 验证 sub_chain_block_hash == SHA256d(sub_chain_block_header)
-
-AuxPoW Block Header:
-  // 标准 Metanet Chain header
-  version:            uint32
-  prev_hash:          bytes32
-  merkle_root:        bytes32
-  timestamp:          uint32
-  bits:               uint32
-  nonce:              uint32
-
-  // AuxPoW 附加数据
-  parent_header:      bytes80   (BTC/BSV block header)
-  parent_coinbase_tx: bytes     (包含 aux_magic 的 coinbase)
-  coinbase_branch:    []bytes32 (coinbase 在父链的 Merkle 分支)
-
-难度调整:
-  - 独立于 BTC/BSV 的难度
-  - 每 2016 块调整 (与 Bitcoin 相同周期)
-  - 目标: 平均 10 分钟出块
-```
+### 3. POW 机制
+- 采用纯 SHA256d (与 Bitcoin 同构，使得相关矿机兼容或直接被再利用，但不需 BSV 矿池特别搭线)
+- 目标出块时间为 5 分钟 (比特币的两倍体量心跳，提供更快资金结算)
+- 难度调整策略同为每 2016 个块执行，约等价于现实世界 1 周
 
 ---
 
-## 八、Token 经济参数
+## 七、Token 经济参数
 
 ```
 MNT Token 参数:
 
 总供应量:   21,000,000 MNT
 最小单位:   1 satoshi = 0.00000001 MNT
-区块奖励:   50 MNT (初始)
-减半周期:   210,000 块
-区块时间:   ~10 分钟 (目标)
-难度调整:   每 2016 块
+初始区块奖励: 50 MNT
+减半周期:   210,000 块 (日历减半周期约 2 年)
+目标区块时间: ~5 分钟
+难度调整:   每 2016 块 
 
-减半时间表:
-  Era 0:  块 0 - 209,999       50.0  MNT/块   总计 10,500,000
-  Era 1:  块 210,000 - 419,999 25.0  MNT/块   总计 5,250,000
-  Era 2:  块 420,000 - 629,999 12.5  MNT/块   总计 2,625,000
-  Era 3:  块 630,000 - 839,999  6.25 MNT/块   总计 1,312,500
+减半时间表 (Bitcoin 2× Speed 出块逻辑下):
+  Era 0:  块 0 - 209,999       50.0  MNT/块   总计 10,500,000 (Y0-2)
+  Era 1:  块 210,000 - 419,999 25.0  MNT/块   总计 5,250,000 (Y2-4)
+  Era 2:  块 420,000 - 629,999 12.5  MNT/块   总计 2,625,000 (Y4-6)
+  Era 3:  块 630,000 - 839,999  6.25 MNT/块   总计 1,312,500 (Y6-8)
   ...
-  (与 Bitcoin 减半曲线完全一致)
 
 区块大小:
   初始上限: 32 MB (与 BSV 一致)
@@ -364,16 +292,11 @@ MNT Token 参数:
 交易费:
   最低费率: 1 sat/byte
   与 BSV 费率策略一致
-
-创世块:
-  时间戳:     (主网启动时确定, 当前为实验性参数)
-  message:    "Metanet: Decentralized CDN on Bitcoin"
-  奖励接收者: 基金会多签地址 (3-of-5)
 ```
 
 ---
 
-## 九、带宽加权 PoW (远期优化)
+## 八、带宽加权 PoW (远期优化)
 
 ```
 目标: 激励矿工同时提供存储和带宽, 不只是算力。
