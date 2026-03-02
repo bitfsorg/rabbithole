@@ -24,7 +24,8 @@
 - [ ] **M-3**: `CalculatePrice` 溢出时返回 `MaxUint64` 而非 error `[R02-x402]`
 - [ ] **M-4**: `BuildHTLCFundingTx` 无 change output 时仍计算 change 手续费 `[R02-x402]`
 - [ ] **M-5**: `BuildBuyerRefundTx` 信任 `FundingAmount` 不做交叉校验 `[R02-x402]`
-- [ ] **HTLC 无 CLTV**: OP_ELSE 分支用 2-of-2 多签，预签名交易丢失则资金永久锁定，需加 OP_CHECKLOCKTIMEVERIFY `[R02-x402, deep-design-review_by_antigravity#3, libbitfs-ts-pre-release-audit]`
+
+> HTLC 无 CLTV → 见 `deferred.md` P2 "HTLC 链上退款路径"
 
 ### 1.3 spv/
 
@@ -177,8 +178,9 @@
 
 ## 七、libbitfs-ts
 
-- [ ] **S-02**: HTLC script 缺 OP_CHECKLOCKTIMEVERIFY（同 Go 实现） `[libbitfs-ts-pre-release-audit]`
-- [ ] **A-01**: x402 refund flow（`refund.ts` 已创建但 CLTV 未加入 `htlc.ts`） `[libbitfs-ts-pre-release-audit]`
+- [ ] **A-01**: x402 refund flow（`refund.ts` 已创建，CLTV 部分待 `deferred.md` 协议决策后同步） `[libbitfs-ts-pre-release-audit]`
+
+> S-02 (HTLC CLTV) → 见 `deferred.md` P2 "HTLC 链上退款路径"
 - [ ] **LOW 若干**: Q-09 (config os/path), Q-15 (NaN chunkSize) 等 `[libbitfs-ts-pre-release-audit]`
 
 > B-01~B-03, S-01, S-04, S-05, Q-01~Q-14 等 10 项已修复
@@ -213,19 +215,19 @@
 
 | 分类 | CRITICAL | HIGH | MEDIUM | LOW | 总计 |
 |------|----------|------|--------|-----|------|
-| libbitfs-go | 0 | 5 | 28 | 10 | 43 |
+| libbitfs-go | 0 | 4 | 28 | 10 | 42 |
 | bitfs | 1 | 7 | 15 | 12 | 35 |
 | 设计文档 | 0 | 2 | 3 | 0 | 5 |
 | Metanet | 0 | 0 | 4 | 0 | 4 |
 | Den Explorer | 0 | 0 | 3 | 0 | 3 |
 | bitfs-extension | 0 | 1 | 6 | 5 | 12 |
-| libbitfs-ts | 0 | 1 | 1 | 2 | 4 |
+| libbitfs-ts | 0 | 0 | 1 | 2 | 3 |
 | git-remote-bitfs | 0 | 0 | 4 | 7 | 11 |
-| **总计** | **1** | **16** | **64** | **36** | **117** |
+| **总计** | **1** | **15** | **64** | **36** | **115** |
 
 ## 建议修复优先级
 
-1. **P0 — 安全关键**（~10 项）: HTLC CLTV, bmget 路径穿越, VerifyPayment 封装, 密钥清零, InvoiceRecord 竞态
+1. **P0 — 安全关键**（~10 项）: bmget 路径穿越, VerifyPayment 封装, 密钥清零, InvoiceRecord 竞态
 2. **P1 — 正确性**（~15 项）: BuildDataTransaction stub, ParseTxNodeOps OpDelete, MetaFlagBytes 不可变, 并发保护
 3. **P2 — 健壮性**（~30 项）: SPV 难度校验, wallet 密码策略, 常量时间比较, API 一致性
 4. **P3 — 代码质量**（~60 项）: LOW 级别, 文档一致性, 死代码清理
