@@ -25,10 +25,9 @@ RabbitHole/
 │   ├── slides/        ← 演示文稿 (HTML5)
 │   ├── references/    ← 研究论文 (6 篇 PDF)
 │   ├── vi/            ← 视觉识别系统
-│   ├── plans/         ← 设计与实施计划 (按项目分子目录)
 │   ├── specs/         ← 模块规格说明 (按项目分子目录)
 │   ├── audits/        ← 审查报告
-│   └── tasks/         ← 任务追踪
+│   └── tasks/         ← 计划、设计与任务追踪 (完成后移入 done/)
 ├── websites/          ← 官网 (bitfs.org + metanet.org)
 ├── bitfs/             ← BitFS Go 实现 (CLI + daemon)
 ├── metanet/           ← Metanet Go 实现 (CDN 节点)
@@ -214,7 +213,7 @@ BitFS 25 页 HTML5 幻灯片，暗色植物系设计（与 docs/vi/ 一致）。
 ## 工作流规则
 
 - **实施计划前清空上下文**：完成设计/计划阶段后，在开始执行实施计划之前，必须先使用 `/clear` 清空对话上下文，然后在新的上下文中加载计划文件并逐任务执行。避免在一个超长对话中同时完成设计和全部实施。
-- **任务文件管理**：`docs/tasks/` 下的任务清单及其子目录（如 `docs/tasks/bitfs/` 等）都适用相同的规则：当一个 task 文件中的所有条目都（全部是 `[x]`）完成后，必须将该文件移动到该文件**当前所在目录**的 `done/` 目录下（如 `docs/tasks/done/` 或 `docs/tasks/bitfs/done/`）。若 `done/` 目录不存在则创建它。
+- **计划与任务文件管理**：所有计划（design + plan）和任务文件统一放在 `docs/tasks/` 下（含子目录如 `docs/tasks/bitfs/`）。当一个文件中的所有条目都完成后（全部是 `[x]`），必须将该文件移动到该文件**当前所在目录**的 `done/` 目录下（如 `docs/tasks/done/` 或 `docs/tasks/bitfs/done/`）。若 `done/` 目录不存在则创建它。不再使用 `docs/plans/` 目录。
 
 ## 许可证
 
