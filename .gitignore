@@ -10,12 +10,20 @@ node_modules/
 # Git worktrees
 .worktrees/
 
+# Generated artifacts (rebuild from source)
+docs/design/pdf/*.pdf
+docs/design/diagrams/svg/
+
+# Deprecated directory (consolidated to docs/tasks/)
+docs/plans/
+
 # Independent git repos (subprojects)
 bitfs/
 metanet/
 den-explorer/
 websites/
 bitfs-app/
+bitfs-desktop/
 bitfs-extension/
 git-remote-bitfs/
 libbitfs-go/

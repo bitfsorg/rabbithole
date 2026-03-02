@@ -1,6 +1,6 @@
 # 暂缓工作项
 
-> 所有项目当前暂缓，等底层协议定型 + libbitfs-go 完全成熟后再启动。
+> 底层协议已定型，libbitfs-go/ts 均已完成。客户端生态大部分已完成，剩余 Metanet 侧架构问题待解决。
 
 ## P1 — 阻塞性
 
@@ -19,9 +19,8 @@
 
 ## 客户端生态
 
-按优先级排序，等协议定型后依次启动:
-
 1. ~~**Web Dashboard** — React 19 + Vite + TailwindCSS，Go embed 嵌入 daemon `/_dashboard/*`~~ ✅ 已完成
-2. **Chrome Extension** — MetaMask 模型，纯 TS 加密（@noble/*），bitfs:// 检测 + x402 拦截
-3. **Flutter App** — 跨平台 5 端，Riverpod 2 + GoRouter + Go FFI
-4. **Den 区块链浏览器** — Go + htmx，BitFS/Metanet 协议解码 + DAG 可视化
+2. ~~**Chrome Extension** — MetaMask 模型，纯 TS 加密（@bitfs/libbitfs），bitfs:// 检测 + x402 拦截~~ ✅ 已完成（审计 + 修复完毕）
+3. ~~**Desktop App** — Wails v2（Go + React），连接 libbitfs-go，macOS/Windows/Linux~~ ✅ 已完成（10/10 任务）
+4. ~~**Den 区块链浏览器** — Go + htmx，BitFS/Metanet 协议解码 + DAG 可视化~~ ✅ 已完成（v2 全功能）
+5. **Mobile App** — React Native (Expo SDK 55) + libbitfs-ts，iOS/Android — 进行中（6/20 任务）
