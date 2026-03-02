@@ -6,7 +6,7 @@
 
 ### 方案概要
 
-1. **x402 → payment** — 新包名确定为 `payment`。全面替换：libbitfs-go/x402/→payment/、libbitfs-ts/src/x402/→payment/、bitfs/internal/daemon/、bitfs/internal/engine/、docs/design/、docs/specs/bitfs/08-x402.md、docs/whitepaper/、websites/。
+1. **x402 → payment** — 新包名确定为 `payment`。全面替换：libbitfs-go/x402/→payment/、libbitfs-ts/src/x402/→payment/、bitfs/internal/daemon/、bitfs/internal/engine/、docs/design/、docs/specs/bitfs/08-x402.md→08-payment.md、docs/whitepaper/、websites/。**Phase A 已完成 (Tasks 1-5)。**
 2. **sCrypt 智能合约** — 用 sCrypt TypeScript DSL 重写 HTLC 锁定脚本，替代手工 opcode 拼接。合约源码放 `RabbitHole/contracts/`（顶层独立目录，所有链上逻辑的唯一源），编译产物 (artifact JSON) 分发到 libbitfs-ts 和 libbitfs-go。
 3. **链上退款路径** — 通过 sCrypt 的 `this.ctx.locktime`（编译为 OP_PUSH_TX + nLockTime 提取），实现 buyer 单方面链上超时退款。完全消除预签名退款交易 (`BuildSellerPreSignedRefund`) 及其丢失风险。*(Antigravity #3, resolved by design)*
 4. **Invoice ID mandatory** — 原可选 `<invoice_id> OP_DROP` 改为必选 `@prop()`，每个 HTLC 实例 invoiceId 不同 → 脚本 hash 不同 → 天然防重放。

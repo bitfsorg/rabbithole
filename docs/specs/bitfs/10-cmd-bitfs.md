@@ -132,7 +132,7 @@ Shell 特性：
 - `libbitfs-go/spv` -- SPV 验证
 - `internal/daemon` -- 守护进程管理
 - `libbitfs-go/paymail` -- URI 解析
-- `libbitfs-go/x402` -- 支付协议
+- `libbitfs-go/payment` -- 支付协议
 
 ## 数据结构
 

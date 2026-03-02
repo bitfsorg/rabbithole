@@ -1,8 +1,8 @@
-# 模块规范：libbitfs-go/x402
+# 模块规范：libbitfs-go/payment
 
 ## 目的
 
-BitFS 的 x402 支付协议实现。处理带有结构化头部（X-Price、X-Price-Per-KB、X-Invoice-Id 等）的 HTTP 402 Payment Required 响应，针对不同客户端类型（人类、浏览器代理、CLI 代理）的内容协商，以及用于内容购买的 HTLC 原子交换集成。
+BitFS 的 payment 支付协议实现。处理带有结构化头部（X-Price、X-Price-Per-KB、X-Invoice-Id 等）的 HTTP 402 Payment Required 响应，针对不同客户端类型（人类、浏览器代理、CLI 代理）的内容协商，以及用于内容购买的 HTLC 原子交换集成。
 
 设计参考：ConceptDesign #9, #20, #86; SystemDesign 第 11, 13 节; DetailedDesign 第 11-B, 13-B 节。
 
@@ -52,7 +52,7 @@ type Invoice struct {
     CapsuleHash []byte `json:"capsule_hash"`  // SHA256(ECDH capsule) for HTLC
 }
 
-// PaymentHeaders holds the x402 HTTP headers.
+// PaymentHeaders holds the payment protocol HTTP headers.
 type PaymentHeaders struct {
     Price      uint64
     PricePerKB uint64
@@ -162,14 +162,14 @@ func CalculatePrice(pricePerKB, fileSize uint64) uint64
 // NewInvoice creates a new payment invoice.
 func NewInvoice(pricePerKB, fileSize uint64, paymentAddr string, capsuleHash []byte, ttlSeconds int64) *Invoice
 
-// SetPaymentHeaders sets x402 headers on an HTTP response.
+// SetPaymentHeaders sets payment protocol headers on an HTTP response.
 // Also sets the status code to 402 Payment Required.
 func SetPaymentHeaders(w http.ResponseWriter, headers *PaymentHeaders)
 
 // PaymentHeadersFromInvoice creates PaymentHeaders from an Invoice.
 func PaymentHeadersFromInvoice(inv *Invoice) *PaymentHeaders
 
-// ParsePaymentHeaders extracts x402 headers from an HTTP response.
+// ParsePaymentHeaders extracts payment protocol headers from an HTTP response.
 func ParsePaymentHeaders(resp *http.Response) (*PaymentHeaders, error)
 
 // VerifyPayment verifies that a submitted transaction pays the required invoice.
@@ -241,7 +241,7 @@ func BuildBuyerRefundTx(params *BuyerRefundParams) (*transaction.Transaction, er
 
 ## 数据结构
 
-### x402 HTTP 头部
+### Payment HTTP 头部
 ```
 HTTP/1.1 402 Payment Required
 X-Price: 500
@@ -283,7 +283,7 @@ OP_ENDIF
 | `ErrNoMatchingOutput` | 没有匹配发票的交易输出 |
 | `ErrInvalidParams` | 一个或多个参数无效（nil、长度错误、超出范围等） |
 | `ErrInvalidPreimage` | 无法从已花费 HTLC 输入中提取前像（preimage） |
-| `ErrMissingHeaders` | 必需的 x402 支付头部缺失或格式无效 |
+| `ErrMissingHeaders` | 必需的 payment 支付头部缺失或格式无效 |
 | `ErrFundingMismatch` | 预签名退款交易引用的 HTLC 资金 UTXO 与买方预期不符 |
 
 ## 安全考量

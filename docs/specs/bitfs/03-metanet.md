@@ -44,7 +44,7 @@ type AccessLevel int32
 const (
     AccessPrivate AccessLevel = 0 // Only owner can decrypt
     AccessFree    AccessLevel = 1 // Anyone can decrypt (D_node = scalar 1)
-    AccessPaid    AccessLevel = 2 // Requires payment via x402
+    AccessPaid    AccessLevel = 2 // Requires payment via payment protocol
 )
 
 // ISOStatus represents the lifecycle state of an Initial Share Offering.

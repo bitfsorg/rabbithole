@@ -73,7 +73,7 @@
 \end{center}
 
 \begin{abstract}
-We propose a decentralized content delivery network where nodes earn revenue by serving data, not by proving they store it. The Metanet Network is a BSV-homomorphic sidechain that provides the incentive and distribution layer for the BitFS decentralized file system. Hot content is replicated across the network through self-organizing market dynamics: popular files generate x402 retrieval fees, attracting more nodes to cache them, which improves availability and draws more users. Cold content is preserved through simple one-to-one archive contracts between content owners and nodes, verified by ECDH-based storage proofs that execute in milliseconds rather than the hours of GPU computation required by zero-knowledge alternatives. A dual-currency model shields end users from the internal economics of the CDN: users pay in BSV, while the MNT token circulates exclusively among network operators. The result is a content distribution network that scales with demand, rewards useful work, and requires no centralized coordination.
+We propose a decentralized content delivery network where nodes earn revenue by serving data, not by proving they store it. The Metanet Network is a BSV-homomorphic sidechain that provides the incentive and distribution layer for the BitFS decentralized file system. Hot content is replicated across the network through self-organizing market dynamics: popular files generate payment retrieval fees, attracting more nodes to cache them, which improves availability and draws more users. Cold content is preserved through simple one-to-one archive contracts between content owners and nodes, verified by ECDH-based storage proofs that execute in milliseconds rather than the hours of GPU computation required by zero-knowledge alternatives. A dual-currency model shields end users from the internal economics of the CDN: users pay in BSV, while the MNT token circulates exclusively among network operators. The result is a content distribution network that scales with demand, rewards useful work, and requires no centralized coordination.
 \end{abstract}
 
 % -----------------------------------------------------------------------
@@ -117,7 +117,7 @@ The complete system operates across three layers, each providing different guara
  Layer 1: BSV Main Chain
  +--------------------------------------------------------+
  |  File ownership (Metanet DAG), HTLC purchases,         |
- |  x402 downloads, metadata permanence                    |
+ |  paid downloads, metadata permanence                    |
  |  Currency: BSV                                          |
  +--------------------------------------------------------+
 
@@ -144,7 +144,7 @@ Layer~3 is the Metanet Chain, the focus of this paper. It is a dedicated blockch
 
 Users choose their storage and distribution model based on their needs. Small, permanent files can be stored directly on BSV. Large files under the owner's control use the self-hosted daemon. Files that need decentralized, high-availability distribution use the Metanet Network. These approaches compose freely: an owner might store metadata on BSV, distribute popular content through the Metanet Network, and self-host rarely accessed archives.
 
-The responsibilities of the two chains are clearly divided. The BSV main chain records file ownership (the Metanet DAG), handles purchase and sale transactions (HTLC atomic swaps and x402 payments), and stores metadata permanently. It faces end users and AI agents. The Metanet Chain records archive contracts, storage proofs, payment channel settlements, and mining rewards. It faces content owners and node operators. Data never needs to cross between the two chains; they serve complementary roles in the same ecosystem.
+The responsibilities of the two chains are clearly divided. The BSV main chain records file ownership (the Metanet DAG), handles purchase and sale transactions (HTLC atomic swaps and payment payments), and stores metadata permanently. It faces end users and AI agents. The Metanet Chain records archive contracts, storage proofs, payment channel settlements, and mining rewards. It faces content owners and node operators. Data never needs to cross between the two chains; they serve complementary roles in the same ecosystem.
 
 % -----------------------------------------------------------------------
 \section{4. Metanet Chain Design}
@@ -166,13 +166,13 @@ The Metanet Chain has its own native currency, the MNT token, with a supply sche
 
 The dual-currency model is a central design feature. Two currencies serve two distinct markets:
 
-BSV is the user-facing currency. When someone downloads a file through the Metanet Network, they pay the x402 retrieval fee in BSV. When someone purchases access to encrypted content through an HTLC, they pay in BSV. Regular users of BitFS never need to acquire, hold, or even know about the MNT token.
+BSV is the user-facing currency. When someone downloads a file through the Metanet Network, they pay the payment retrieval fee in BSV. When someone purchases access to encrypted content through an HTLC, they pay in BSV. Regular users of BitFS never need to acquire, hold, or even know about the MNT token.
 
 MNT is the operator-facing currency. When a content owner wants to ensure their data remains available on the network regardless of its popularity, they pay a Metanet Node in MNT to hold an archive contract. Mining rewards are denominated in MNT. Inter-node data wholesale transactions use MNT.
 
 This separation exists because the two markets have different dynamics. User demand for content is denominated in BSV, the currency they already hold. Node operator demand for CDN hosting contracts is an internal market that benefits from a dedicated token whose value reflects the supply and demand for CDN services specifically, rather than the broader BSV economy.
 
-Metanet Nodes have three revenue streams: x402 retrieval fees paid in BSV by users downloading content, archive contract fees paid in MNT by content owners ensuring data availability, and mining rewards paid in MNT by the protocol for producing blocks.
+Metanet Nodes have three revenue streams: payment retrieval fees paid in BSV by users downloading content, archive contract fees paid in MNT by content owners ensuring data availability, and mining rewards paid in MNT by the protocol for producing blocks.
 
 The value of MNT follows directly from this structure. Content owners who want guaranteed data availability purchase MNT to pay for archive contracts. Demand for MNT is therefore a direct function of demand for CDN hosting services. As the network grows and more content owners seek decentralized distribution, demand for MNT grows accordingly.
 
@@ -181,10 +181,10 @@ The value of MNT follows directly from this structure. Content owners who want g
 
 The central contribution of the Metanet Network is this: popular content requires no storage contracts, no storage proofs, and no protocol-managed replication. It organizes itself through market incentives alone.
 
-The mechanism works as follows. When a user downloads a file from a Metanet Node, they pay an x402 retrieval fee in BSV. This fee is revenue for the node. A node operator monitoring the network observes that certain files generate consistent retrieval fees. The rational response is to cache those files, since serving them is profitable. As a file becomes more popular, more nodes independently decide to cache it. More cached copies mean better availability, lower latency through geographic distribution, and greater resilience. Better availability draws more users, which generates more fees, which draws more nodes.
+The mechanism works as follows. When a user downloads a file from a Metanet Node, they pay an payment retrieval fee in BSV. This fee is revenue for the node. A node operator monitoring the network observes that certain files generate consistent retrieval fees. The rational response is to cache those files, since serving them is profitable. As a file becomes more popular, more nodes independently decide to cache it. More cached copies mean better availability, lower latency through geographic distribution, and greater resilience. Better availability draws more users, which generates more fees, which draws more nodes.
 
 \begin{lstlisting}
-Popularity rises  -->  x402 revenue increases  -->  More nodes cache the file
+Popularity rises  -->  payment revenue increases  -->  More nodes cache the file
       ^                                                       |
       |                                                       v
 More users attracted  <--  Better availability  <--  More copies in network
@@ -192,13 +192,13 @@ More users attracted  <--  Better availability  <--  More copies in network
 
 This positive feedback loop produces a self-organizing CDN. The replication factor of the network for any given file is determined entirely by market forces. A viral video might be cached by hundreds of nodes worldwide. A niche academic paper might be cached by a handful. In both cases, the replication level is proportional to demand, which is the economically efficient outcome.
 
-Four properties of this approach are notable. No storage contracts are needed for hot data, since nodes cache voluntarily because it is profitable. No storage proofs are needed, since the x402 transaction records on the BSV blockchain themselves prove that a node served the data. No replica management is needed, since the market determines the right number of copies. And no central coordinator is needed, since each node makes independent caching decisions based on its own cost-benefit analysis.
+Four properties of this approach are notable. No storage contracts are needed for hot data, since nodes cache voluntarily because it is profitable. No storage proofs are needed, since the payment transaction records on the BSV blockchain themselves prove that a node served the data. No replica management is needed, since the market determines the right number of copies. And no central coordinator is needed, since each node makes independent caching decisions based on its own cost-benefit analysis.
 
-A Metanet Node acquires data for its cache through one of three channels. The content owner may push data directly to the network. A node may pull data from the daemon of the owner, paying the x402 fee. Or a node may purchase data wholesale from another node through an MNT payment channel, allowing nodes in well-connected regions to redistribute popular content efficiently.
+A Metanet Node acquires data for its cache through one of three channels. The content owner may push data directly to the network. A node may pull data from the daemon of the owner, paying the payment fee. Or a node may purchase data wholesale from another node through an MNT payment channel, allowing nodes in well-connected regions to redistribute popular content efficiently.
 
-The decision logic for a node is straightforward: if the expected x402 revenue from a file exceeds the cost of storing and serving it, cache the file. Otherwise, do not. This requires no protocol enforcement. Nodes that make good caching decisions earn more revenue. Nodes that make poor decisions waste resources. The market selects for efficient behavior.
+The decision logic for a node is straightforward: if the expected payment revenue from a file exceeds the cost of storing and serving it, cache the file. Otherwise, do not. This requires no protocol enforcement. Nodes that make good caching decisions earn more revenue. Nodes that make poor decisions waste resources. The market selects for efficient behavior.
 
-This model also handles content discovery naturally. When a user requests a file, they first resolve the Metanet metadata of the file from the BSV blockchain (or from the daemon of the owner via SPV). The metadata identifies the file by its content hash. The user then locates Metanet Nodes that hold the file through one of two mechanisms: querying the Metanet Chain for active archive contracts (which list contracted nodes), or querying an overlay network lookup service that tracks which nodes are voluntarily caching the file. The user selects the best available node based on latency, price, or reputation, and pays the x402 fee to download. This routing process is decentralized at every step.
+This model also handles content discovery naturally. When a user requests a file, they first resolve the Metanet metadata of the file from the BSV blockchain (or from the daemon of the owner via SPV). The metadata identifies the file by its content hash. The user then locates Metanet Nodes that hold the file through one of two mechanisms: querying the Metanet Chain for active archive contracts (which list contracted nodes), or querying an overlay network lookup service that tracks which nodes are voluntarily caching the file. The user selects the best available node based on latency, price, or reputation, and pays the payment fee to download. This routing process is decentralized at every step.
 
 % -----------------------------------------------------------------------
 \section{7. Cold Data: Archive Contracts}
@@ -226,7 +226,7 @@ Replica uniqueness & zk-SNARK (PoRep) & ECDH re-encryption \\
 Ongoing verification & zk-SNARK (PoSt) & Merkle challenge-response \\
 Computation cost & GPU-intensive, hours per sector & Millisecond-scale ECDH + AES \\
 Replica management & Protocol-enforced minimum & Owner-determined (sign N contracts) \\
-Retrieval incentive & Indirect (retrieval market exists but is secondary) & Strong (x402 as primary incentive) \\
+Retrieval incentive & Indirect (retrieval market exists but is secondary) & Strong (payment as primary incentive) \\
 Token usage & Storage + retrieval + collateral & CDN hosting + mining only (users pay BSV) \\
 \bottomrule
 \end{tabularx}
@@ -236,9 +236,9 @@ Token usage & Storage + retrieval + collateral & CDN hosting + mining only (user
 % -----------------------------------------------------------------------
 \section{8. Content Revenue Sharing}
 
-The Metanet Network creates a natural marketplace between content owners and node operators. When a Metanet Node serves a file and collects the x402 retrieval fee, the question is immediate: who keeps the revenue?
+The Metanet Network creates a natural marketplace between content owners and node operators. When a Metanet Node serves a file and collects the payment retrieval fee, the question is immediate: who keeps the revenue?
 
-Content owners set a \texttt{revenue\_share} parameter in file metadata, specifying what percentage of x402 fees the serving node retains and what percentage flows back to the owner. A typical split might allocate 70\% to the node and 30\% to the owner, though the ratio is entirely at the discretion of the owner.
+Content owners set a \texttt{revenue\_share} parameter in file metadata, specifying what percentage of payment fees the serving node retains and what percentage flows back to the owner. A typical split might allocate 70\% to the node and 30\% to the owner, though the ratio is entirely at the discretion of the owner.
 
 This produces two cooperation modes between owners and nodes. For popular content, the revenue-sharing model prevails. The node caches and serves the content without charge, earning its share of retrieval fees. The owner earns passive income from popular content without running any infrastructure. For cold content, the paid-hosting model applies. The owner pays the node through an archive contract to guarantee availability, accepting that the content will not generate meaningful retrieval revenue.
 
@@ -249,13 +249,13 @@ A Metanet Node evaluates each file along these lines: if the expected retrieval 
 % -----------------------------------------------------------------------
 \section{9. Payment Channels}
 
-While individual x402 payments work well for discrete file downloads, streaming media and large file transfers require a more efficient payment mechanism. Paying a separate on-chain transaction for every kilobyte of a video stream would be impractical even with the low fees of BSV.
+While individual payment payments work well for discrete file downloads, streaming media and large file transfers require a more efficient payment mechanism. Paying a separate on-chain transaction for every kilobyte of a video stream would be impractical even with the low fees of BSV.
 
 The Metanet Network supports payment channels for these scenarios. A payment channel is a two-party arrangement where funds are locked in a 2-of-2 multisignature transaction on-chain, and subsequent payments are exchanged as signed but unbroadcast updates to the balance allocation. Only the final settlement transaction needs to go on-chain, collapsing potentially thousands of micropayments into a single transaction.
 
 Two types of payment channels operate in the network. BSV payment channels connect users to Metanet Nodes, enabling per-kilobyte billing for streaming and large downloads. MNT payment channels connect content owners to nodes (for ongoing archive contract payments) and nodes to each other (for wholesale data purchases).
 
-The x402 HTTP protocol is extended with channel-aware headers. A client indicates support for channel payments, and the server responds with channel pricing (which may be lower than the single-payment price, reflecting reduced per-transaction overhead). Subsequent requests within an open channel include a signed balance update instead of a discrete payment. The server verifies the signature, updates its local balance state, and serves the content immediately. No on-chain confirmation is needed for individual requests.
+The payment HTTP protocol is extended with channel-aware headers. A client indicates support for channel payments, and the server responds with channel pricing (which may be lower than the single-payment price, reflecting reduced per-transaction overhead). Subsequent requests within an open channel include a signed balance update instead of a discrete payment. The server verifies the signature, updates its local balance state, and serves the content immediately. No on-chain confirmation is needed for individual requests.
 
 Dispute resolution follows standard payment channel conventions. Each balance update carries an incrementing sequence number. Both parties exchange revocation keys for previous states. If one party broadcasts an outdated state, the other can submit a penalty transaction within a defined window, claiming the entire channel balance of the cheating party. This mechanism, secured by \texttt{OP\_CHECKSEQUENCEVERIFY} time locks, ensures honest behavior without requiring trust.
 
@@ -274,7 +274,7 @@ The following table summarizes how the Metanet Network compares with existing de
 \toprule
  & \textbf{Metanet Network} & \textbf{Filecoin} & \textbf{IPFS} & \textbf{Arweave} & \textbf{Traditional CDN} \\
 \midrule
-Primary incentive & Retrieval (x402 fees) & Storage (PoSt rewards) & None & One-time storage fee & Service contracts \\
+Primary incentive & Retrieval (payment fees) & Storage (PoSt rewards) & None & One-time storage fee & Service contracts \\
 \addlinespace
 Replication model & Self-organizing (market) & Protocol-enforced minimum & None (altruistic pinning) & Endowment-funded & Centrally managed \\
 \addlinespace
@@ -282,7 +282,7 @@ Storage proofs & ECDH + Merkle (ms) & zk-SNARK (hours of GPU) & None & SPoRA (mo
 \addlinespace
 Native currency & MNT (operators) + BSV (users) & FIL & None & AR & Fiat \\
 \addlinespace
-User payment & BSV (x402 micropayments) & FIL & Free & Free after upload & Subscription / bandwidth \\
+User payment & BSV (payment micropayments) & FIL & Free & Free after upload & Subscription / bandwidth \\
 \addlinespace
 Blockchain & BSV-homo\-morphic sidechain & Custom (Lotus) & None & Custom (Arweave) & None \\
 \addlinespace
@@ -321,7 +321,7 @@ metanet mine          Enable or configure merge-mining (requires connection to
                       BTC/BSV mining pool)
 \end{lstlisting}
 
-A Metanet Node is fundamentally a BitFS daemon running in provider mode. It serves encrypted content over HTTP, processes x402 payments, maintains archive contracts, submits storage proofs, and optionally participates in merge-mining. The \texttt{metanet} CLI wraps these capabilities with network-specific configuration and monitoring.
+A Metanet Node is fundamentally a BitFS daemon running in provider mode. It serves encrypted content over HTTP, processes payment payments, maintains archive contracts, submits storage proofs, and optionally participates in merge-mining. The \texttt{metanet} CLI wraps these capabilities with network-specific configuration and monitoring.
 
 Node operators make two key decisions: what content to cache (based on expected retrieval revenue) and how many archive contracts to accept (based on available storage capacity and MNT pricing). Both decisions are economic, and the CLI provides the metrics needed to make them: revenue per file, storage costs, bandwidth utilization, and contract profitability.
 
@@ -332,7 +332,7 @@ The barrier to entry for running a Metanet Node is deliberately low. Any machine
 
 The Metanet Network addresses a gap in the decentralized storage ecosystem by aligning economic incentives with the behavior that users actually value: fast, reliable access to data.
 
-The core mechanism is retrieval-based incentives. By allowing Metanet Nodes to earn x402 fees from serving content, the network creates a positive feedback loop where popular content is widely replicated and readily accessible, without any central coordination or protocol-managed replication. This self-organizing CDN behavior emerges naturally from individual nodes pursuing rational self-interest.
+The core mechanism is retrieval-based incentives. By allowing Metanet Nodes to earn payment fees from serving content, the network creates a positive feedback loop where popular content is widely replicated and readily accessible, without any central coordination or protocol-managed replication. This self-organizing CDN behavior emerges naturally from individual nodes pursuing rational self-interest.
 
 For content that cannot sustain itself through retrieval fees, archive contracts provide a simple, bilateral mechanism for guaranteed storage. The use of ECDH re-encryption for storage proofs, rather than zero-knowledge proofs, reduces computational overhead by orders of magnitude while preserving the essential property that each copy is cryptographically unique and verifiable.
 

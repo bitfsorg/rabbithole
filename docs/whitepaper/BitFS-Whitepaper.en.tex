@@ -109,7 +109,7 @@ The BitFS architecture separates concerns into distinct layers:
 +-----------------------------+---------------------------------+
 |                    Core Library (libbitfs)                     |
 |  +----------+ +----------+ +---------+ +------------------+  |
-|  | Metanet  | | Content  | | DNS /   | | x402 / Commerce  |  |
+|  | Metanet  | | Content  | | DNS /   | | Payment /Commerce |  |
 |  | Engine   | | Store    | | Paymail | | (HTLC, Token)    |  |
 |  +----------+ +----------+ +---------+ +------------------+  |
 |  | Method 42| | SPV      | | Config  | | Revenue Share /  |  |
@@ -313,11 +313,11 @@ This system transforms digital content from a product sold for a one-time fee in
 
 BitFS defines the file system protocol: how files are organized, encrypted, addressed, and traded. Content distribution---the question of how encrypted bytes travel from storage to the requesting client---is designed to be handled by the Metanet network, a decentralized CDN described in its own whitepaper~\cite{metanet_multi}. Integration between the two systems is under active development.
 
-The Metanet network is a BSV-homomorphic sidechain that uses the same transaction format and script engine as BSV, with its own genesis block, native token (MNT), and merged mining with SHA256 proof-of-work. Metanet Nodes on the network earn revenue by serving content to users, collecting x402 retrieval fees in BSV. This creates a positive feedback loop: popular content generates more retrieval fees, attracting more nodes to cache it, which in turn improves availability and reduces latency.
+The Metanet network is a BSV-homomorphic sidechain that uses the same transaction format and script engine as BSV, with its own genesis block, native token (MNT), and merged mining with SHA256 proof-of-work. Metanet Nodes on the network earn revenue by serving content to users, collecting payment retrieval fees in BSV. This creates a positive feedback loop: popular content generates more retrieval fees, attracting more nodes to cache it, which in turn improves availability and reduces latency.
 
-For content owners, integration is simple. A planned \texttt{-{}-store metanet} flag for \texttt{bitfs put} will publish files to the decentralized CDN\@. Metanet Nodes that cache the content share x402 revenue with the owner according to a configurable split. Cold or unpopular data can be preserved through explicit storage contracts where the owner pays nodes in MNT tokens. In both cases, the storage proof mechanism reuses Method~42: each copy held by a node is re-encrypted with a provider-specific ECDH key, making copies cryptographically unique and verifiable through simple Merkle challenges rather than expensive zero-knowledge proofs.
+For content owners, integration is simple. A planned \texttt{-{}-store metanet} flag for \texttt{bitfs put} will publish files to the decentralized CDN\@. Metanet Nodes that cache the content share payment revenue with the owner according to a configurable split. Cold or unpopular data can be preserved through explicit storage contracts where the owner pays nodes in MNT tokens. In both cases, the storage proof mechanism reuses Method~42: each copy held by a node is re-encrypted with a provider-specific ECDH key, making copies cryptographically unique and verifiable through simple Merkle challenges rather than expensive zero-knowledge proofs.
 
-Ordinary users interact only with BSV\@. The MNT token economy operates between content owners and Metanet Nodes, invisible to end users and agents who simply request files and pay x402 fees in BSV\@.
+Ordinary users interact only with BSV\@. The MNT token economy operates between content owners and Metanet Nodes, invisible to end users and agents who simply request files and pay retrieval fees in BSV\@.
 
 %% ============================================================
 \section{Conclusion}

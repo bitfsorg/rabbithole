@@ -20,7 +20,7 @@
 | 货币 | BSV | MNT Token |
 | 类比 | IPFS (协议层) | Filecoin (激励层) |
 
-**关键区别**：Filecoin 激励存储 (Proof-of-Replication)；Metanet 激励检索 (x402 按次付费)。热门内容自组织复制，冷数据自然淘汰——市场驱动而非强制冗余。
+**关键区别**：Filecoin 激励存储 (Proof-of-Replication)；Metanet 激励检索 (payment 按次付费)。热门内容自组织复制，冷数据自然淘汰——市场驱动而非强制冗余。
 
 ---
 
@@ -29,7 +29,7 @@
 <table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
 <tr style="background:#eaf0f7;">
 <td style="border:1px solid #999; padding:0.5em; width:22%; font-weight:600;">Layer 1: BSV 主链</td>
-<td style="border:1px solid #999; padding:0.5em; width:38%;">文件元数据、所有权证明、HTLC 交易、x402 检索费</td>
+<td style="border:1px solid #999; padding:0.5em; width:38%;">文件元数据、所有权证明、HTLC 交易、payment 检索费</td>
 <td style="border:1px solid #999; padding:0.5em; width:22%;">终端用户、AI Agent</td>
 <td style="border:1px solid #999; padding:0.5em; width:18%; text-align:center;">BSV</td>
 </tr>
@@ -66,7 +66,7 @@ libbitfs-go/
 ├── spv/          # SPV 轻节点 (本地 tx + Merkle proof)
 ├── storage/      # 内容存储抽象 (链下/链上)
 ├── paymail/      # Paymail 身份解析 + bitfs:// URI
-├── x402/         # x402 支付协议 + Token 预购
+├── payment/      # payment 支付协议 + Token 预购
 ├── network/      # 区块链服务抽象 (RPC/SPV 客户端)
 ├── config/       # 配置文件解析 (key=value)
 └── revshare/     # Revenue Share / ISO 证券化
@@ -89,7 +89,7 @@ libbitfs-go/
 <td style="border:1px solid #999; padding:0.5em; width:10%; text-align:center; background:#fff;">→</td>
 <td style="border:1px solid #999; padding:0.5em; width:20%; text-align:center; background:#e8e8e8; font-weight:600;">BSV 主链</td>
 <td style="border:1px solid #999; padding:0.5em; width:10%; text-align:center; background:#fff;">→</td>
-<td style="border:1px solid #999; padding:0.5em; width:30%; background:#fafafa;">文件元数据 + x402/HTLC 支付</td>
+<td style="border:1px solid #999; padding:0.5em; width:30%; background:#fafafa;">文件元数据 + payment/HTLC 支付</td>
 </tr>
 <tr>
 <td colspan="5" style="border:1px solid #999; padding:0.3em; text-align:center; font-size:9pt; color:#555; background:#fff;">↕ 内容哈希引用 (非跨链)</td>
@@ -115,7 +115,7 @@ libbitfs-go/
 
 | 币种 | 使用场景 | 接触者 |
 |------|----------|--------|
-| **BSV** | x402 检索费、HTLC 文件购买、Metanet DAG 交易手续费 | 所有用户 |
+| **BSV** | payment 检索费、HTLC 文件购买、Metanet DAG 交易手续费 | 所有用户 |
 | **MNT** | CDN 托管费、挖矿奖励、节点间批发结算 | 仅内容所有者和节点运营商 |
 
 **设计目标**：普通用户只接触 BSV。MNT 是运营商侧的内部结算代币，对终端用户完全透明。
@@ -146,7 +146,7 @@ design/
 ## 六、共享设计原则
 
 1. **Unix 哲学** — 每个工具做一件事，可管道组合 (`bcat txid | jq .`)
-2. **Agent-first** — CLI 输出结构化 (JSON)，x402 付费墙即可编程支付接口
+2. **Agent-first** — CLI 输出结构化 (JSON)，payment 付费墙即可编程支付接口
 3. **默认加密** — Method 42 (ECDH + BIP32)，所有数据加密存储，密钥由文件路径确定性派生
 4. **SPV 模式** — 本地保存交易 + Merkle proof，从不查询区块链全节点
 5. **BSV 同构** — Metanet Chain 使用与 BSV 相同的交易格式和 Script 引擎

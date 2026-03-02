@@ -2,7 +2,7 @@
 
 ## 目的
 
-BitFS 守护进程，实现 LFCP（本地全拷贝对等节点，Local Full-Copy Peer）功能。作为 HTTP 服务器提供内容检索、Metanet 元数据查询、Method 42 ECDH 握手身份验证、x402 付费内容支付处理，以及面向浏览器 AI 代理的 WebMCP。
+BitFS 守护进程，实现 LFCP（本地全拷贝对等节点，Local Full-Copy Peer）功能。作为 HTTP 服务器提供内容检索、Metanet 元数据查询、Method 42 ECDH 握手身份验证、payment 付费内容支付处理，以及面向浏览器 AI 代理的 WebMCP。
 
 设计参考：ConceptDesign #8, #21, #27, #33; SystemDesign 第 13 节; DetailedDesign 第 13-B 节。
 
@@ -15,7 +15,7 @@ BitFS 守护进程，实现 LFCP（本地全拷贝对等节点，Local Full-Copy
 type Config struct {
     ListenAddr   string         `toml:"listen"`
     TLS          TLSConfig      `toml:"tls"`
-    X402         X402Config     `toml:"x402"`
+    Payment      PaymentConfig  `toml:"payment"`
     Security     SecurityConfig `toml:"security"`
     Storage      StorageConfig  `toml:"storage"`
     Log          LogConfig      `toml:"log"`
@@ -28,7 +28,7 @@ type TLSConfig struct {
     KeyFile  string `toml:"key"`
 }
 
-type X402Config struct {
+type PaymentConfig struct {
     Enabled       bool   `toml:"enabled"`
     PricePerMB    uint64 `toml:"price_per_mb"`    // CDN bandwidth fee (sat)
     FreeQuotaMB   uint64 `toml:"free_quota_mb"`
@@ -114,14 +114,14 @@ GET  /                                      根路径（内容协商：HTML/Mark
 GET  /{path}                                路径访问（内容协商）
 GET  /_bitfs/health                         健康检查
 
-GET  /_bitfs/data/{hash}                    加密数据检索（可能触发 x402）
+GET  /_bitfs/data/{hash}                    加密数据检索（可能触发 402 支付）
 GET  /_bitfs/meta/{pnode}/{path...}         Metanet 元数据查询
 GET  /_bitfs/versions/{pnode}/{path...}     版本历史查询
 
 POST /_bitfs/handshake                      Method 42 ECDH 握手
 GET  /_bitfs/buy/{txid}                     获取购买信息（capsule_hash，价格）
 POST /_bitfs/buy/{txid}                     提交 HTLC，接收胶囊（Capsule）
-POST /_bitfs/pay/{invoice_id}               带宽支付（x402 发票结算）
+POST /_bitfs/pay/{invoice_id}               带宽支付（payment 发票结算）
 GET  /_bitfs/sales                          发票/销售记录列表
 GET  /_bitfs/spv/proof/{txid}               SPV Merkle 证明检索
 
@@ -146,7 +146,7 @@ GET  /api/v1/verify/{handle}/{pubkey}       BSV Alias 公钥验证
 - `go-sdk/script` -- 地址派生（P2PKH）
 - `go-sdk/transaction` -- 交易解析（HTLC 验证、重放保护）
 - `libbitfs-go/method42` -- 胶囊计算（ComputeCapsuleWithNonce, ComputeCapsuleHash）
-- `libbitfs-go/x402` -- 支付协议（发票、HTLC 构建/验证、Payment Headers）
+- `libbitfs-go/payment` -- 支付协议（发票、HTLC 构建/验证、Payment Headers）
 - `libbitfs-go/paymail` -- BRFC 常量（BRFCBitFSBrowse, BRFCBitFSBuy, BRFCBitFSSell）
 
 外部服务通过接口注入（WalletService, ContentStore, MetanetService, SPVService, ChainService），不直接依赖 `libbitfs-go/wallet`、`libbitfs-go/storage`、`libbitfs-go/spv` 的具体类型。
@@ -174,7 +174,7 @@ Accept: application/json -> JSON metadata
 
 HTTP 错误码：
 - 400 Bad Request（错误请求）
-- 402 Payment Required（需要支付，x402）
+- 402 Payment Required（需要支付）
 - 404 Not Found（未找到）
 - 408 Timeout（超时）
 - 409 Transaction Conflict（交易冲突 / HTLC 重放）

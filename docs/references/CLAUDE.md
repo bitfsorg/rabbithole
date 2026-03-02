@@ -332,7 +332,7 @@ OP_RETURN <MetaFlag=0x6d657461> <P_node> <TxID_parent> [<attributes>...] [<conte
 | BSV Script 链上验证 | capsule 脚本 | 挑战-响应交易 |
 | Per-copy 加密 | capsule XOR masking | 节点防串谋 |
 | EC-Point 隐私证明 | — | 隐私保护验证 |
-| Verify-then-Pay | x402 支付层 | MNT Token 支付 |
+| Verify-then-Pay | payment 支付层 | MNT Token 支付 |
 | 存款+惩罚 | — | 节点经济模型 |
 | RAID 条带化 | 大文件分块 | CDN 并行分发 |
 | $2.94/TB/year | 存储成本参考 | 定价参考 |
@@ -355,4 +355,4 @@ OP_RETURN <MetaFlag=0x6d657461> <P_node> <TxID_parent> [<attributes>...] [<conte
 | ML 二级链协议 | #4 | 待实现 (Metanet Chain) |
 | 门限签名 JVRSS | #3 | 待实现 (多方管理) |
 | Carrier Pair (S\|ACP) | #4 | 待实现 (Metanet Chain) |
-| 原子交换付费访问 | #0 | libbitfs-go/x402 |
+| 原子交换付费访问 | #0 | libbitfs-go/payment |

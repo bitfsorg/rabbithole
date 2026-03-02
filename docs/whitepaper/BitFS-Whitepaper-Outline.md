@@ -24,7 +24,7 @@
 - key_hash = SHA256(SHA256(plaintext)) → 内容寻址存储 + 密钥派生；元数据 → Metanet 交易
 - HTLC 原子交换实现无信任数据交易（卖方揭示密钥胶囊 = 哈希原像）
 - SPV 模式运行，从不查询区块链
-- Agent 优先 HTTP 接口 + x402 支付协议 → AI Agent 自主发现/浏览/购买
+- Agent 优先 HTTP 接口 + payment 支付协议 → AI Agent 自主发现/浏览/购买
 
 ---
 
