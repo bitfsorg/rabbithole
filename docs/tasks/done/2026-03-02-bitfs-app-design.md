@@ -1,7 +1,28 @@
 # BitFS Mobile App 设计文档
 
 > 日期: 2026-03-02
-> 状态: 已批准
+> 状态: ✅ 完成 (20/20 tasks done)
+
+## 实现进度
+
+| 阶段 | 任务 | 状态 |
+|------|------|------|
+| Phase 1-3 (Foundation+Services+State) | Tasks 1-9 | ✅ 完成 |
+| Phase 4 (UI Shell) | Tasks 10-11 | ✅ 完成 |
+| Phase 5 (Main Screens) | Tasks 12-17 | ✅ 完成 |
+| Phase 6 (Integration) | Task 18: Service wiring | ✅ 完成 — ServiceProvider + useFileOps hook + MutationBatch broadcast for put/mkdir/rm + buy flow wired to PaymentService |
+| Phase 6 (Integration) | Task 19: Auto-lock | ✅ 完成 — AppState 监听 + 阈值锁定 |
+| Phase 6 (Integration) | Task 20: Polish | ✅ 完成 — OfflineBanner + classifyError for all service calls + loading states |
+
+**关键变更** (Task 18+20):
+- 新增 `src/adapters/WoCProvider.ts` — WhatsOnChain REST API 实现 BlockchainService (mainnet/testnet)
+- 新增 `src/providers/ServiceProvider.tsx` — React Context 持有服务单例，网络切换时自动重建
+- 新增 `src/hooks/useFileOps.ts` — 协调 FileService + TxService + vaultStore 的文件操作 hook
+- 修复 `TxService.buildAndBroadcast` — 添加 `sign()` 调用（原来遗漏签名步骤）
+- 所有 UI 组件 (CreateMenu/FileActionSheet/file/wallet/buy) 通过 useFileOps 接入服务层
+- _layout.tsx 新增 ServiceProvider 包装 + OfflineBanner + AutoLockGuard
+- 修复 libbitfs-ts 链接路径 (worktree `../../../` → main `../`)
+- Buy flow 接入 PaymentService（requestInvoice + fundHTLC），但完整 HTLC 需要卖方 daemon 端点
 
 ## 概述
 
@@ -11,7 +32,7 @@ BitFS 移动客户端（iOS + Android），文件管理器优先定位。使用 
 
 | 维度 | 决策 | 理由 |
 |------|------|------|
-| 框架 | React Native (Expo SDK 53) | libbitfs-ts 可直接 import，无需 Go FFI 桥接 |
+| 框架 | React Native (Expo SDK 55) | libbitfs-ts 可直接 import，无需 Go FFI 桥接 |
 | 定位 | 文件管理器优先，钱包辅助 | 用户核心需求是管理加密文件 |
 | 数据架构 | 完全本地 (libbitfs-ts) | self-contained，无需 daemon 进程 |
 | UI 库 | React Native Paper 5.x (Material 3) | 开箱即用组件库，Expo 官方推荐 |
@@ -22,7 +43,7 @@ BitFS 移动客户端（iOS + Android），文件管理器优先定位。使用 
 
 | 层面 | 选择 | 说明 |
 |------|------|------|
-| Runtime | Expo SDK 53 | 构建/开发/OTA |
+| Runtime | Expo SDK 55 | 构建/开发/OTA |
 | UI | React Native Paper 5.x | Material 3 组件库 |
 | Navigation | Expo Router 4.x | File-based routing |
 | State | Zustand 5.x | 轻量状态管理 |

@@ -10,9 +10,11 @@
 
 **Test command:** `cd libbitfs-ts && npx vitest run`
 
+**Status:** 10/12 tasks completed. Tasks 11-12 (ParseTxNodeOps, x402 refund flow) pending.
+
 ---
 
-## Task 1: Q-06 — Fix unsafe type cast in htlc.ts
+## ~~Task 1: Q-06 — Fix unsafe type cast in htlc.ts~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/x402/htlc.ts:105-106,244,445-446`
@@ -44,7 +46,7 @@ fix(libbitfs-ts): remove redundant type casts in htlc.ts and opreturn.ts [Q-06]
 
 ---
 
-## Task 2: Q-11 — Defensive copy in putHeader
+## ~~Task 2: Q-11 — Defensive copy in putHeader~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/spv/store.ts:40-44`
@@ -93,7 +95,7 @@ fix(libbitfs-ts): defensive copy in putHeader to prevent input mutation [Q-11]
 
 ---
 
-## Task 3: S-04 — Key material zeroing in seed.ts
+## ~~Task 3: S-04 — Key material zeroing in seed.ts~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/wallet/seed.ts:120-158,173-225`
@@ -144,7 +146,7 @@ fix(libbitfs-ts): zero key material in seed encrypt/decrypt [S-04]
 
 ---
 
-## Task 4: S-05 — SPV verifyPoW recompute hash
+## ~~Task 4: S-05 — SPV verifyPoW recompute hash~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/spv/header.ts` (find `verifyPoW` function)
@@ -185,7 +187,7 @@ fix(libbitfs-ts): recompute header hash in verifyPoW for defense-in-depth [S-05]
 
 ---
 
-## Task 5: Q-12 — Extract shared AES-GCM decrypt helper
+## ~~Task 5: Q-12 — Extract shared AES-GCM decrypt helper~~ ✅
 
 **Files:**
 - Create: `libbitfs-ts/src/method42/aes.ts`
@@ -225,7 +227,7 @@ refactor(libbitfs-ts): extract shared AES-GCM helpers to method42/aes.ts [Q-12]
 
 ---
 
-## Task 6: Q-14 — Deduplicate verify.ts
+## ~~Task 6: Q-14 — Deduplicate verify.ts~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/spv/verify.ts`
@@ -266,7 +268,7 @@ refactor(libbitfs-ts): deduplicate SPV verify functions [Q-14]
 
 ---
 
-## Task 7: Q-05 — Bounded response body reads in paymail
+## ~~Task 7: Q-05 — Bounded response body reads in paymail~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/paymail/discover.ts`
@@ -339,7 +341,7 @@ fix(libbitfs-ts): bounded streaming reads for paymail responses [Q-05]
 
 ---
 
-## Task 8: Q-07 — RPC response validation
+## ~~Task 8: Q-07 — RPC response validation~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/network/rpc.ts:398-410`
@@ -377,7 +379,7 @@ fix(libbitfs-ts): validate JSON-RPC response structure before type cast [Q-07]
 
 ---
 
-## Task 9: Q-10 — Replace const enum with regular enum
+## ~~Task 9: Q-10 — Replace const enum with regular enum~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/method42/access.ts` (1 enum: `Access`)
@@ -414,7 +416,7 @@ fix(libbitfs-ts): replace const enum with regular enum for isolatedModules compa
 
 ---
 
-## Task 10: Q-08 — Expand cross-language test vectors
+## ~~Task 10: Q-08 — Expand cross-language test vectors~~ ✅
 
 **Files:**
 - Modify: `libbitfs-ts/src/__tests__/vectors/go-vectors.json` (add vectors)
