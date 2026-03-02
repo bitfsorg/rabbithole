@@ -4,12 +4,6 @@
 >
 > 本文档为 BitFS 设计文档体系的第一层：项目愿景、核心概念、架构概览。
 > Metanet Chain (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
->
-> **文档体系**: ([总体设计](../0-OverallDesign.zh.md))
-> 1. **概念设计** (本文档) — 项目愿景、核心概念、架构概览
-> 2. [系统设计](2-SystemDesign.zh.md) — 模块划分、接口定义、数据流
-> 3. [详细设计](3-DetailedDesign.zh.md) — 算法、数据结构、协议细节
-> 4. [测试用例](4-TestDesign.zh.md) — 测试用例设计
 
 ---
 
