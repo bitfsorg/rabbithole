@@ -632,7 +632,7 @@ git commit -m "docs: update client pkg doc and spec for URI endpoint resolution"
 
 Change line 223:
 ```
-- [ ] 2.1 Shell/b* 访问路径统一
+- [x] 2.1 Shell/b* 访问路径统一
 ```
 to:
 ```

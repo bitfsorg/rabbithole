@@ -119,8 +119,8 @@
 
 ## 完成标准
 
-- [ ] 所有 13 个 spec 文件无 TODO/TBD，与代码一致
-- [ ] revshare 包 60+ 测试，全部通过
-- [ ] Shell 22 个命令全部有集成测试覆盖
-- [ ] `go test ./...` 和 `go test -tags=integration ./integration/` 全部通过
-- [ ] golangci-lint 零新增 warning
+- [x] 所有 13 个 spec 文件无 TODO/TBD，与代码一致
+- [x] revshare 包 60+ 测试，全部通过
+- [x] Shell 22 个命令全部有集成测试覆盖
+- [x] `go test ./...` 和 `go test -tags=integration ./integration/` 全部通过
+- [x] golangci-lint 零新增 warning
