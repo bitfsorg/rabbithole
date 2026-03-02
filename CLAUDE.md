@@ -50,7 +50,7 @@ Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/b
 - `cmd/bitfs/` — 主 CLI（wallet/vault/put/mkdir/rm/mv/cp/link/sell/encrypt/publish/shell/daemon）
 - `cmd/b*/` — 只读工具集（bls/bcat/bget/bstat/btree），通过 HTTP 连接 daemon
 - `internal/engine/` — 统一业务逻辑层（所有 CLI 命令、shell REPL、daemon 适配器共用）
-- `internal/daemon/` — LFCP HTTP 服务器（内容服务、Metanet 元数据、Method 42 握手、x402 支付）
+- `internal/daemon/` — LFCP HTTP 服务器（内容服务、Metanet 元数据、Method 42 握手、payment 支付）
 - `internal/client/` — b-tools 的 HTTP 客户端
 
 **其他目录**:
@@ -78,7 +78,7 @@ Unix 风格的去中心化加密文件系统，Go 实现。Module: `github.com/b
 | network | 区块链服务抽象（BlockchainService 接口、RPCClient、SPVClient、网络预设） |
 | config | 配置文件解析（key=value 格式） |
 | paymail | Paymail 协议（.well-known/bsvalias 发现、PKI 端点解析） |
-| x402 | HTTP 402 支付协议（X-Price/X-Invoice-Id 头、HTLC 构建、支付验证） |
+| payment | HTTP 402 支付协议（X-Price/X-Invoice-Id 头、HTLC 构建、支付验证） |
 
 **规模**: ~8,025 行代码（不含测试）
 
@@ -139,7 +139,7 @@ libbitfs-go 的 TypeScript 镜像，目标: 浏览器 + Node.js 环境。ESM 优
 |------|-------|---------|
 | 1-概念设计 | 愿景、架构、b* 工具、HD 钱包、Method 42 (17KB) | 产品定位、经济模型、Agent Friendly (6KB) |
 | 2-系统设计 | 模块划分、接口定义、交易格式、CLI 命令 (103KB) | 三层架构 (L1:BSV/L2:Daemon/L3:Chain)、智能合约 (11KB) |
-| 3-详细设计 | 算法细节、Bitcoin Script、x402 协议、BIP32 访问控制 (103KB) | 共识机制、挖矿协议、结算流程 (14KB) |
+| 3-详细设计 | 算法细节、Bitcoin Script、payment 协议、BIP32 访问控制 (103KB) | 共识机制、挖矿协议、结算流程 (14KB) |
 | 4-测试设计 | ~980 测试用例 (55KB) | ~20 测试用例 (8KB) |
 
 **其他**: `OverallDesign.zh.md`（总体设计）、`diagrams/`（8 个 Mermaid .mmd + 7 个 SVG）、`pdf/`（9 个生成的 PDF + HTML 模板）
