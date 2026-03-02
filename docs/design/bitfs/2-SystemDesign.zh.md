@@ -162,17 +162,20 @@ bitfs init [--network <network>]
 
 BitFS 在链上实现了一个 Unix 文件系统。核心映射:
 
-| Unix 概念 | BitFS 对应 |
-|-----------|-----------|
-| inode | P_node (Metanet 节点公钥) |
-| 目录项 (dirent) | ChildEntry (index, name, type, pubkey) |
-| 文件名 | 仅存于父目录的 ChildEntry 中，节点自身不存 name |
-| `.` (当前目录) | 节点自身 P_node |
-| `..` (父目录) | 路径语义: 由遍历路径确定; parent 字段仅记录创建时父目录 |
-| 软链接 (symlink) | LINK_SOFT → 指向 P_node (最新版本) |
-| 远程软链接 | LINK_SOFT_REMOTE → 指向 domain/path (跨用户) |
-| parent 字段 | 首次创建父目录 |
-| inode 编号 | P_node (节点身份) |
+| Unix| 类别 | 符号/规则 | 说明 |
+|------|-----------|------|
+| **路径分隔符** | `/` | Unix 标准目录分隔符 |
+| **禁止字符** | `/`, `\x00` | 路径分隔符和空字符不可用于文件名 |
+| **保留名称** | `.`, `..` | 不能用作文件或目录的显式名称 |
+| **文件** | `FILE` (0) | 叶子节点，包含指向内容或元数据的链接 |
+| **目录** | `DIR` (1) | 内部节点，包含一个名值对的 `ChildEntry` 列表 |
+| **文件/目录名**| 仅存于父目录的 `ChildEntry` 中 | 节点自身 Payload 不存 name 字段 |
+| `.` (当前目录) | `P_node` | 节点自身的公钥身份 |
+| `..` (父目录) | 父级 `P_node` | 路径语义：通过解析路径栈向上推断 |
+| **软链接** (symlink) | `LINK_SOFT` (0) | 指向同 Vault 内的 `P_node` (最新版本) |
+| **远程软链接** | `LINK_SOFT_REMOTE` (1) | 指向其他 Vault 或他人的 `domain/path` |
+| **父节点记录** | `parent` 字段 | 首次被创建时的父目录记录 |
+| **inode 编号** | `P_node` | 节点的全局加密唯一身份 |
 | dirent index | ChildEntry.index (父目录内序号, monotonic auto-increment) |
 
 ### 三种节点类型
@@ -231,23 +234,20 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 
 **核心设计**: 元数据与内容完全分离。Metanet 节点交易仅存储元数据 (TLV payload), 内容存储独立——默认链下 (daemon/LFCP 存储和服务), 链上可选 (单独的数据交易, OP_DROP 模式)。
 
-```
 BitFS Metanet 节点交易 (元数据, 所有节点类型通用):
 
 Inputs:
-  Input 0: 花费锁定到 P_parent 的 UTXO
-           → Sig(D_parent) 创建 Metanet Edge
-  Input 1: 花费费用密钥链 UTXO (m/44'/236'/0')
-           → 支付矿工费
+  Input 0: 花费 P_parent 的 UTXO  (Sig D_parent → Metanet 边创建)
+  Input 1: 费用 UTXO (Sig D_fee)
 
 Outputs:
-  Output 0: OP_RETURN
-    ├── <Metanet Flag>     (4 bytes, "meta" = 0x6d657461)
-    ├── <P_node>           (33 bytes, 本节点压缩公钥)
-    ├── <TxID_parent>      (32 bytes, 父节点交易ID; 根节点为空)
-    └── <BitFS Payload>    (TLV 编码, 仅元数据/属性)
-  Output 1: P2PKH → P_node   (dust, 1 sat)
-  Output 2: P2PKH → P_parent (dust, 1 sat) [必须]
+  Output 0: OP_FALSE OP_RETURN
+            <MetaFlag: 0x6d657461>
+            <P_child: 33 Bytes> 
+            <TxID_parent: 32 Bytes>
+            <TLV_Payload: 变量>
+  Output 1: P2PKH → P_child  (dust, 1 sat, NodeUTXO)
+  Output 2: P2PKH → P_parent (dust, 1 sat, ParentUTXO) [刷新自维持]
   Output 3: P2PKH → 找零地址
 
 BitFS 数据交易 (可选, 链上内容存储):
@@ -269,105 +269,48 @@ Outputs:
 ### TLV Payload
 
 ```
-// TLV Schema (field numbers = TLV tags)
+// TLV Schema### 节点负载 (TLV 编码)
 
-enum Type { FILE = 0; DIR = 1; LINK = 2; ANCHOR = 3; }
-enum Op { CREATE = 0; UPDATE = 1; DELETE = 2; }
-enum Access { PRIVATE = 0; FREE = 1; PAID = 2; }
-enum LinkType { SOFT = 0; SOFT_REMOTE = 1; }
-enum CompressionScheme { COMPRESS_NONE = 0; COMPRESS_LZW = 1; COMPRESS_GZIP = 2; COMPRESS_ZSTD = 3; }
+与通过 Protobuf 对象对齐序列化不同，BitFS Payload 使用极度紧凑的 **TLV (Tag-Length-Value)** 编码。详见 `5-TransactionSpec.zh.md` 的 Appendix A TLV Tag 常量表。
 
-message ChildEntry {
-  uint32 index = 1;         // 子节点在父目录中的编号
-  string name = 2;          // 文件名/目录名 (名称仅存于此)
-  Type type = 3;            // FILE / DIR / LINK
-  bytes pubkey = 4;         // 子节点 P_node (33 bytes compressed)
-  bool hardened = 5;        // true = 硬化派生 (目录购买排除, 需单独购买)
-}
+```
+Field = Tag(1B) + Length(uvarint) + Value(Length bytes)
+Payload = Field₁ || Field₂ || ... || Fieldₙ
+```
 
-message RevShareEntry {
-  // 二进制序列化: address[20] || share[8] = 28 bytes/entry (大端序)
-  // 参见 revshare.SerializeRegistry: header(44) + entries(28×N) + trailer(1)
-  bytes   address = 1;    // 20-byte P2PKH address hash (收益人地址)
-  uint64  share   = 2;    // 份额数量, 8 bytes 大端序 (创作者定义总量, Covenant 守恒验证)
-}
+**操作枚举 (OpType)**:
+- `CREATE` (0)
+- `UPDATE` (1)
+- `DELETE` (2)
 
-message ISOConfig {
-  uint64 total_shares    = 1;   // 总发行量 (创作者决定)
-  uint64 creator_reserve = 2;   // 创作者自留份额
-  uint64 offer_shares    = 3;   // 公开发售份额
-  uint64 price_per_share = 4;   // 每份价格 (satoshi)
-  bytes  iso_txid        = 5;   // ISO Genesis 交易 ID
-}
+**节点枚举 (NodeType)**:
+- `FILE` (0)
+- `DIR` (1)
+- `LINK` (2)
+*(注: Anchor 锚点节点类型被移除, 直接纳入普通 DIR/EXT 范畴)*
 
-message BitFSPayload {
-  uint32 version = 1;                // 协议版本号
-  Type type = 2;                     // FILE / DIR / LINK
-  Op op = 3;                         // CREATE / UPDATE / DELETE
+**访问级别 (AccessLevel)**:
+- `PRIVATE` (0): 仅 Owner 可解密 (`ECDH(D_node, P_node)`)
+- `FREE` (1): 任何人可解密 (`ECDH(1, P_node)`)
+- `PAID` (2): 通过 HTLC 在应用层付费换取 Capsule (`capsule XOR buyer_mask`)
 
-  // 文件属性 (FILE)
-  string mime_type = 4;              // MIME 类型
-  uint64 file_size = 5;              // 原始文件大小 (bytes)
-  bytes key_hash = 6;                // SHA256(SHA256(plaintext)) — 密钥派生 + 内容承诺 (双重哈希, 不暴露原始数据哈希)
-                                     // 目录节点的 key_hash 为空 (nil)——目录不包含数据内容，仅通过 Metanet 交易链维护子节点列表。
+**目录结构序列化 (ChildEntry)**:
+在目录节点中，子节点不存储 `Name` 控制属性，所有子节点被编码为一个个 `tag 0x0E (ChildEntry)`。
+ChildEntry 的紧凑二进制存储：
 
-  // 访问控制
-  Access access = 7;                 // PRIVATE / FREE / PAID
-  uint64 price_per_kb = 8;          // 单价: satoshis/KB (仅 PAID, 支持继承)
+```
+Offset      Size      Field
+──────────────────────────────────────
+0..3        4B        Index (uint32)
+4..5        2B        Name length (uint16)
+6..N-1      N bytes   Name (UTF-8 string)
+N..N+3      4B        Type (uint32)
+N+4         1B        PubKey length (始终=33)
+N+5..K      33B       PubKey (secp256k1 压缩公钥)
+K+1         1B        Hardened flag (bool, 0|1)
+```
 
-  // 链接 (LINK, 仅软链接使用)
-  bytes link_target = 9;             // SOFT: P_node / SOFT_REMOTE: domain/path
-  LinkType link_type = 10;           // 链接类型 (SOFT / SOFT_REMOTE)
-
-  // 时间与导航
-  uint64 timestamp = 11;             // 操作时间 (Unix)
-  bytes parent = 12;                 // 首次创建父目录 P_node (根节点指向自身)
-  uint32 index = 13;                 // 本节点在父目录中的 index
-
-  // 目录 (DIR)
-  repeated ChildEntry children = 14; // 子节点列表
-  uint32 next_child_index = 15;      // 下一个可用子节点编号 (monotonic auto-increment)
-
-  // 发布
-  string domain = 16;                // DIR: 绑定的域名 (双向 DNSLink 验证)
-
-  // 元信息
-  string keywords = 17;              // 空格分隔的关键词
-  string description = 18;           // 简短描述
-
-  // === fields 19-27: tag 字节 = field 编号的十六进制 (field 19 = 0x13, ..., field 27 = 0x1B) ===
-
-  // PRIVATE 模式支持 (明文 envelope, 供钱包恢复)
-  bool encrypted = 19;               // true = 加密模式 (其余字段为默认值)
-
-  // 内容存储模式
-  bool onchain = 20;                       // true = 内容已发布到链上数据交易
-  repeated bytes content_txids = 21;       // 链上数据交易 TxID 列表 (onchain=true 时)
-
-  // 数据压缩
-  CompressionScheme compression = 22;      // 压缩方案
-
-  // 区块高度权限
-  uint32 cltv_height = 23;                 // CLTV 区块高度 (0 = 无限制)
-
-  // 收益分成
-  uint32 revenue_share = 24;               // 收益分成比例 (0-10000, 表示 0.00%-100.00%)
-
-  // 网络标识 (仅根节点, 信息性)
-  string network_name = 25;                // "mainnet" / "testnet" / "teratestnet" / "regtest" / 自定义
-
-  // 目录完整性
-  bytes merkle_root = 26;                  // 目录 Merkle root (子节点哈希树根)
-
-  // PRIVATE 模式加密载荷
-  bytes enc_payload = 27;                  // salt(16B) || nonce(12B) || 加密后的完整 TLV || GCM_tag(16B)
-
-  // === 以下字段已实现。fields 30-31 保持自然 tag 映射 (0x1E, 0x1F);
-  // fields 32+ tag 跳过 0x20-0x26 (Anchor 节点专用: TreeRootPNode/TreeRootTxID/
-  // ParentAnchorTxID/Author/CommitMessage/GitCommitSHA/FileMode), 从 0x27 起连续分配。
-  // 完整映射见 libbitfs-go/metanet/parser.go tag 常量。
-  // Anchor 节点详见 3-DetailedDesign §十二-B.E、docs/spec/03-metanet.md §Anchor。 ===
-
+目录通过将所有的 `ChildEntry` 提取出哈希并构建一颗二叉树，在 `tag 0x1A` 保存整个目录的 **MerkleRoot** 以供轻节点（SPV）快速验证节点存在性。
   // PRIVATE 模式钱包恢复: 不存储明文 key_hash / file_index (设计决策 #10)。
   // 恢复方案: 元数据加密密钥 HKDF(ECDH.x, random(16B), "bitfs-metadata-encryption")
   // 随机盐存储为 enc_payload 前缀。解密时先读取 salt 再派生密钥。

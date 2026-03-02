@@ -47,22 +47,23 @@
 
 1. **双模式**: b* 工具 (只读/无状态/Visitor) + bitfs 命令 (读写/需钱包/Owner)
 2. **Unix 哲学**: 每个工具做一件事，可管道组合
-3. **默认无状态**: b* 工具默认无状态，支持可选的 ~/.bitfs/ 缓存
-4. **统一加密**: Koblitz (secp256k1) 加密密钥 + AES-256-GCM 加密内容, 与 Bitcoin 同密码体系
-5. **SPV 模式**: 所有交易信息 + Merkle proof 本地保存，不检索区块链
-6. **Method 42**: 所有加密操作遵循 Paper 1 的方法, ECDH 直接用 D_node (BIP32 密钥), key_hash 移到 KDF 阶段, 保留 BIP32 代数关系
-7. **Unix 文件系统**: Metanet 节点模型遵循 Unix 文件系统设计 (inode, 目录项, 软链接)
-8. **Agent-first**: Daemon (LFCP) 同时服务人类和 Agent; WebMCP (浏览器) + Content Negotiation (CLI); 402 付费墙对 Agent 是可编程支付接口
-9. **BSV Association 官方库**: 使用 `github.com/bsv-blockchain/go-sdk` 作为唯一 BSV 依赖
-10. **元数据与内容分离**: Metanet 交易只存元数据, 内容独立存储 (链下默认, 链上可选)
-11. **链下传输优先**: 所有数据内容的传输均在链下进行 (Daemon/LFCP/x402); 数据可以选择永不上链, 链上仅记录元数据和内容哈希承诺
-12. **双重哈希**: 链上仅存 SHA256(SHA256(plaintext)), 不暴露原始数据哈希, 兼做密钥派生和内容承诺
-13. **收益权证券化**: 文件收益权可 ISO 发行、UTXO 化、自由流通, Covenant 强制分账
-14. **Paymail 身份层**: 支持 `bitfs://alias@domain/path` 寻址 (RFC 3986 userinfo), Paymail 做链下身份发现, 链上协议不变
-15. **去中心化 CDN**: Metanet Chain (metanet.org) 激励检索而非存储; Metanet Node 靠服务数据赚 x402 检索费, 热门内容自组织复制
-16. **双币种分工**: 用户使用 BSV (x402/HTLC) 支付, Owner 使用 MNT Token 支付 CDN 托管费; 普通用户不需要接触 Metanet Chain
-17. **链上权限记录**: 授予文件读取权限在链上记录 (Metanet 交易的 access 字段); 唯一例外是 AccessFree 模式 — 使用标量 1 作为加密私钥, 任何人可还原解密密钥, 无需链上授权记录
-18. **数据目录约定**: BSV 钱包存储于 `~/.bitfs/` (可由环境变量/配置文件/命令行覆盖); MNT 钱包存储于 `~/.metanet/`; Metanet 客户端共用 `~/.bitfs/` 中的 BSV 密钥用于支付
+3. **默认无状态**: b* 工具默认无状态，支持可选的 `~/.bitfs/` 缓存。
+4. **统一加密**: Koblitz (secp256k1) 与 HKDF 派生密钥 + AES-256-GCM 加密内容, 与 Bitcoin 同密码体系。密码派生种子使用抗特征攻击的 Argon2id。
+5. **解耦存储**: 元数据(目录/权限)强制链上 (TLV 编码), 内容(文件实体)默认链下, 可选链上 (OP_DROP)。
+6. **一切皆节点**: 目录、文件、软链接都是 Metanet 节点 (有独立公钥), 无本质区别。不支持多父节点的 Hard Link。
+7. **确定性派生**: 遵循 BIP44/BIP32 层次确定性派生, 从单一助记词完美镜像推导文件系统的公私钥树。key_hash 移到 KDF 阶段, 保留 BIP32 代数关系
+8. **Unix 文件系统**: Metanet 节点模型遵循 Unix 文件系统设计 (inode, 目录项, 软链接)
+9. **Agent-first**: Daemon (LFCP) 同时服务人类和 Agent; WebMCP (浏览器) + Content Negotiation (CLI); 402 付费墙对 Agent 是可编程支付接口
+10. **BSV Association 官方库**: 使用 `github.com/bsv-blockchain/go-sdk` 作为唯一 BSV 依赖
+11. **元数据与内容分离**: Metanet 交易只存元数据, 内容独立存储 (链下默认, 链上可选)
+12. **链下传输优先**: 所有数据内容的传输均在链下进行 (Daemon/LFCP/x402); 数据可以选择永不上链, 链上仅记录元数据和内容哈希承诺
+13. **双重哈希**: 链上仅存 SHA256(SHA256(plaintext)), 不暴露原始数据哈希, 兼做密钥派生和内容承诺
+14. **收益权证券化**: 文件收益权可 ISO 发行、UTXO 化、自由流通, Covenant 强制分账
+15. **Paymail 身份层**: 支持 `bitfs://alias@domain/path` 寻址 (RFC 3986 userinfo), Paymail 做链下身份发现, 链上协议不变
+16. **去中心化 CDN**: Metanet Chain (metanet.org) 激励检索而非存储; Metanet Node 靠服务数据赚 x402 检索费, 热门内容自组织复制
+17. **双币种分工**: 用户使用 BSV (x402/HTLC) 支付, Owner 使用 MNT Token 支付 CDN 托管费; 普通用户不需要接触 Metanet Chain
+18. **链上权限记录**: 授予文件读取权限在链上记录 (Metanet 交易的 access 字段); 唯一例外是 AccessFree 模式 — 使用标量 1 作为加密私钥, 任何人可还原解密密钥, 无需链上授权记录
+19. **数据目录约定**: BSV 钱包存储于 `~/.bitfs/` (可由环境变量/配置文件/命令行覆盖); MNT 钱包存储于 `~/.metanet/`; Metanet 客户端共用 `~/.bitfs/` 中的 BSV 密钥用于支付
 
 > **两产品定位**: BitFS (bitfs.org) = 去中心化加密文件系统协议 (`bitfs` CLI); Metanet (metanet.org) = 去中心化 CDN 网络 (`metanet` CLI)。两者关系类似 IPFS + Filecoin, 共享核心 Go 库但为独立二进制。
 
@@ -70,13 +71,21 @@
 
 ## 二、设计决策记录
 
-| # | 决策 | 选择 | 理由 |
+| # | 维度 | BitFS | IPFS |
+|------|-------|------|
+| **架构** | 账户化树状文件系统, 面向所有权 | 扁平化全局哈希表, 面向内容 |
+| **状态** | 有状态 (DAG 记录每次变更), 可回溯 | 无状态 (变更即哈希改变) |
+| **可变性** | 支持就地更新 (同一 P_node，新 TxID) | 纯不可变 (需依赖 IPNS) |
+| **加密** | 原生内建 (Method 42 / HKDF / AES-GCM) | 无原生标准加密 |
+| **访问控制**| 原生支持 Private / Free / Paid 机制 | 公开, 需在应用层实现私密性 |
+| **寻址** | 路径寻址 (`bitfs://domain/path/to/file`) | CID 寻址 (`ipfs://CID`) |
+| **元数据** | 与文件分离, TLV 编码压缩链上存储 | 嵌入式 DAG 节点 |
 |---|------|------|------|
 | 1 | 状态模型 | 默认无状态, 支持缓存 | Agent 友好 |
 | 2 | 命令粒度 | b* 独立只读工具 + bitfs 读写命令 | Unix 哲学 |
 | 3 | 数据验证 | SPV (本地 tx + Merkle proof, 不查链) | 点对点, 不依赖索引服务 |
-| 4 | 编码格式 | TLV | 紧凑、自定义 Tag-Length-Value 编码 |
-| 5 | P_node 来源 | BIP32 HD 树状派生 (镜像文件系统层次) | 稳定身份 + 确定性恢复 |
+| 4 | 编码格式 | TLV (Tag-Length-Value) | 较 Protobuf 更紧凑，节省链上 OP_RETURN 空间 |
+| 5 | 内容加密 | Koblitz (ECDH) + HKDF + AES-GCM | 结合非对称密钥协商与对称加密性能 |
 | 6 | 文件系统模型 | Unix (inode=P_node, dirent=ChildEntry, 软链接) | 成熟模型, 语义清晰 |
 | 7 | 多目录树 | Vault (BIP32 account 层级分离), 费用链 account 0 | 同一种子多棵独立树 |
 | 8 | UTXO 管理 | 自持续链 (Output 2 必须刷新 P_parent), 无需预充值 | 简单, 自举 |
@@ -126,9 +135,9 @@
 | 52 | Git repack | 后续优化, 一期不实现 | 多 packfile 不影响正确性 |
 | 53 | 加密算法 | Koblitz (secp256k1) + AES-256-GCM 混合 | Koblitz 加密密钥 (与 Bitcoin 同体系), AES 加密内容 (高效) |
 | 54 | 双重哈希 | key_hash = SHA256(SHA256(plaintext)) | 不暴露原始数据哈希, 兼做密钥派生和内容承诺 |
-| 55 | Token 购买 | Hash Chain 预购令牌 (T_i = H^(N-i)(Y)) | 批量购买高效, 链式验证 |
-| 56 | Rabin 签名 | 内容认证 (Script 内可验证) | 第三方数据真实性, 分片完整性 |
-| 57 | 区块高度权限 | OP_CHECKLOCKTIMEVERIFY | 限时访问, 定时发布, 订阅模式 |
+| 55 | P_node 管理 | Owner 不直接持有可能被网络公开的 D_node | NodeUTXO 签名所需, 不可丢弃 |
+| 56 | ACL / 多人协作 | 不直接共享 D_node, 使用付费模式的 HTLC / ACL 共享 Capsule | D_node 等同于文件最终所有权, 可转售但不可多人共享 |
+| 57 | KeyHash 作用 | SHA256(SHA256(plaintext)), 同时做 KDF 盐和完整性校验 | 一石二鸟, Method 42 的扩展点 |
 | 58 | 数据压缩 | LZW/GZIP/ZSTD (属性标记) | 链上空间优化 |
 | 59 | 内容分片 | 多交易分片 + 重组元数据 | 链上大文件存储 |
 | 60 | 元数据/内容分离 | Metanet 交易只存元数据, 内容独立 | 解耦, 两种存储模式结构一致 |
@@ -152,9 +161,9 @@
 | 78 | 支付通道 | x402 + payment channel (2-of-2 多签, 链下签名) | 流媒体/大文件微支付, BSV 通道 (User↔Metanet Node) + Token 通道 (Owner↔Metanet Node) |
 | 79 | 存储证明 | Merkle 挑战-响应 + ECDH 双层加密 | 替代 zk-SNARK, 毫秒级 vs GPU 数小时; Method 42 一石二鸟 |
 | 80 | 合并挖矿 | SHA256 PoW, BTC/BSV 兼容 | 复用现有算力, 安全性随矿工参与增长 |
-| 81 | 种子加密密钥派生 | Argon2id(password, salt, time=3, mem=64MB, p=4) 替代单次 SHA256 | 抗 GPU/ASIC 暴力破解, 单次 SHA256 可被以每秒数十亿次速度攻击 |
-| 82 | BIP32 子节点默认派生模式 | 硬化派生 (hardened=true) 为默认值 | 防止子节点 capsule 反推父节点 capsule; 非硬化仅用于显式子树购买场景 |
-| 83 | 存储证明挑战机制 | 确定性挑战: SHA256(contract_txid ‖ period), 合约创建时预计算所有期 expected_proof_hash | 兼容 UTXO 不可变性, 避免"随机挑战 vs 固化哈希"的逻辑矛盾 |
-| 84 | 群签名曲线选择 | BBS+ 需 BLS12-381 配对友好曲线, 从同一 HD seed 独立派生路径生成 | secp256k1 不支持双线性配对, 无法直接用于 BBS+ |
-| 85 | 密钥缓存安全 | cache/keys/ 使用 wallet derived_key 加密存储, 非明文 JSON | 防止文件系统读权限泄露所有已缓存的 AES 密钥 |
-| 86 | HTLC 交易证明 | htlc_tx 字段必填 (非可选), Seller 须验证链上交易存在 | 防止 Seller 在未验证 HTLC 的情况下白送 capsule |
+| 81 | 种子加密密钥派生 | Argon2id(password, salt) 替代单次 SHA256 | 抗 GPU/ASIC 暴力破解 |
+| 82 | BIP32 子节点默认派生模式 | 硬化派生 (hardened=true) 为默认值 | 防止子节点 capsule 反推父节点 capsule |
+| 83 | 节点操作原子性 | 多交易操作(如put/cp)同批次广播, 失败则幂等重试 | BSV 无原生跨交易原子性, 依赖客户端重试机制 |
+| 84 | HTLC 交易证明 | htlc_tx 字段必填, Seller 须验证链上交易存在 | 防止 Seller 未验证白送 capsule |
+| 85 | PRIVATE 信封加密 | 使用隔离的 metadata_key (HKDF) 及随机盐 (EncPayload 前缀) | 不在链上暴露明文 key_hash 或子目录名称 |
+| 86 | Link 类型 | 仅保留 Soft 和 SoftRemote, 移除 HardLink 和 Anchor | Metanet DAG 为严格树模型，节点需挂载统一 |

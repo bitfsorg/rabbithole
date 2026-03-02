@@ -192,53 +192,67 @@ P_node, D_node = wallet.DeriveNodeKey(vault, filePath)
 
 **深度限制**: `MaxPathDepth = 64`。64 层嵌套覆盖所有实际使用场景, 避免极深路径的 HMAC-SHA512 串行计算开销。超过此深度的 `put` 操作将返回 `ErrPathTooDeep` 错误。
 
-### D. Method 42 加密密钥派生
+### C. 加解密工作流 (Method 42 / HKDF)
 
-#### 加密密钥派生公式 (新方案, 保留 BIP32 代数关系)
+BitFS 使用完善后的 Method 42 加强型加密模式。采用 `HKDF-SHA256` 派生不同用途的子密钥，通过 `aes_key` 提供高速解密运算，避免对全文件体积进行缓慢的非对称算法。
 
+#### 三种访问模式
+
+**AccessPrivate (0) — 仅 Owner 可解密**
 ```
-三种 access 模式:
+shared_secret = ECDH(D_node, P_node).x      // 自身密钥对 ECDH
+aes_key = HKDF-SHA256(
+    ikm  = shared_secret,                   // 32 bytes
+    salt = key_hash,                        // SHA256(SHA256(plaintext))
+    info = "bitfs-file-encryption"
+)
+```
 
-FREE:
-  D_node 使用标量 1
-  aes_key = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash)
-  → P_node 通过 DNSLink 公开, 任何人可计算
+**AccessFree (1) — 任何人可解密**
+```
+shared_secret = ECDH(1, P_node).x           // 使用标量 1 作为私钥
+              = P_node.x                     // 等价于公钥的 x 坐标
+aes_key = HKDF-SHA256(
+    ikm  = P_node.x,                        // 任何人都能从 P_node 计算
+    salt = key_hash,
+    info = "bitfs-file-encryption"
+)
+```
 
-PRIVATE / PAID:
-  aes_key = KDF(ECDH(D_node, P_node).x, key_hash)
-  → 仅知道 D_node 的 Owner 或通过 HTLC 获得 capsule 的 Buyer 可计算
+**AccessPaid (2) — 付费解密**
+加密方式同 AccessPrivate。买家通过 HTLC 合约完成付款获取 `capsule`。
+
+#### Capsule 交换 (Paid 模式)
+买家获取胶囊并转换出本地解密 `aes_key` 的步骤：
+
+**Seller 端计算出交易的 capsule:**
+```
+buyer_mask = HKDF-SHA256(
+    ikm  = ECDH(D_seller, P_buyer).x,
+    salt = key_hash,
+    info = "bitfs-buyer-mask"
+)
+capsule = aes_key XOR buyer_mask             // 32 bytes
+capsule_hash = SHA256(capsule)               // 应用到 HTLC 锁中
+```
+
+**Buyer 端解密恢复 aes_key:**
+```
+buyer_mask = HKDF-SHA256(
+    ikm  = ECDH(D_buyer, P_seller).x,        // ECDH 对称性定律
+    salt = key_hash,
+    info = "bitfs-buyer-mask"
+)
+aes_key = capsule XOR buyer_mask             // 异或恢复出加密密钥
+```
 
 完整流程:
-  1. key_hash = SHA256(SHA256(plaintext))      ← ComputeKeyHash
-  2. S_node = ECDH(D_node, P_node)             ← BIP32 密钥直接参与 ECDH
-     → FREE: S_node = ECDH(1, P_node) = P_node (取 .x 坐标进入 KDF)
-     → PRIVATE/PAID: S_node = D_node × P_node
-  3. aes_key = HKDF-SHA256(
-       ikm = S_node.x,                         // 共享密钥 x 坐标 (32 bytes)
-       salt = key_hash,                         // 内容承诺 + 唯一性
-       info = "bitfs-file-encryption",
-       length = 32                              // AES-256 密钥
-     )
-
-关键: BIP32 代数关系保留 — S_child = S_parent + offset × P_buyer,
-      使得目录树级 capsule 派生可行 (详见 十五-B)。
-```
-
-#### 加密格式
-
-```
-加密 (aesGCMEncrypt):
-  nonce = random(12 bytes)                      ← NIST SP 800-38D
-  output = nonce || AES-256-GCM(plaintext, aes_key, nonce) || tag
-  → nonce(12B) + ciphertext + GCM_tag(16B)
-
-  内容存储: daemon 以 key_hash 为键存储加密数据 (内部实现细节)
-
-解密 (aesGCMDecrypt):
-  nonce = data[0:12]
-  ciphertext = data[12:]                        ← 包含 GCM tag
-  plaintext = AES-256-GCM.Open(ciphertext, aes_key, nonce)
-```
+  1. `key_hash = SHA256(SHA256(plaintext))` (文件双重散列)
+  2. 根据加密模式推导 `ikm`。
+  3. 执行 HKDF-SHA256 推导 `aes_key`。
+  4. 生成随机 `nonce(12B)`。
+  5. 密文 `ciphertext = AES-256-GCM.Seal(nonce, plaintext, aes_key)`
+  6. 输出格式: `nonce(12B) || ciphertext || tag(16B)`
 
 > **Nonce 安全分析**: 12 字节随机 nonce 在同一密钥下 2^48 次加密后碰撞概率达 50%。
 > BitFS 中不同文件使用不同 aes_key (由 ECDH 派生), 跨文件不存在 nonce 碰撞风险。
@@ -246,39 +260,33 @@ PRIVATE / PAID:
 
 #### PRIVATE 模式 Payload Envelope
 
-> **设计决策 #10** (交易规范): 不存储明文 key_hash / file_index。通过独立的元数据加密密钥
-> (`info="bitfs-metadata-encryption"`, `salt=random(16B)`) 实现 PRIVATE 信封加密,
-> 随机盐存储为 EncPayload 前缀。配合 BIP32 确定性派生 + 目录 ChildEntry 递归解密实现恢复。
+PRIVATE 模式使用**两层密钥**独立：元数据加密密钥（解密 TLV payload）和文件加密密钥（解密文件内容）。
 
+**元数据加密密钥**:
 ```
-加密 (EncryptPrivatePayload):
-  1. data = proto.Marshal(完整 BitFSPayload)
-  2. S_node = ECDH(D_node, P_node).x
-  3. salt = random(16B)                          // 由 crypto/rand 生成
-  4. meta_key = HKDF-SHA256(ikm=S_node, salt=salt, info="bitfs-metadata-encryption")
-  5. enc_payload = salt(16B) || nonce(12B) || AES-256-GCM(data, meta_key) || tag(16B)
+salt = random(16B)                           // 由 crypto/rand 生成
+metadata_key = HKDF-SHA256(
+    ikm  = ECDH(D_node, P_node).x,
+    salt = salt,                             // 随机盐放在 Payload 头部
+    info = "bitfs-metadata-encryption"       // 元数据域专门分隔符
+)
+```
 
-  返回 envelope:
-    BitFSPayload {
-      encrypted: true,
-      enc_payload: enc_payload
-    }
-    → 其余字段为零值, 不存储明文 key_hash / file_index
+**信封格式**:
+```
+Tag 0x13: encrypted = true
+Tag 0x1B: enc_payload = salt(16B) || nonce(12B) || AES-GCM(原始 Payload, metadata_key) || tag(16B)
+```
 
-解密 (DecryptPrivatePayload):
-  1. S_node = ECDH(D_node, P_node).x
-  2. salt = enc_payload[:16]                     // 读取前 16 字节随机盐
-  3. meta_key = HKDF-SHA256(ikm=S_node, salt=salt, info="bitfs-metadata-encryption")
-  4. data = AES-256-GCM.Open(enc_payload[16:], meta_key)
-  5. payload = proto.Unmarshal(data)
+所有详细元数据（文件名、类型、大小、key_hash、子节点列表）均在密文内部，链上不可见。
 
 钱包恢复:
   - P_node: 始终明文 (OP_RETURN 中)
   - D_node: 从 HD 种子 + BIP32 路径确定性派生
   - salt: 从 enc_payload 前 16 字节读取
-  - meta_key: HKDF(ECDH(D_node, P_node).x, salt, "bitfs-metadata-encryption")
-  - 解密 enc_payload[16:] → 恢复完整 TLV (含 key_hash, file_index 等)
-  - 目录节点解密后, ChildEntry 包含子节点 P_node + BIP32 索引 → 递归恢复
+  - meta_key: `HKDF(ECDH(D_node, P_node).x, salt, "bitfs-metadata-encryption")`
+  - TLV 解密提取 ChildEntry 字典。
+  - 递归向下推导演算全部子节点树。
   → 仅凭助记词即可恢复整棵树
 ```
 
@@ -531,96 +539,51 @@ HD 路径不因网络而变 (`m/44'/236'/N'` 始终相同)。网络影响:
 同一 HD 种子在不同网络生成相同密钥对, 但地址不同 (version byte), 交易不互通 (不同链)。种子级别隔离确保不会误操作。
 
 ---
-## 四-B、Metanet 交易结构详细设计
+## 四、交易格式与智能合约详细设计
 
-本节定义每种文件系统操作对应的完整交易结构, 与 `src/internal/metanet/builder.go` 和 `fs.go` 的实现一致。
+所有交易都采用统一架构，并包含四类基本的交易模板：CreateRoot, CreateChild, SelfUpdate, DataTx（链下状态不需要发该交易）。
 
-### 三种基础交易模板
-
-#### 模板 1: BuildCreateRoot (创建根节点)
-
+### Template 1: CreateRoot (创建根节点)
+专门用于初次分配 Vault 的根。
 ```
 Inputs:
-  Input 0:  费用密钥链 UTXO
-            签名: Sig(D_fee)
-            来源: m/44'/236'/0'
+  [0] FeeUTXO              签名: Sig(D_fee)
 
 Outputs:
-  Output 0: OP_RETURN (0 satoshis)
-            OP_FALSE OP_RETURN
-            <MetaFlag: 0x6d657461 (4B)>
-            <P_node: 压缩公钥 (33B)>
-            <TxID_parent: 空 (0B)>         ← 根节点无父
-            <TLV: BitFSPayload>
-
-  Output 1: P2PKH → P_node (1 sat)
-            → 本节点 UTXO (Vout=1), 将来创建子节点时花费
-
-  Output 2: P2PKH → 找零地址 (Change)
-
-UTXO 消耗: 1 fee UTXO
-UTXO 产生: NodeUTXO (Vout=1), ParentUTXO=nil
+  [0] OP_FALSE OP_RETURN <MetaFlag> <P_node> <empty> <Payload>    (0 sat)
+  [1] P2PKH → P_node                                              (1 sat, NodeUTXO)
+  [2] P2PKH → ChangeAddr                                          (余额, ChangeUTXO)
 ```
 
-#### 模板 2: BuildCreateChild (创建子节点)
-
+### Template 2: CreateChild (创建子节点)
+用于创建正常的下级 Metanet 节点，形成边（Edge）。
 ```
 Inputs:
-  Input 0:  锁定到 P_parent 的任意 UTXO (默认模式下为 Vout=2 刷新 UTXO)
-            签名: Sig(D_parent) → 创建 Metanet Edge
-  Input 1:  费用密钥链 UTXO
-            签名: Sig(D_fee)
+  [0] ParentUTXO            签名: Sig(D_parent)  ← Metanet 边
+  [1] FeeUTXO               签名: Sig(D_fee)
 
 Outputs:
-  Output 0: OP_RETURN (0 satoshis)
-            OP_FALSE OP_RETURN
-            <MetaFlag: 0x6d657461 (4B)>
-            <P_node: 子节点压缩公钥 (33B)>
-            <TxID_parent: 父节点 TxID (32B)>
-            <TLV: BitFSPayload>
-
-  Output 1: P2PKH → P_node (1 sat)
-            → 子节点 UTXO (Vout=1)
-
-  Output 2: P2PKH → P_parent (1 sat)
-            → 刷新父节点 UTXO (自持续链)
-
-  Output 3: P2PKH → 找零地址 (Change)
-
-UTXO 消耗: 1 P_parent UTXO + 1 fee UTXO
-UTXO 产生: NodeUTXO (Vout=1), ParentUTXO (Vout=2)
+  [0] OP_FALSE OP_RETURN <MetaFlag> <P_child> <TxID_parent> <Payload>    (0 sat)
+  [1] P2PKH → P_child                                                    (1 sat, NodeUTXO)
+  [2] P2PKH → P_parent                                                   (1 sat, ParentUTXO 刷新)
+  [3] P2PKH → ChangeAddr                                                 (余额, ChangeUTXO)
 ```
 
-#### 模板 3: BuildSelfUpdate (自更新)
-
+### Template 3: SelfUpdate (自更新)
+更新节点本身状态（改权限、名字、或修改 Directory 内的内容而不创建新节点）。
 ```
 Inputs:
-  Input 0:  P_self UTXO (自身 Vout=1)
-            签名: Sig(D_node)
-  Input 1:  费用密钥链 UTXO
-            签名: Sig(D_fee)
+  [0] NodeUTXO              签名: Sig(D_node)
+  [1] FeeUTXO               签名: Sig(D_fee)
 
 Outputs:
-  Output 0: OP_RETURN (0 satoshis)
-            OP_FALSE OP_RETURN
-            <MetaFlag: 0x6d657461 (4B)>
-            <P_node: 压缩公钥 (33B)>
-            <TxID_parent: 原始父节点 TxID (32B)>  ← 不变
-            <TLV: 更新后的 BitFSPayload>
-
-  Output 1: P2PKH → P_node (1 sat)
-            → 刷新自身 UTXO (Vout=1)
-
-  Output 2: P2PKH → 找零地址 (Change)
-
-UTXO 消耗: 1 P_self UTXO + 1 fee UTXO
-UTXO 产生: NodeUTXO (Vout=1), ParentUTXO=nil
-
-关键: ParentTxID 在 SelfUpdate 中保持不变 (创建时的父 TxID)。
+  [0] OP_FALSE OP_RETURN <MetaFlag> <P_node> <TxID_parent> <Payload>    (0 sat)
+  [1] P2PKH → P_node                                                    (1 sat, NodeUTXO 刷新)
+  [2] P2PKH → ChangeAddr                                                (余额, ChangeUTXO)
 ```
 
-#### 模板 4: BuildDataTransaction (链上数据发布, 可选)
-
+### Template 4: DataTx (链上数据发布, 可选)
+当将特定小文件强制推上 BSV 区块链上的脚本使用。
 ```
 Inputs:
   Input 0:  任意 UTXO (P_node 或费用密钥链)
@@ -630,16 +593,12 @@ Outputs:
   Output 0: <encrypted_content> OP_DROP
             OP_DUP OP_HASH160 <H160(P_node)> OP_EQUALVERIFY OP_CHECKSIG
             → 加密内容在 spendable output, 锁定到 P_node
-            → 内容在花费时通过 OP_DROP 丢弃, 但永久记录在区块链
-  Output 1: P2PKH → 找零地址
-
-UTXO 消耗: 1 UTXO (任意)
-UTXO 产生: 1 content UTXO (locked to P_node)
-
-注: 此交易独立于 Metanet 节点交易。节点交易的 TLV 中
-    onchain=true, content_txids=[此交易的 TxID]。
-    大文件可分多笔数据交易, 每笔对应一个 chunk。
+  Output 1: P2PKH → ChangeAddr
 ```
+
+### 交易重发与幂等性设计
+因为诸如 `mv` 或跨目录调整往往涉及超过 1 个 Tx，系统采用无序重发解决失效网络请求。
+- **Tx 1 已广播, Tx 2 未广播**: 新 Metanet 节点已建但目录不在主树可见，重启系统比对 UTXO 自动再次发起 Tx2。
 
 ### 14 种文件系统操作的交易组合
 
@@ -3225,6 +3184,38 @@ BLS 密钥派生 (从 BIP39 seed):
   3. (可选) 用新 GPK 重新加密内容, 防止被撤销成员解密新版本
 ```
 
----
+## 附录：TLV Tag 常量表
+
+| Tag (hex) | Tag (dec) | 常量名 | 类型 | 说明 |
+|-----------|-----------|--------|------|------|
+| `0x01` | 1 | `tagVersion` | uint32 | 协议版本 |
+| `0x02` | 2 | `tagType` | uint32 | 节点类型: File(0)/Dir(1)/Link(2) |
+| `0x03` | 3 | `tagOp` | uint32 | 操作: Create(0)/Update(1)/Delete(2) |
+| `0x04` | 4 | `tagMimeType` | string | MIME 类型 |
+| `0x05` | 5 | `tagFileSize` | uint64 | 文件大小 (明文，bytes) |
+| `0x06` | 6 | `tagKeyHash` | bytes | SHA256(SHA256(plaintext))，32B |
+| `0x07` | 7 | `tagAccess` | uint32 | 访问级别: Private(0)/Free(1)/Paid(2) |
+| `0x08` | 8 | `tagPricePerKB` | uint64 | 价格 (satoshis/KB)，Paid 模式 |
+| `0x09` | 9 | `tagLinkTarget` | bytes | 软链接目标 P_node，33B |
+| `0x0A` | 10 | `tagLinkType` | uint32 | 链接类型: Soft(0)/SoftRemote(1) |
+| `0x0B` | 11 | `tagTimestamp` | uint64 | Unix 时间戳 (秒) |
+| `0x0C` | 12 | `tagParent` | bytes | 父节点 P_node |
+| `0x0D` | 13 | `tagIndex` | uint32 | 节点在父目录中的索引 |
+| `0x0E` | 14 | `tagChildEntry` | binary | ChildEntry 序列化 (可重复) |
+| `0x0F` | 15 | `tagNextChildIndex` | uint32 | 下一个可用子索引 |
+| `0x10` | 16 | `tagDomain` | string | DNS 域名绑定 |
+| `0x11` | 17 | `tagKeywords` | string | 搜索关键词 |
+| `0x12` | 18 | `tagDescription` | string | 文件描述 |
+| `0x13` | 19 | `tagEncrypted` | uint32 | 是否加密: 0=否, 1=是 |
+| `0x14` | 20 | `tagOnChain` | uint32 | 内容是否在链上: 0=否, 1=是 |
+| `0x15` | 21 | `tagContentTxID` | bytes | DataTx 的 TxID (可重复) |
+| `0x16` | 22 | `tagCompression` | uint32 | 压缩算法: None(0)/Gzip(1) |
+| `0x17` | 23 | `tagCltvHeight` | uint32 | CLTV 时间锁区块高度 |
+| `0x18` | 24 | `tagRevenueShare` | uint32 | 收入分成比例 (0-10000 = 0-100%) |
+| `0x19` | 25 | `tagNetworkName` | string | 网络名称 |
+| `0x1A` | 26 | `tagMerkleRoot` | bytes | 目录 Merkle 根，32B |
+| `0x1B` | 27 | `tagEncPayload` | bytes | 加密 payload (PRIVATE 模式) |
+
+> (本列表同 `5-TransactionSpec.zh.md` 的核心规范映射对齐，具体参见 libbitfs-go 规范实现)。
 
 > Metanet Chain 详细设计已移至独立文档: [../metanet/3-DetailedDesign.zh.md](../metanet/3-DetailedDesign.zh.md)
