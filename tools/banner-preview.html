@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>BitFS CLI Banner — Final Preview</title>
+<style>
+  body {
+    background: #0a0908;
+    color: #d4cdc4;
+    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', Menlo, Monaco, monospace;
+    padding: 40px 40px 80px;
+    line-height: 1.15;
+    font-size: 15px;
+  }
+  .banner-box {
+    background: #110f0d;
+    border: 1px solid #2e2924;
+    border-radius: 12px;
+    padding: 32px 40px;
+    margin-bottom: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+  .banner-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #a07548, #c9956b, #dbb08a, #c9956b, #a07548);
+  }
+  .banner-box.metanet::before {
+    background: linear-gradient(90deg, #b07630, #e8983e, #f0b060, #e8983e, #b07630);
+  }
+  .label {
+    color: #8a7a68;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 24px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e1b18;
+  }
+  .label .colors { color: #5a5045; }
+  pre {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.15;
+    font-family: inherit;
+  }
+  .tx { color: #d4cdc4; }
+  .dm { color: #8c8076; }
+  h1 { color: #c9956b; font-weight: 300; font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: #6a6058; font-size: 13px; margin-bottom: 48px; }
+</style>
+</head>
+<body>
+
+<h1>BitFS CLI Banner — Final</h1>
+<p class="subtitle">figlet ANSI Shadow + gradient-string with BitFS/Metanet brand colors. 7 gradient variants.</p>
+
+
+<div class="banner-box">
+<div class="label">BitFS — botanical <span class="colors">[#a07548 → #c9956b → #dbb08a]</span></div>
+<pre>
+██████╗ ██╗████████╗███████╗███████╗
+██╔══██╗██║╚══██╔══╝██╔════╝██╔════╝
+██████╔╝██║   ██║   █████╗  ███████╗
+██╔══██╗██║   ██║   ██╔══╝  ╚════██║
+██████╔╝██║   ██║   ██║     ███████║
+╚═════╝ ╚═╝   ╚═╝   ╚═╝     ╚══════╝
+                                    
+  <span class="tx">Decentralized Encrypted File System</span>  <span class="dm">v0.1.0</span>
+  <span class="dm">https://bitfs.org</span>
+</pre>
+</div>
+
+<div class="banner-box">
+<div class="label">BitFS — amberLight <span class="colors">[#b47630 → #e8983e → #f0b868]</span></div>
+<pre>
+██████╗ ██╗████████╗███████╗███████╗
+██╔══██╗██║╚══██╔══╝██╔════╝██╔════╝
+██████╔╝██║   ██║   █████╗  ███████╗
+██╔══██╗██║   ██║   ██╔══╝  ╚════██║
+██████╔╝██║   ██║   ██║     ███████║
+╚═════╝ ╚═╝   ╚═╝   ╚═╝     ╚══════╝
+                                    
+  <span class="tx">Decentralized Encrypted File System</span>  <span class="dm">v0.1.0</span>
+  <span class="dm">https://bitfs.org</span>
+</pre>
+</div>
+
+<div class="banner-box metanet">
+<div class="label">MetaNet — amber <span class="colors">[#b47630 → #e8983e → #f0b868]</span></div>
+<pre>
+███╗   ███╗███████╗████████╗ █████╗ ███╗   ██╗███████╗████████╗
+████╗ ████║██╔════╝╚══██╔══╝██╔══██╗████╗  ██║██╔════╝╚══██╔══╝
+██╔████╔██║█████╗     ██║   ███████║██╔██╗ ██║█████╗     ██║   
+██║╚██╔╝██║██╔══╝     ██║   ██╔══██║██║╚██╗██║██╔══╝     ██║   
+██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██║ ╚████║███████╗   ██║   
+╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝   
+                                                               
+  <span class="tx">Decentralized CDN Network</span>  <span class="dm">v0.1.0-dev [PREVIEW]</span>
+  <span class="dm">https://metanet.org</span>
+</pre>
+</div>
+
+<div class="banner-box metanet">
+<div class="label">MetaNet — botanical <span class="colors">[#a07548 → #c9956b → #dbb08a]</span></div>
+<pre>
+███╗   ███╗███████╗████████╗ █████╗ ███╗   ██╗███████╗████████╗
+████╗ ████║██╔════╝╚══██╔══╝██╔══██╗████╗  ██║██╔════╝╚══██╔══╝
+██╔████╔██║█████╗     ██║   ███████║██╔██╗ ██║█████╗     ██║   
+██║╚██╔╝██║██╔══╝     ██║   ██╔══██║██║╚██╗██║██╔══╝     ██║   
+██║ ╚═╝ ██║███████╗   ██║   ██║  ██║██║ ╚████║███████╗   ██║   
+╚═╝     ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝   ╚═╝   
+                                                               
+  <span class="tx">Decentralized CDN Network</span>  <span class="dm">v0.1.0-dev [PREVIEW]</span>
+  <span class="dm">https://metanet.org</span>
+</pre>
+</div>
+
+
+</body>
+</html>
