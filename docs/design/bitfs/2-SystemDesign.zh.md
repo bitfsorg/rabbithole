@@ -226,7 +226,7 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 严格遵循 The Metanet Technical Summary:
 - **Node** = 一笔包含 OP_RETURN 的交易, 带 `<Metanet Flag> <P_node> <TxID_parent>`
 - **Edge** = 子交易的 Input 中包含 `Sig P_parent` (父节点私钥签名, 花费锁定到 P_parent 的 UTXO)
-- **Node ID** = `H(P_node || TxID_node)` (全局唯一)
+- **Node ID** = `H(P_node || TxID_node || Vout)` (全局唯一，多输出批量交易中同一 TxID 的不同节点以 Vout 区分)
 - **版本控制** = 同一 P_node 的多个 TxID, 区块高度/TTOR 最高者为当前版本
 - **权限控制** = 只有 P_node 的私钥持有者才能创建子节点 (BSV 网络验证签名)
 
@@ -261,6 +261,8 @@ Outputs:
             → 加密内容在 spendable output, 锁定到 P_node
   Output 1: P2PKH → 找零
 ```
+
+**多输出批量交易**: MutationBatch 将多个节点操作打包进单笔交易。输出布局为交替的 OP_RETURN + P2PKH 对（OpDelete 无 P2PKH），最后追加找零。节点身份以 `(P_node, TxID, Vout)` 唯一标识，其中 Vout 是该节点 P2PKH 输出的索引。详见 spec `02-tx.md`。
 
 **元数据/内容分离**: Metanet 节点交易的结构始终相同, 无论内容存在链上还是链下。链下模式 (默认): daemon (LFCP) 存储和服务加密内容。链上模式 (可选): 额外发布一笔或多笔数据交易, 加密内容通过 OP_DROP 嵌入 spendable output。TLV 中的 `onchain` 标志和 `content_txids` 字段记录链上数据交易的引用。
 
