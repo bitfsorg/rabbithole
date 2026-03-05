@@ -1,6 +1,6 @@
 # BitFS 系统设计
 
-> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · **系统设计** (本文档) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · **系统设计** (本文档) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第二层：模块划分、接口定义、数据流。
 > 各节的详细设计（算法、数据结构、协议细节）见 [3-DetailedDesign.zh.md](3-DetailedDesign.zh.md) 中对应的 B 节。
@@ -914,7 +914,13 @@ exit / quit / bye             退出
 - **重复购买 = 重复收费**: Seller 不做去重
 - **Buyer 负责缓存**: 购买后 key_capsule 在链上 (HTLC 揭示), 本地缓存到 ~/.bitfs/cache/keys/
 - **后续访问不经过 Seller**: Buyer 直接从 Seller daemon 拉加密数据 + 本地解密
-- **一期不需要支付通道**: BSV 链上 HTLC 手续费极低, 单次购买场景足够。流媒体/大文件微支付场景的支付通道见 [Metanet Chain 设计](../metanet/) (CDN 阶段引入)
+- **当前实现边界**: BitFS 文件购买以链上 HTLC/Token 为主, BSV 链上手续费足够覆盖单次购买场景
+- **协议预留边界**: 流媒体/大文件微支付的支付通道由 Metanet Overlay 文档定义, 不在 BitFS 协议层强制
+
+| 能力 | 当前实现边界 | 协议预留边界 |
+|------|-------------|-------------|
+| BitFS buy 流程 | `bget --buy` + HTLC/Token | 保留与上层通道体系的兼容接口 |
+| 高频微支付 | 非必需 | 见 [Metanet 设计](../metanet/) 的支付通道章节 |
 
 ### Method 42 握手协议
 
@@ -2034,7 +2040,7 @@ Metanet 协议层面, CreateChild 的 Input 0 可花费锁定到 P_parent 的**�
 
 ---
 
-> Metanet Chain (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
+> Metanet Overlay Network (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
 
 ---
 

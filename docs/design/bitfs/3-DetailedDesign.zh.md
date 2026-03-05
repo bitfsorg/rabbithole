@@ -1,6 +1,6 @@
 # BitFS 详细设计
 
-> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · **详细设计** (本文档) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · **详细设计** (本文档) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第三层：算法、数据结构、协议细节。
 > 每个 B 节对应系统设计中同编号章节的详细展开。
@@ -3218,4 +3218,4 @@ BLS 密钥派生 (从 BIP39 seed):
 
 > (本列表同 `5-TransactionSpec.zh.md` 的核心规范映射对齐，具体参见 libbitfs-go 规范实现)。
 
-> Metanet Chain 详细设计已移至独立文档: [../metanet/3-DetailedDesign.zh.md](../metanet/3-DetailedDesign.zh.md)
+> Metanet Overlay Network 详细设计已移至独立文档: [../metanet/3-DetailedDesign.zh.md](../metanet/3-DetailedDesign.zh.md)

@@ -3,7 +3,7 @@
 > 本文档为 Metanet 设计文档体系的第三层：算法、数据结构、协议细节。
 >
 > **文档体系**:
-> - [整体设计](../0-OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
+> - [整体设计](../OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
 > - [概念设计](1-ConceptDesign.zh.md) — 产品定位、核心理念、设计原则
 > - [系统设计](2-SystemDesign.zh.md) — 节点架构、合约、支付通道
 > - **详细设计** (本文档) — 共识、挖矿、结算协议细节
@@ -11,7 +11,7 @@
 
 ---
 
-本文档补充 Metanet Chain 的精确协议细节、Script 设计和经济参数, 与系统设计各节对应。
+本文档补充 Metanet Overlay Network 的精确协议细节、Script 设计和经济参数, 与系统设计各节对应。
 
 ---
 
@@ -135,7 +135,7 @@ func VerifyStorageProof(
 
 ## 四、支付通道协议
 
-> **适用范围**: 本节描述的 2-of-2 多签支付通道协议适用于所有三种通道类型（BSV User↔Node 通道、MNT Owner↔Node 通道、MNT Node↔Node 通道）。三者使用相同的脚本结构和撤销逻辑，唯一区别是锁定的币种（BSV 或 MNT）和所在链（BSV 主链或 Metanet Chain）。
+> **适用范围**: 本节描述的 2-of-2 多签支付通道协议适用于所有三种通道类型（BSV User↔Node 通道、MNT Owner↔Node 通道、MNT Node↔Node 通道）。三者使用相同的脚本结构和撤销逻辑，唯一区别是锁定的币种（BSV 或 MNT）和所在链（BSV 主链或 Metanet Overlay）。
 
 ```
 支付通道交易结构:
@@ -178,10 +178,10 @@ func VerifyStorageProof(
 
 Node↔Node MNT 通道结算说明:
   - 场景: Node_A 从 Node_B 批发热门数据 (系统设计第四节 "Metanet Node 间批发")
-  - 通道位于 Metanet Chain (MNT Token), 非 BSV 主链
+  - 通道位于 Metanet Overlay (MNT Token), 非 BSV 主链
   - Funding: 买方 Node_A 锁入 MNT Token
   - 更新: 每次数据传输 (chunk 级别), 双方签署新的余额分配
-  - 结算: 通道到期或余额耗尽时, 广播最新 Commitment TX 到 Metanet Chain
+  - 结算: 通道到期或余额耗尽时, 广播最新 Commitment TX 到 Metanet Overlay
   - 定价: 由 Node_B 自行设定 (通常低于 x402 零售价, 体现批发折扣)
   - 与 Owner↔Node 通道的区别仅在于双方角色 — 脚本结构和争议机制完全相同
 ```

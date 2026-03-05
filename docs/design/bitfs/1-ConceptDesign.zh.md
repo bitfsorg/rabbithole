@@ -1,9 +1,9 @@
 # BitFS 概念设计
 
-> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · **概念设计** (本文档) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · **概念设计** (本文档) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第一层：项目愿景、核心概念、架构概览。
-> Metanet Chain (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
+> Metanet Overlay Network (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
 
 ---
 
@@ -33,7 +33,7 @@
 <td colspan="2" style="border:1px solid #999; padding:0.5em; background:#f5f5f5; text-align:center;"><strong>链下内容存储</strong><br><span style="font-size:9pt; color:#555;">Daemon (LFCP)</span></td>
 </tr>
 <tr>
-<td colspan="4" style="border:1px solid #999; padding:0.5em; background:#eaeaea; text-align:center;"><strong>Metanet Chain (去中心化 CDN)</strong> — metanet.org<br><span style="font-size:9pt; color:#555;">BSV 同构链, MNT Token, 存储合约, 支付通道</span></td>
+<td colspan="4" style="border:1px solid #999; padding:0.5em; background:#eaeaea; text-align:center;"><strong>可选外部 CDN 集成 (Metanet)</strong> — 详见 `docs/design/metanet/`<br><span style="font-size:9pt; color:#555;">BitFS 仅定义接口边界（寻址、x402、内容协议），CDN 运营与激励由 Metanet 文档定义</span></td>
 </tr>
 </table>
 
@@ -54,10 +54,9 @@
 13. **双重哈希**: 链上仅存 SHA256(SHA256(plaintext)), 不暴露原始数据哈希, 兼做密钥派生和内容承诺
 14. **收益权证券化**: 文件收益权可 ISO 发行、UTXO 化、自由流通, Covenant 强制分账
 15. **Paymail 身份层**: 支持 `bitfs://alias@domain/path` 寻址 (RFC 3986 userinfo), Paymail 做链下身份发现, 链上协议不变
-16. **去中心化 CDN**: Metanet Chain (metanet.org) 激励检索而非存储; Metanet Node 靠服务数据赚 x402 检索费, 热门内容自组织复制
-17. **双币种分工**: 用户使用 BSV (x402/HTLC) 支付, Owner 使用 MNT Token 支付 CDN 托管费; 普通用户不需要接触 Metanet Chain
-18. **链上权限记录**: 授予文件读取权限在链上记录 (Metanet 交易的 access 字段); 唯一例外是 AccessFree 模式 — 使用标量 1 作为加密私钥, 任何人可还原解密密钥, 无需链上授权记录
-19. **数据目录约定**: BSV 钱包存储于 `~/.bitfs/` (可由环境变量/配置文件/命令行覆盖); MNT 钱包存储于 `~/.metanet/`; Metanet 客户端共用 `~/.bitfs/` 中的 BSV 密钥用于支付
+16. **跨产品边界清晰**: BitFS 只定义文件系统协议与支付接口；CDN 运营、激励与共识规则由 Metanet 文档定义
+17. **链上权限记录**: 授予文件读取权限在链上记录 (Metanet 交易的 access 字段); 唯一例外是 AccessFree 模式 — 使用标量 1 作为加密私钥, 任何人可还原解密密钥, 无需链上授权记录
+18. **数据目录约定**: BSV 钱包存储于 `~/.bitfs/` (可由环境变量/配置文件/命令行覆盖)
 
 > **两产品定位**: BitFS (bitfs.org) = 去中心化加密文件系统协议 (`bitfs` CLI); Metanet (metanet.org) = 去中心化 CDN 网络 (`metanet` CLI)。两者关系类似 IPFS + Filecoin, 共享核心 Go 库但为独立二进制。
 
@@ -84,7 +83,7 @@
 | 7 | 多目录树 | Vault (BIP32 account 层级分离), 费用链 account 0 | 同一种子多棵独立树 |
 | 8 | UTXO 管理 | 自持续链 (Output 2 必须刷新 P_parent), 无需预充值 | 简单, 自举 |
 | 9 | 买卖机制 | HTLC 原子交换 + Token 批量预购 | HTLC 单次购买, Token 批量高效 |
-| 10 | 支付通道 | BSV 层: 不需要 (手续费足够低, 链上 HTLC 够用); Metanet Chain CDN 层: 引入 payment channel (见 #78) | 基础购买简单, 流媒体/微支付用通道 |
+| 10 | 支付通道 | BitFS 协议层不强制支付通道，默认链上 HTLC 足够 | 保持购买流程简单，通道能力留作上层扩展 |
 | 11 | 加密密钥派生 | aes_key = KDF(ECDH(D_node, P_node), key_hash), D_node 保留 BIP32 代数关系 | Method 42 ECDH, 无需存储, 支持目录树级派生 (已由 #66 修订) |
 | 12 | key_hash 双重用途 | key_hash = SHA256(SHA256(plaintext)) 兼做密钥派生和内容承诺, 移除 encrypted_hash | 双重哈希不暴露原始数据, 链上仅存一个哈希 |
 | 13 | 价格模型 | 单价 price_per_kb (sat/KB), 支持目录继承 | 灵活, 总价客户端计算 |
@@ -146,18 +145,9 @@
 | 69 | Paymail 集成 | 补充层 (非替代), daemon 同时暴露 Paymail capabilities | 复用 BSV 生态, 一个域名多用户, 人类友好 |
 | 70 | URI 多用户寻址 | bitfs://alias@domain/path (RFC 3986 userinfo) | 标准 URI 格式, 与 FTP/SSH/Git 一致 |
 | 71 | Paymail 位置 | 链下人机交互层, 链上协议不变 | 解耦身份发现与链上数据 |
-| 72 | Metanet Chain 定位 | 去中心化 CDN, 非存储网络 | Metanet Node 靠服务数据赚钱 (x402), 不是靠存储数据; 与 Filecoin "付费存储" 模型根本不同 |
-| 73 | Metanet Chain 架构 | BSV 完全同构 (同交易格式, 同 Script 引擎, 不同创世块) | 零额外学习成本, 可 fork BSV 节点最小修改实现 |
-| 74 | 双币种分工 | BSV 面向用户, MNT Token 面向 Metanet Node 市场 | 普通用户不需要接触 Metanet Chain/Token; Token 需求 = Owner 对 CDN 服务的需求 |
-| 75 | 热数据策略 | CDN 自组织复制 (Metanet Node 利润驱动) | 不需要存储合约/证明/副本管理; 越热门→越多 Metanet Node 缓存→更好可用性 |
-| 76 | 冷数据策略 | 1-to-1 存储合约 (Owner 付 Token) | 副本数 = Owner 签多少份合约, 协议不管副本策略 |
-| 77 | 内容分成 | Metanet Node 与 Owner 分享 x402 收入 (revenue_share 字段) | 热门内容 Owner 被动赚钱, 激励 Metanet Node 主动缓存和推广 |
-| 78 | 支付通道 | x402 + payment channel (2-of-2 多签, 链下签名) | 流媒体/大文件微支付, BSV 通道 (User↔Metanet Node) + Token 通道 (Owner↔Metanet Node) |
-| 79 | 存储证明 | Merkle 挑战-响应 + ECDH 双层加密 | 替代 zk-SNARK, 毫秒级 vs GPU 数小时; Method 42 一石二鸟 |
-| 80 | 合并挖矿 | SHA256 PoW, BTC/BSV 兼容 | 复用现有算力, 安全性随矿工参与增长 |
-| 81 | 种子加密密钥派生 | Argon2id(password, salt) 替代单次 SHA256 | 抗 GPU/ASIC 暴力破解 |
-| 82 | BIP32 子节点默认派生模式 | 硬化派生 (hardened=true) 为默认值 | 防止子节点 capsule 反推父节点 capsule |
-| 83 | 节点操作原子性 | 多交易操作(如put/cp)同批次广播, 失败则幂等重试 | BSV 无原生跨交易原子性, 依赖客户端重试机制 |
-| 84 | HTLC 交易证明 | htlc_tx 字段必填, Seller 须验证链上交易存在 | 防止 Seller 未验证白送 capsule |
-| 85 | PRIVATE 信封加密 | 使用隔离的 metadata_key (HKDF) 及随机盐 (EncPayload 前缀) | 不在链上暴露明文 key_hash 或子目录名称 |
-| 86 | Link 类型 | 仅保留 Soft 和 SoftRemote, 移除 HardLink 和 Anchor | Metanet DAG 为严格树模型，节点需挂载统一 |
+| 72 | 种子加密密钥派生 | Argon2id(password, salt) 替代单次 SHA256 | 抗 GPU/ASIC 暴力破解 |
+| 73 | BIP32 子节点默认派生模式 | 硬化派生 (hardened=true) 为默认值 | 防止子节点 capsule 反推父节点 capsule |
+| 74 | 节点操作原子性 | 多交易操作(如put/cp)同批次广播, 失败则幂等重试 | BSV 无原生跨交易原子性, 依赖客户端重试机制 |
+| 75 | HTLC 交易证明 | htlc_tx 字段必填, Seller 须验证链上交易存在 | 防止 Seller 未验证白送 capsule |
+| 76 | PRIVATE 信封加密 | 使用隔离的 metadata_key (HKDF) 及随机盐 (EncPayload 前缀) | 不在链上暴露明文 key_hash 或子目录名称 |
+| 77 | Link 类型 | 仅保留 Soft 和 SoftRemote, 移除 HardLink 和 Anchor | Metanet DAG 为严格树模型，节点需挂载统一 |

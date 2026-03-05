@@ -40,14 +40,14 @@
 <td style="border:1px solid #999; padding:0.5em; text-align:center;">无</td>
 </tr>
 <tr style="background:#f7f0ea;">
-<td style="border:1px solid #999; padding:0.5em; font-weight:600;">Layer 3: Metanet Chain</td>
-<td style="border:1px solid #999; padding:0.5em;">CDN 托管、节点激励、支付通道批量结算</td>
+<td style="border:1px solid #999; padding:0.5em; font-weight:600;">Layer 3: Metanet Overlay Network</td>
+<td style="border:1px solid #999; padding:0.5em;">CDN 托管、节点激励、支付通道结算、ML 共识排序 (5 分钟 PoW)</td>
 <td style="border:1px solid #999; padding:0.5em;">内容所有者、节点运营商</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center;">MNT</td>
 </tr>
 </table>
 
-**数据无需跨链**：BSV 主链只存元数据 (Metanet DAG 交易)；内容数据始终在链下流转 (Daemon 或 CDN 节点)。Metanet Chain 管理经济激励，不承载文件内容。
+**数据无需跨链**：BSV 主链只存元数据 (Metanet DAG 交易)；内容数据始终在链下流转 (Daemon 或 CDN 节点)。Metanet Overlay Network 管理经济激励与 ON 层共识排序（CSW Multilevel Blockchain，Bitcoin 风格 PoW，5 分钟出块），不承载文件内容。
 
 ---
 
@@ -97,7 +97,7 @@ libbitfs-go/
 <tr>
 <td style="border:1px solid #999; padding:0.5em; text-align:right; background:#f7f0ea;">内容所有者</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
-<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#e8e8e8; font-weight:600;">Metanet Chain</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#e8e8e8; font-weight:600;">Metanet Overlay Network</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
 <td style="border:1px solid #999; padding:0.5em; background:#fafafa;">CDN 托管合约 + MNT 结算</td>
 </tr>
@@ -149,7 +149,7 @@ design/
 2. **Agent-first** — CLI 输出结构化 (JSON)，payment 付费墙即可编程支付接口
 3. **默认加密** — Method 42 (ECDH + BIP32)，所有数据加密存储，密钥由文件路径确定性派生
 4. **SPV 模式** — 本地保存交易 + Merkle proof，从不查询区块链全节点
-5. **BSV 同构** — Metanet Chain 使用与 BSV 相同的交易格式和 Script 引擎
+5. **Overlay + ML 共识** — Metanet 是 BSV 上的 Overlay Network；ON 层按 CSW Multilevel Blockchain 采用 Bitcoin 风格 PoW（5 分钟出块）排序，区块通过合法 BSV 交易确认
 6. **BRC 标准兼容** — 遵循 BSV Association 的 BRC 标准体系
 7. **BSV 官方库** — 唯一 BSV 依赖为 `github.com/bsv-blockchain/go-sdk`
 8. **元数据与内容分离** — 链上只存元数据 (Metanet DAG)，内容独立存储

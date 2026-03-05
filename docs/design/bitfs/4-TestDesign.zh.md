@@ -1,6 +1,6 @@
 # BitFS 测试设计
 
-> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · **测试设计** (本文档) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · **测试设计** (本文档) · [交易规范](5-TransactionSpec.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第四层：测试用例设计。
 > 设计章节交叉引用: 系统设计章节（如"第二节"）见 [2-SystemDesign](2-SystemDesign.zh.md)，详细设计章节（如"第四-B节"）见 [3-DetailedDesign](3-DetailedDesign.zh.md)。
@@ -1019,7 +1019,7 @@ Hash Chain 批量预购令牌的生成、验证和兑换测试。
 
 ---
 
-> Metanet Chain 测试用例已移至独立文档: [../metanet/4-TestDesign.zh.md](../metanet/4-TestDesign.zh.md)
+> Metanet Overlay Network 测试用例已移至独立文档: [../metanet/4-TestDesign.zh.md](../metanet/4-TestDesign.zh.md)
 
 ---
 

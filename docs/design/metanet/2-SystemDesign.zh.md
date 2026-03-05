@@ -3,7 +3,7 @@
 > 本文档为 Metanet 设计文档体系的第二层：模块划分、接口定义、数据流。
 >
 > **文档体系**:
-> - [整体设计](../0-OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
+> - [整体设计](../OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
 > - [概念设计](1-ConceptDesign.zh.md) — 产品定位、核心理念、设计原则
 > - **系统设计** (本文档) — 节点架构、合约、支付通道
 > - [详细设计](3-DetailedDesign.zh.md) — 共识、挖矿、结算协议细节
@@ -25,16 +25,16 @@
 |------|---------|------|--------|
 | 仅上链 (BSV) | 小文件, 永久存储 | BSV 矿工费 (一次性) | 区块链级别 |
 | 自托管 (Daemon) | 大文件, 完全控制 | 服务器成本 (持续) | 取决于自己的基础设施 |
-| Metanet Chain 托管 | 大文件, 去中心化 | MNT Token (持续) | CDN 级别 (多 Metanet Node 缓存) |
+| Metanet Overlay 托管 | 大文件, 去中心化 | MNT Token (持续) | CDN 级别 (多 Metanet Node 缓存) |
 
-三种方式可组合: 元数据上链 + 热门内容 Metanet Chain 托管 + 冷门内容自托管。
+三种方式可组合: 元数据上链 + 热门内容 Metanet Overlay 托管 + 冷门内容自托管。
 
 **主链与 Overlay 网络的职责划分**:
 
 | | BSV Main Chain | Metanet Overlay Network (ON) |
 |---|---|---|
 | 本质 | L1 基础工作量证明链 | 构建在 BSV 上的叠加网络 |
-| 共识 | SHA256 PoW | 纯 SHA256 PoW (独立挖矿竞赛 ML Block 出块权) |
+| 共识 | SHA256 PoW | ON 层 Bitcoin 风格 SHA256 PoW（5 分钟出块），结果封装为 BSV 交易并由 BSV 确认 |
 | 交易格式 | 标准 Bitcoin 交易 | **ML Block 嵌入合法 BSV 交易中被确认** |
 | 验证机制 | 矿工验证 Script | ON 节点验证 Verify-Then-Pay 脚本执行结果 |
 | 代币 | BSV | MNT Token (记录为 ON 维护的底层 UTXO) |
@@ -46,7 +46,7 @@
 ## 二、Metanet Overlay Network (ON) 基本设计
 
 **BSV 上的 ML Overlay**:
-Metanet 基于 Carrier Pair 模型构建为 BSV 的叠加网络。每一笔 ON 交易以及每一个 ML Block (MNT 代币区块) 都是一笔合法的、标准的 BSV 交易。
+Metanet 基于 Carrier Pair 模型构建为 BSV 的叠加网络。ON 层使用 CSW Multilevel Blockchain 技术实现自己的共识算法（Bitcoin 风格 SHA256 PoW，5 分钟出块）；每一笔 ON 交易以及每一个 ML Block (MNT 代币区块) 都封装为合法的 BSV 交易。
 - ON 节点无需 fork BSV C++ 代码，通过轻量 Go 服务与 SPV/API 交互。
 - 采用 Verify-Then-Pay 原子模型进行存储合约结算，不需要自定义虚拟机，所有验证都在标准 Bitcoin Script 中完成。
 
@@ -65,7 +65,7 @@ MNT Token 是 ML 链原生 UTXO（账本随 ML Block 嵌入 BSV 交易中，由 
 - 最小单位: 1 satoshi = 0.00000001 MNT
 
 **安全假设**：
-所有的 ML Block 都直接作为普通 BSV 交易被确认。因此最终性和不可篡改性由 BSV 主网提供，ON 网络不需要额外的合并挖矿或定期的 BSV 锚定。
+ON 网络负责 MNT 账本与交易排序；所有 ML Block 最终都作为普通 BSV 交易被确认，因此最终性和不可篡改性由 BSV 主网提供。ON 网络不需要额外的合并挖矿或定期 BSV 锚定。
 
 ---
 
@@ -82,7 +82,7 @@ MNT Token 是 ML 链原生 UTXO（账本随 ML Block 嵌入 BSV 交易中，由 
 **双币种分工**:
 - **BSV**: 面向终端用户和 Agent, 用于 x402 微支付和 HTLC 购买
 - **MNT Token**: 面向 Metanet Node 市场, 用于 CDN 托管费和挖矿奖励
-- **普通用户不需要接触 Metanet Chain/Token** — 只用 BSV 即可使用 BitFS
+- **普通用户不需要接触 Metanet Overlay/MNT** — 只用 BSV 即可使用 BitFS
 - Token 需求 = Owner 对 CDN 服务的需求 (不是用户的需求)
 
 **独立 `metanet` CLI**:
@@ -123,7 +123,7 @@ metanet start --mine          # Metanet Node + 矿工模式 (Layer 3, CDN + 挖�
 - 越热门的内容, 越多 Metanet Node 缓存, 类似传统 CDN 的缓存逻辑
 
 **Metanet Node 获取数据的方式**:
-1. Owner 主动推送: `bitfs put --store metanet` 上传到 Metanet Chain
+1. Owner 主动推送: `bitfs put --store metanet` 上传到 Metanet Overlay
 2. Metanet Node 从 Owner daemon 拉取: 支付 x402 费用获取数据
 3. Metanet Node 间批发: Node_A 从 Node_B 购买热门数据 (Token 支付通道)
 
@@ -198,7 +198,15 @@ Metanet Node 在服务内容时读取此字段，自动按比例分配 x402 收�
 
 ## 七、x402 支付通道
 
-> **x402 基础协议**: x402 带宽计费规则、HTTP API (`POST /_bitfs/pay/{invoice_id}`)、免费配额逻辑、Invoice 验证流程等基础实现定义在 BitFS 设计文档中 — 见 [BitFS 系统设计 十三节](../bitfs/2-SystemDesign.zh.md#十三daemon-配置-lfcp) 和 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-x402-支付流程)。本节仅描述 Metanet Chain 引入的支付通道扩展。
+> **x402 基础协议**: x402 带宽计费规则、HTTP API (`POST /_bitfs/pay/{invoice_id}`)、免费配额逻辑、Invoice 验证流程等基础实现定义在 BitFS 设计文档中 — 见 [BitFS 系统设计 十三节](../bitfs/2-SystemDesign.zh.md#十三daemon-配置-lfcp) 和 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-x402-支付流程)。本节仅描述 Metanet Overlay 引入的支付通道扩展。
+
+**实现边界（当前 vs 预留）**:
+
+| 能力 | 当前实现边界 | 协议预留边界 |
+|------|-------------|-------------|
+| BitFS 文件购买 | 以链上 HTLC / Token 兑换为主（单次购买优先） | 不在 BitFS 协议层引入强制通道机制 |
+| Metanet x402 流媒体/大文件计费 | 可直接走 x402 单次支付 | 预留 BSV 通道（User↔Node）用于高频微支付 |
+| Metanet CDN 托管结算 | 可按合约周期结算 | 预留 MNT 通道（Owner↔Node、Node↔Node）用于持续批量结算 |
 
 **两种支付通道**:
 
@@ -231,7 +239,7 @@ Metanet Node 在服务内容时读取此字段，自动按比例分配 x402 收�
 
 ## 九、BRC 标准兼容
 
-**Metanet Chain 采用 BRC (Overlay 扩展)**:
+**Metanet Overlay Network 采用 BRC (Overlay 扩展)**:
 
 | BRC | 名称 | 用途 |
 |-----|------|------|

@@ -3,7 +3,7 @@
 > 本文档为 Metanet 设计文档体系的第一层：产品定位、核心设计理念、架构概览。
 >
 > **文档体系**:
-> - [整体设计](../0-OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
+> - [整体设计](../OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
 > - **概念设计** (本文档) — 产品定位、核心理念、设计原则
 > - [系统设计](2-SystemDesign.zh.md) — 节点架构、合约、支付通道
 > - [详细设计](3-DetailedDesign.zh.md) — 共识、挖矿、结算协议细节
@@ -60,7 +60,7 @@ Owner 与 Metanet Node 签 1-to-1 存储合约 (Bitcoin Script)，Owner 付 MNT 
 
 ### 3.3 基于 BSV 的 Overlay Network
 
-将 Metanet 构建为 BSV 上的 Overlay Network (ON)。每笔 ON 交易都是合法的 BSV 交易（遵循 Carrier Pair 模型），并在 BSV 交易内嵌入 ML Block。此设计不需要 fork BSV 代码，不需要独立的链基础设施，完全依赖 BSV 提供最终性和不可篡改性，所有"智能合约"均为标准 Bitcoin Script（Verify-Then-Pay 原子模型）。
+Metanet 是 BSV 上的 Overlay Network (ON)。ON 层采用 CSW Multilevel Blockchain 技术实现自己的共识算法：参照 Bitcoin 的 SHA256 PoW 挖矿机制，目标出块时间调整为 5 分钟。每笔 ON 交易与每个 ML Block 都封装为合法 BSV 交易（Carrier Pair），由 BSV 主链提供最终确认与不可篡改性。该设计不需要 fork BSV 代码，所有合约均使用标准 Bitcoin Script（Verify-Then-Pay 原子模型）。
 
 ### 3.4 双币种分工
 
@@ -69,7 +69,7 @@ Owner 与 Metanet Node 签 1-to-1 存储合约 (Bitcoin Script)，Owner 付 MNT 
 | **BSV** | 终端用户、AI Agent | x402 检索费、HTLC 文件购买 |
 | **MNT Token** | Owner、Node 运营商 | CDN 托管费、挖矿奖励、节点间批发 |
 
-**普通用户不需要接触 Metanet Chain/Token**——只用 BSV 即可使用 BitFS。
+**普通用户不需要接触 Metanet Overlay/MNT**——只用 BSV 即可使用 BitFS。
 
 ---
 
@@ -80,7 +80,7 @@ Owner 与 Metanet Node 签 1-to-1 存储合约 (Bitcoin Script)，Owner 付 MNT 
 | 核心激励 | 检索 (x402) | 存储 (PoRep) | 无 (志愿) | 存储 (一次付费永存) | 无 (中心化) |
 | 存储证明 | ECDH+Merkle (毫秒级) | zk-SNARK (GPU 数小时) | 无 | SPoRA | N/A |
 | 副本管理 | Owner 自决 | 协议强制 (≥N 副本) | 无保证 | 协议保证 | 运营商决定 |
-| 共识 | 纯 SHA256 PoW (非合并) | 预期共识 (EC) | 无共识 | RandomX | 无共识 |
+| 共识 | ON 层 Bitcoin 风格 SHA256 PoW（5 分钟，非合并）+ BSV 最终确认 | 预期共识 (EC) | 无共识 | RandomX | 无共识 |
 | 代币 | MNT (仅 B2B) + BSV (B2C) | FIL (全用途) | 无 | AR | 法币 |
 | 链架构 | BSV Overlay Network | 自定义 VM | 无链 | 自定义 | 无链 |
 | 准入门槛 | 低 (普通服务器) | 高 (GPU+大存储) | 低 | 中 | 高 (资本密集) |
@@ -93,7 +93,7 @@ Owner 与 Metanet Node 签 1-to-1 存储合约 (Bitcoin Script)，Owner 付 MNT 
 1. **Overlay Network** — 每笔 ON 交易都是合法的 BSV 交易，ON 节点是轻量 Go 服务（通过 SPV/API 连接），无需运行独立的 C++ 全节点或 fork 链。
 2. **Bitcoin Script 即合约** — 存储合约采用 Verify-then-pay 脚本原子执行替代信任，不引入新操作码。
 3. **轻量存储证明** — ECDH 双层加密实现防串通加密副本 + Merkle 挑战替代 zk-SNARK，毫秒级验证，无需 GPU。
-4. **纯 SHA256 PoW** — 双倍比特币心跳（5 分钟出块，2 年减半），挖矿与存储解耦，无需依赖 BSV 矿池配合即可发行 MNT Token。
+4. **ON 层 PoW 共识** — 采用 Bitcoin 风格 SHA256 PoW（5 分钟出块，2 年减半），挖矿与存储解耦；共识结果通过 BSV 载体交易获得最终确认。
 5. **低准入门槛** — 矿工参与要求极低，同时网络节点也可以是轻量服务。
 6. **市场驱动** — 热数据靠 x402 正反馈自组织，协议不做中心化调度。
 7. **BSV 作为底层信任根** — MNT Token 的账本通过 ML Block 嵌入 BSV 交易中，BSV 主链直接保证最终性和不可篡改性，避免了独立独立链算力不足时的安全风险。
