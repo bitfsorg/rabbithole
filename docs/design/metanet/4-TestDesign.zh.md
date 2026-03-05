@@ -87,7 +87,7 @@
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
-| T4.1 | x402 检索支付 | Metanet Node 持有数据, User 请求下载 | User 支付 BSV → Metanet Node 返回数据 | Metanet Node 正确返回解密后的数据, BSV 支付交易有效 | [integration] |
+| T4.1 | 下载计费检索支付 | Metanet Node 持有数据, User 请求下载 | User 支付 BSV → Metanet Node 返回数据 | Metanet Node 正确返回解密后的数据, BSV 支付交易有效 | [integration] |
 | T4.2 | Token 支付通道: 开启 | Owner 与 Metanet Node 协商 | 创建 2-of-2 多签 funding 交易 | funding 交易正确创建, 双方各持一份签名 | [unit] |
 | T4.3 | Token 支付通道: 更新 | 通道已开启 | 双方签署新状态 | sequence_number 递增, 新余额分配正确, 旧状态作废 | [unit] |
 | T4.4 | Token 支付通道: 正常关闭 | 通道有多次状态更新 | 双方协商关闭 | 最终余额按最新状态正确分配, 无需等待时间锁 | [unit] |
@@ -105,7 +105,7 @@
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
 | T5.1 | ON 层 PoW 出块（非合并） | Metanet Miner 参与 | 矿工打包 ML Block 并封装为合法 BSV 交易 | ON 节点验证 SHA256 PoW 与区块头，BSV 确认后区块生效 | [integration] |
-| T5.2 | 热数据 CDN: Metanet Node 缓存热门内容后服务 x402 请求 | Metanet Node 自愿缓存热门文件 | User 通过 x402 请求数据 | Metanet Node 正确返回数据并收取 BSV 费用, 不需要存储合约 | [integration] |
+| T5.2 | 热数据 CDN: Metanet Node 缓存热门内容后服务下载计费请求 | Metanet Node 自愿缓存热门文件 | User 通过下载计费请求数据 | Metanet Node 正确返回数据并收取 BSV 费用, 不需要存储合约 | [integration] |
 
 ---
 
@@ -116,5 +116,5 @@
 | T1 存储合约 | 五 (冷数据: Archive 合约模式) | 一 (存储合约 Bitcoin Script) | `metanet_chain/storage_deal_test.go` |
 | T2 存储证明 | 五 (冷数据: Archive 合约模式) | 二 (存储证明 Bitcoin Script) | `metanet_chain/storage_proof_test.go` |
 | T3 ECDH 双层加密 | 五 (冷数据: Archive 合约模式) | 三 (ECDH 双层加密流程) | `metanet_chain/ecdh_test.go` |
-| T4 支付与检索 | 七 (x402 支付通道) | 四-五 (支付通道协议, HTTP 扩展) | `metanet_chain/payment_test.go` |
+| T4 支付与检索 | 七 (下载计费支付通道) | 四-五 (支付通道协议, HTTP 扩展) | `metanet_chain/payment_test.go` |
 | T5 ON 层 PoW 与热数据 | 二 (Metanet Overlay 基本设计) | 六 (ML Block 结构与挖矿) | `metanet_chain/mining_test.go` |

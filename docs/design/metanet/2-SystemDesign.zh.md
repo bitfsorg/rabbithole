@@ -15,17 +15,17 @@
 
 | 层 | 名称 | 职责 | Token |
 |---|------|------|-------|
-| Layer 1 | BSV Main Chain | 文件所有权 (Metanet DAG), HTLC 购买, x402 下载 | BSV |
+| Layer 1 | BSV Main Chain | 文件所有权 (Metanet DAG), HTLC 购买结算, 下载计费结算 | BSV |
 | Layer 2 | Self-hosted Daemon | 自托管文件服务, 现有 `bitfs daemon` | 无 (自己的服务器) |
 | Layer 3 | Metanet Overlay Network (ON) | 去中心化 CDN, Verify-Then-Pay 存储合约, 支付通道 | MNT Token |
 
 **用户三种选择**:
 
-| 选择 | 适用场景 | 成本 | 可用性 |
+| 选择 | 适用场景 | 成本/约束 | 可用性 |
 |------|---------|------|--------|
-| 仅上链 (BSV) | 小文件, 永久存储 | BSV 矿工费 (一次性) | 区块链级别 |
+| 仅上链 (BSV) | 小文件, 永久存储 | BSV 矿工费高；可能被矿工裁剪 | 区块链级别 |
 | 自托管 (Daemon) | 大文件, 完全控制 | 服务器成本 (持续) | 取决于自己的基础设施 |
-| Metanet Overlay 托管 | 大文件, 去中心化 | MNT Token (持续) | CDN 级别 (多 Metanet Node 缓存) |
+| Metanet SP 托管 | 大文件, 去中心化分发 | MNT Token (持续) | CDN 级别 (多 Metanet Node 缓存) |
 
 三种方式可组合: 元数据上链 + 热门内容 Metanet Overlay 托管 + 冷门内容自托管。
 
@@ -38,7 +38,7 @@
 | 交易格式 | 标准 Bitcoin 交易 | **ML Block 嵌入合法 BSV 交易中被确认** |
 | 验证机制 | 矿工验证 Script | ON 节点验证 Verify-Then-Pay 脚本执行结果 |
 | 代币 | BSV | MNT Token (记录为 ON 维护的底层 UTXO) |
-| 用途 | 文件所有权, 最终性背书, x402 购买 | CDN 激励, MNT 存储合约 (Verify-Then-Pay) |
+| 用途 | 文件所有权, 最终性背书, 下载计费结算 | CDN 激励, MNT 存储合约 (Verify-Then-Pay) |
 | 参与角色 | 终端用户, Agent, BSV 矿工 | Publisher, Storage Provider, Oracle, Miner |
 
 ---
@@ -75,12 +75,12 @@ ON 网络负责 MNT 账本与交易排序；所有 ML Block 最终都作为普�
 
 | 收入来源 | 支付方 | 币种 | 触发条件 |
 |---------|-------|------|---------|
-| x402 检索费 | 用户/Agent | BSV | 用户下载内容 |
+| 下载计费检索费 | 用户/Agent | BSV | 用户下载内容 |
 | CDN 托管费 | Owner | MNT Token | Owner 签存储合约 |
 | 挖矿奖励 | 协议 | MNT Token | 出块奖励 |
 
 **双币种分工**:
-- **BSV**: 面向终端用户和 Agent, 用于 x402 微支付和 HTLC 购买
+- **BSV**: 面向终端用户和 Agent, 用于下载计费和 HTLC 购买
 - **MNT Token**: 面向 Metanet Node 市场, 用于 CDN 托管费和挖矿奖励
 - **普通用户不需要接触 Metanet Overlay/MNT** — 只用 BSV 即可使用 BitFS
 - Token 需求 = Owner 对 CDN 服务的需求 (不是用户的需求)
@@ -105,7 +105,7 @@ metanet start --mine          # Metanet Node + 矿工模式 (Layer 3, CDN + 挖�
 <tr>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#eaf0f7; font-weight:600;">文件热度高</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
-<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f0f7ea; font-weight:600;">x402 收入高</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f0f7ea; font-weight:600;">下载计费收入高</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f7f0ea; font-weight:600;">更多 Node 缓存</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
@@ -118,18 +118,18 @@ metanet start --mine          # Metanet Node + 矿工模式 (Layer 3, CDN + 挖�
 
 **特点**:
 - 不需要存储合约 (Metanet Node 自愿缓存)
-- 不需要存储证明 (x402 交易记录本身证明 Metanet Node 有数据)
+- 不需要存储证明 (下载计费交易记录本身证明 Metanet Node 有数据)
 - 不需要副本管理 (市场自动调节副本数)
 - 越热门的内容, 越多 Metanet Node 缓存, 类似传统 CDN 的缓存逻辑
 
 **Metanet Node 获取数据的方式**:
 1. Owner 主动推送: `bitfs put --store metanet` 上传到 Metanet Overlay
-2. Metanet Node 从 Owner daemon 拉取: 支付 x402 费用获取数据
+2. Metanet Node 从 Owner daemon 拉取: 支付下载计费获取数据
 3. Metanet Node 间批发: Node_A 从 Node_B 购买热门数据 (Token 支付通道)
 
 **Metanet Node 决策逻辑**:
 ```
-if 文件 x402_revenue > storage_cost + bandwidth_cost:
+if 文件 download_revenue > storage_cost + bandwidth_cost:
     缓存该文件 (利润驱动)
 else:
     不缓存 (除非有存储合约)
@@ -171,48 +171,48 @@ Phase 3: 合约执行与证明
 | 持续存储证明 | PoSt (zk-SNARK) | Verify-Then-Pay 脚本挑战-响应 |
 | 计算成本 | GPU 密集, 数小时 | 毫秒级 ECDH + Merkle 验证 |
 | 挖矿前置条件 | 大量存储硬件与抵押 | 纯算力竞赛，完全与存储解耦 |
-| 检索激励 | 薄弱 (检索矿工无激励) | 强 (x402 直接收入) |
+| 检索激励 | 薄弱 (检索矿工无激励) | 强 (下载计费直接收入) |
 | 代币用途 | 存储+检索+抵押 | 仅 CDN 托管+出块 (用户用 BSV) |
 
 ---
 
 ## 六、内容分成
 
-**分成模式**: Metanet Node 与 Owner 分享 x402 收入。
+**分成模式**: Metanet Node 与 Owner 分享下载计费收入。
 
 Owner 在 Metanet payload 中设置 `revenue_share` 字段 (TLV tag 24, uint32):
 
-- 值为 0-10000 的 basis point，表示 Owner 从 x402 收入中获得的分成比例
+- 值为 0-10000 的 basis point，表示 Owner 从下载计费收入中获得的分成比例
 - 例如 `revenue_share = 3000` 表示 Owner 获得 30%，Metanet Node 获得 70%
 
-Metanet Node 在服务内容时读取此字段，自动按比例分配 x402 收入。`min_price_per_kb` 等策略参数由 Metanet daemon 配置管理，不写入链上 TLV。
+Metanet Node 在服务内容时读取此字段，自动按比例分配下载计费收入。`min_price_per_kb` 等策略参数由 Metanet daemon 配置管理，不写入链上 TLV。
 
 **两种合作模式**:
 
 | 模式 | 适用场景 | Owner 付出 | Owner 收入 |
 |------|---------|-----------|-----------|
-| 分成模式 (热数据) | 热门内容 | 无 (Metanet Node 自愿缓存) | x402 收入的 owner_percent |
-| 付费模式 (冷数据) | 冷门内容 | MNT Token (存储合约) | 无 x402 收入 (或极少) |
+| 分成模式 (热数据) | 热门内容 | 无 (Metanet Node 自愿缓存) | 下载计费收入的 owner_percent |
+| 付费模式 (冷数据) | 冷门内容 | MNT Token (存储合约) | 无下载计费收入 (或极少) |
 
 ---
 
-## 七、x402 支付通道
+## 七、下载计费支付通道
 
-> **x402 基础协议**: x402 带宽计费规则、HTTP API (`POST /_bitfs/pay/{invoice_id}`)、免费配额逻辑、Invoice 验证流程等基础实现定义在 BitFS 设计文档中 — 见 [BitFS 系统设计 十三节](../bitfs/2-SystemDesign.zh.md#十三daemon-配置-lfcp) 和 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-x402-支付流程)。本节仅描述 Metanet Overlay 引入的支付通道扩展。
+> **下载计费基础协议**: 下载计费带宽计费规则、HTTP API (`POST /_bitfs/pay/{invoice_id}`)、免费配额逻辑、Invoice 验证流程等基础实现定义在 BitFS 设计文档中 — 见 [BitFS 系统设计 十三节](../bitfs/2-SystemDesign.zh.md#十三daemon-配置-lfcp) 和 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-下载计费支付流程)。本节仅描述 Metanet Overlay 引入的支付通道扩展。
 
 **实现边界（当前 vs 预留）**:
 
 | 能力 | 当前实现边界 | 协议预留边界 |
 |------|-------------|-------------|
 | BitFS 文件购买 | 以链上 HTLC / Token 兑换为主（单次购买优先） | 不在 BitFS 协议层引入强制通道机制 |
-| Metanet x402 流媒体/大文件计费 | 可直接走 x402 单次支付 | 预留 BSV 通道（User↔Node）用于高频微支付 |
+| Metanet 下载计费流媒体/大文件计费 | 可直接走下载计费单次支付 | 预留 BSV 通道（User↔Node）用于高频微支付 |
 | Metanet CDN 托管结算 | 可按合约周期结算 | 预留 MNT 通道（Owner↔Node、Node↔Node）用于持续批量结算 |
 
 **两种支付通道**:
 
 | 通道类型 | 方向 | 币种 | 用途 |
 |---------|------|------|------|
-| BSV 通道 | User <-> Metanet Node | BSV | x402 流媒体微支付 |
+| BSV 通道 | User <-> Metanet Node | BSV | 下载计费流媒体微支付 |
 | Token 通道 | Owner <-> Metanet Node | MNT Token | CDN 托管费持续支付 |
 | Token 通道 | Metanet Node <-> Metanet Node | MNT Token | 节点间数据批发 |
 
@@ -232,7 +232,7 @@ Metanet Node 在服务内容时读取此字段，自动按比例分配 x402 收�
 3. User (Visitor): bget bitfs://example.com/myfile.txt
    ├── 查询 BSV: 解析 Metanet 路径
    ├── 查询 ON 交易 / DHT 路由: 发现持有该内容的 Storage Provider 列表
-   └── 请求 Storage Provider: 使用 BSV x402 进行微支付 → 获取加密数据并本地解密
+   └── 请求 Storage Provider: 使用 BSV 下载计费进行微支付 → 获取加密数据并本地解密
 ```
 
 ---

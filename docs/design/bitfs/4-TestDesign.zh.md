@@ -430,7 +430,7 @@
 | T15.3.1 | 正常查询 | 有效 pnode + 路径 | GET /meta/{pnode}/{path} | 200, JSON 含节点元数据 | [unit] |
 | T15.3.2 | 不存在路径 | 无效路径 | GET /meta/{pnode}/ghost | 404 | [edge] |
 
-## T15.4: x402 支付
+## T15.4: 下载计费支付
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
@@ -560,7 +560,7 @@
 | T20.3.2 | 密钥缓存复用 | 已购买过 | 再次 GET /data → 用缓存密钥解密 | 无需重复支付 | [integration] |
 | T20.3.3 | HTLC 超时回收 | buyer 未提交 HTLC | 等待 144 块 | buyer 资金回收 | [integration] |
 | T20.3.4 | 目录递归定价 | 目录设置 sell | 购买子文件 → 检查价格 | 子文件继承父目录价格 | [integration] |
-| T20.3.5 | x402 配额流程 | 免费配额耗尽 | GET /data → 402 → POST /pay → GET /data | 支付后正常获取 | [integration] |
+| T20.3.5 | 下载计费配额流程 | 免费配额耗尽 | GET /data → 402 → POST /pay → GET /data | 支付后正常获取 | [integration] |
 
 ## T20.4: Daemon 与网络 (现有 1, 新增 4)
 
@@ -627,7 +627,7 @@
 
 | ID | 用例名称 | 属性 | 设计参照 | 标签 |
 |----|---------|------|---------|------|
-| T21.4.1 | x402 配额日重置 | free_quota_kb 每日每 IP 重置 | 十三-B.C | [property] |
+| T21.4.1 | 下载计费配额日重置 | free_quota_kb 每日每 IP 重置 | 十三-B.C | [property] |
 | T21.4.2 | DNS 双向验证 | published pubkey = 链上 P_node 公钥 | 六 | [property] |
 | T21.4.3 | FREE 公开可解密 | FREE 模式 D_node=1, aes_key = KDF(P_node, key_hash) 可公开计算, 仍经 AES-GCM 加密 (非 identity) | 五 | [property] |
 | T21.4.4 | aes_key 派生确定性 | aes_key = KDF(ECDH(D_node, P_node), key_hash) — D_node 或 key_hash 任一变→输出变 | 二-B.D | [property] |

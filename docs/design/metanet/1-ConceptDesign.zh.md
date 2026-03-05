@@ -13,7 +13,7 @@
 
 ## 一、定位
 
-**Metanet** (metanet.org) 是基于 BSV 构建的 Overlay Network (ON) 的去中心化 CDN 网络。核心激励机制是**检索**而非存储——Metanet Node 的主要收入来自 x402 按次付费的内容检索服务，存储合约只是冷数据的保底机制。
+**Metanet** (metanet.org) 是基于 BSV 构建的 Overlay Network (ON) 的去中心化 CDN 网络。核心激励机制是**检索**而非存储——Metanet Node 的主要收入来自下载计费按次付费的内容检索服务，存储合约只是冷数据的保底机制。
 
 ---
 
@@ -29,19 +29,19 @@ BitFS 与 Metanet 的关系类似于 IPFS 与 Filecoin，但**反转了 Filecoin
 | 节点 CLI | `lotus` | `metanet` |
 | 核心证明 | PoRep + PoSt (zk-SNARK, GPU 密集) | ECDH 双层加密 + Merkle 挑战 (毫秒级) |
 
-**关键反转**: Filecoin 激励存储 (Proof-of-Replication)，检索市场薄弱；Metanet 激励检索 (x402 按次付费)，热门内容自组织复制，冷数据靠 1-to-1 合约保底。
+**关键反转**: Filecoin 激励存储 (Proof-of-Replication)，检索市场薄弱；Metanet 激励检索 (下载计费按次付费)，热门内容自组织复制，冷数据靠 1-to-1 合约保底。
 
 ---
 
 ## 三、核心设计理念
 
-### 3.1 热数据自组织 (x402 正反馈)
+### 3.1 热数据自组织 (下载计费正反馈)
 
 <table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
 <tr>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#eaf0f7; font-weight:600;">文件热度高</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
-<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f0f7ea; font-weight:600;">x402 收入高</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f0f7ea; font-weight:600;">下载计费收入高</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#f7f0ea; font-weight:600;">更多 Node 缓存</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
@@ -66,7 +66,7 @@ Metanet 是 BSV 上的 Overlay Network (ON)。ON 层采用 CSW Multilevel Blockc
 
 | 币种 | 面向 | 用途 |
 |------|------|------|
-| **BSV** | 终端用户、AI Agent | x402 检索费、HTLC 文件购买 |
+| **BSV** | 终端用户、AI Agent | 下载计费检索费、HTLC 文件购买 |
 | **MNT Token** | Owner、Node 运营商 | CDN 托管费、挖矿奖励、节点间批发 |
 
 **普通用户不需要接触 Metanet Overlay/MNT**——只用 BSV 即可使用 BitFS。
@@ -77,7 +77,7 @@ Metanet 是 BSV 上的 Overlay Network (ON)。ON 层采用 CSW Multilevel Blockc
 
 | 维度 | Metanet | Filecoin | IPFS | Arweave | 传统 CDN |
 |------|---------|----------|------|---------|----------|
-| 核心激励 | 检索 (x402) | 存储 (PoRep) | 无 (志愿) | 存储 (一次付费永存) | 无 (中心化) |
+| 核心激励 | 检索 (下载计费) | 存储 (PoRep) | 无 (志愿) | 存储 (一次付费永存) | 无 (中心化) |
 | 存储证明 | ECDH+Merkle (毫秒级) | zk-SNARK (GPU 数小时) | 无 | SPoRA | N/A |
 | 副本管理 | Owner 自决 | 协议强制 (≥N 副本) | 无保证 | 协议保证 | 运营商决定 |
 | 共识 | ON 层 Bitcoin 风格 SHA256 PoW（5 分钟，非合并）+ BSV 最终确认 | 预期共识 (EC) | 无共识 | RandomX | 无共识 |
@@ -95,6 +95,6 @@ Metanet 是 BSV 上的 Overlay Network (ON)。ON 层采用 CSW Multilevel Blockc
 3. **轻量存储证明** — ECDH 双层加密实现防串通加密副本 + Merkle 挑战替代 zk-SNARK，毫秒级验证，无需 GPU。
 4. **ON 层 PoW 共识** — 采用 Bitcoin 风格 SHA256 PoW（5 分钟出块，2 年减半），挖矿与存储解耦；共识结果通过 BSV 载体交易获得最终确认。
 5. **低准入门槛** — 矿工参与要求极低，同时网络节点也可以是轻量服务。
-6. **市场驱动** — 热数据靠 x402 正反馈自组织，协议不做中心化调度。
+6. **市场驱动** — 热数据靠下载计费正反馈自组织，协议不做中心化调度。
 7. **BSV 作为底层信任根** — MNT Token 的账本通过 ML Block 嵌入 BSV 交易中，BSV 主链直接保证最终性和不可篡改性，避免了独立独立链算力不足时的安全风险。
 8. **BRC 标准兼容** — 遵循 BSV Association 的 Overlay BRC 标准体系，网络节点通过 `nServices` (NODE_METANET) 标识实现 BSV P2P 网络的节点发现。

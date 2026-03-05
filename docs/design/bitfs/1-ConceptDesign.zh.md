@@ -20,7 +20,7 @@
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Metanet 解析器</strong><br><span style="font-size:9pt; color:#555;">inode/dirent/链接</span></td>
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Storage</strong><br><span style="font-size:9pt; color:#555;">内容存储 (链下/链上)</span></td>
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>DNSLink / Paymail</strong><br><span style="font-size:9pt; color:#555;">身份解析</span></td>
-<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>x402 / Token</strong><br><span style="font-size:9pt; color:#555;">支付/预购</span></td>
+<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>下载计费 / Token</strong><br><span style="font-size:9pt; color:#555;">支付/预购</span></td>
 </tr>
 <tr>
 <td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Method 42</strong><br><span style="font-size:9pt; color:#555;">Koblitz 加密引擎</span></td>
@@ -33,7 +33,7 @@
 <td colspan="2" style="border:1px solid #999; padding:0.5em; background:#f5f5f5; text-align:center;"><strong>链下内容存储</strong><br><span style="font-size:9pt; color:#555;">Daemon (LFCP)</span></td>
 </tr>
 <tr>
-<td colspan="4" style="border:1px solid #999; padding:0.5em; background:#eaeaea; text-align:center;"><strong>可选外部 CDN 集成 (Metanet)</strong> — 详见 `docs/design/metanet/`<br><span style="font-size:9pt; color:#555;">BitFS 仅定义接口边界（寻址、x402、内容协议），CDN 运营与激励由 Metanet 文档定义</span></td>
+<td colspan="4" style="border:1px solid #999; padding:0.5em; background:#eaeaea; text-align:center;"><strong>可选外部 CDN 集成 (Metanet)</strong> — 详见 `docs/design/metanet/`<br><span style="font-size:9pt; color:#555;">BitFS 仅定义接口边界（寻址、下载计费、内容协议），CDN 运营与激励由 Metanet 文档定义</span></td>
 </tr>
 </table>
 
@@ -50,7 +50,7 @@
 9. **Agent-first**: Daemon (LFCP) 同时服务人类和 Agent; WebMCP (浏览器) + Content Negotiation (CLI); 402 付费墙对 Agent 是可编程支付接口
 10. **BSV Association 官方库**: 使用 `github.com/bsv-blockchain/go-sdk` 作为唯一 BSV 依赖
 11. **元数据与内容分离**: Metanet 交易只存元数据, 内容独立存储 (链下默认, 链上可选)
-12. **链下传输优先**: 所有数据内容的传输均在链下进行 (Daemon/LFCP/x402); 数据可以选择永不上链, 链上仅记录元数据和内容哈希承诺
+12. **链下传输优先**: 所有数据内容的传输均在链下进行 (Daemon/LFCP/下载计费); 数据可以选择永不上链, 链上仅记录元数据和内容哈希承诺
 13. **双重哈希**: 链上仅存 SHA256(SHA256(plaintext)), 不暴露原始数据哈希, 兼做密钥派生和内容承诺
 14. **收益权证券化**: 文件收益权可 ISO 发行、UTXO 化、自由流通, Covenant 强制分账
 15. **Paymail 身份层**: 支持 `bitfs://alias@domain/path` 寻址 (RFC 3986 userinfo), Paymail 做链下身份发现, 链上协议不变

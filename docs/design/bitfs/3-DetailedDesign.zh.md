@@ -1647,7 +1647,7 @@ bitfs /<当前远程路径>
 ---
 ## 十三-B、节点间通信协议详细设计
 
-本节补充 Daemon HTTP API、Method 42 握手、x402 支付和 HTLC 购买协议的详细规范。
+本节补充 Daemon HTTP API、Method 42 握手、下载计费支付和 HTLC 购买协议的详细规范。
 
 ### A. HTTP API 详细规范
 
@@ -1661,7 +1661,7 @@ GET  /_bitfs/meta/{pnode}/{path}       查询 Metanet 元数据
 GET  /_bitfs/versions/{pnode}/{path}   版本历史
 GET  /_bitfs/buy/{txid}               获取购买信息 (定价、capsule_hash)
 POST /_bitfs/buy/{txid}               提交 HTLC, 获取 capsule
-POST /_bitfs/pay/{invoice_id}          提交 x402 带宽费支付
+POST /_bitfs/pay/{invoice_id}          提交下载计费带宽费支付
 GET  /_bitfs/sales                     销售记录
 GET  /_bitfs/spv/proof/{txid}          SPV 证明
 GET  /_bitfs/dashboard/status          仪表盘状态
@@ -1702,8 +1702,8 @@ Success:  200 OK
   Content-Length: <字节数>
   Body: <原始加密数据>
 
-x402:     402 Payment Required (超出免费配额时)
-  见 x402 响应格式
+下载计费:     402 Payment Required (超出免费配额时)
+  见下载计费响应格式
 
 Errors:
   400 Bad Request   -- hash 格式无效 (非 64 位 hex)
@@ -1747,7 +1747,7 @@ Errors:
 
 #### 4. POST /_bitfs/pay/{invoice_id}
 
-提交 x402 带宽费支付。
+提交下载计费带宽费支付。
 
 ```
 Request:  POST /_bitfs/pay/{invoice_id}
@@ -1861,7 +1861,7 @@ Errors:
   3. 若为 DIR 且含 index.html 子节点 → 使用 index.html
   4. 若仍为 DIR → 渲染目录列表 (根据 Accept 头选格式)
   5. 若为 FILE:
-     a. 检查 x402 (超出免费配额 → 402)
+     a. 检查下载计费 (超出免费配额 → 402)
      b. 从 storage 获取加密数据 → 200 + Content-Type
      c. 无存储内容 → 渲染元数据 (Content Negotiation)
 
@@ -1933,9 +1933,9 @@ session_key = SHA256(ECDH(D_a, P_b).x[32B big-endian] || nonce_a[32B] || nonce_b
 - 格式: nonce(12B) || ciphertext || GCM_tag(16B)
 - 每条消息使用随机 nonce
 
-### C. x402 支付流程
+### C. 下载计费支付流程
 
-x402 实现基于带宽的计费, 而非内容购买 (内容购买通过 HTLC)。
+下载计费实现基于带宽的计费, 而非内容购买 (内容购买通过 HTLC)。
 
 #### 带宽计费规则
 
@@ -1945,8 +1945,8 @@ x402 实现基于带宽的计费, 而非内容购买 (内容购买通过 HTLC)�
   free_quota_kb:   每 IP 每天免费配额 (KB)
   invoice_expiry:  Invoice 有效期 (秒, 默认 300)
 
-计费逻辑 (CheckX402):
-  1. 若 x402 未启用 → 免费
+计费逻辑 (CheckPaymentQuota):
+  1. 若下载计费未启用 → 免费
   2. 若 content_size == 0 → 免费
   3. 计算: used_bytes = 当日已用带宽 (按 "IP:YYYY-MM-DD" 键跟踪)
   4. 计算: free_bytes = free_quota_kb × 1024
@@ -1959,7 +1959,7 @@ x402 实现基于带宽的计费, 而非内容购买 (内容购买通过 HTLC)�
 
 - 跟踪键: `"{IP}:{YYYY-MM-DD}"`, 每日自动重置
 - 先发后扣: 成功响应后记录已用字节数 (`trackBandwidth`)
-- 配额检查在数据发送前 (`CheckX402`)
+- 配额检查在数据发送前 (`CheckPaymentQuota`)
 
 #### 402 响应格式
 
@@ -1985,7 +1985,7 @@ X-Pay-URL: /_bitfs/pay/<invoice_id>
 #### Invoice 生命周期
 
 ```
-1. Created  -- CheckX402 生成, 存入 Server.invoices map
+1. Created  -- CheckPaymentQuota 生成, 存入 Server.invoices map
 2. Paid     -- POST /_bitfs/pay/{id} 标记 invoice.Paid = true
 3. Expired  -- 超过 expires_at 后不再有效 (当前实现未清理过期 invoice)
 ```

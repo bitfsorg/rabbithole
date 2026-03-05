@@ -153,7 +153,7 @@ func VerifyStorageProof(
    Output 1: User   → user_balance
    其中 node_balance + user_balance = channel_capacity
 
-   每次 x402 请求:
+   每次下载计费请求:
      node_balance   += price
      user_balance -= price
      双方签名新的 Commitment TX
@@ -174,7 +174,7 @@ func VerifyStorageProof(
   min_deposit:       10000 sat (最小存款)
   max_duration:      144 blocks (约 1 天, 最长通道寿命)
   dispute_window:    6 blocks (争议窗口)
-  update_frequency:  每次 x402 请求
+  update_frequency:  每次下载计费请求
 
 Node↔Node MNT 通道结算说明:
   - 场景: Node_A 从 Node_B 批发热门数据 (系统设计第四节 "Metanet Node 间批发")
@@ -182,15 +182,15 @@ Node↔Node MNT 通道结算说明:
   - Funding: 买方 Node_A 锁入 MNT Token
   - 更新: 每次数据传输 (chunk 级别), 双方签署新的余额分配
   - 结算: 通道到期或余额耗尽时, 广播最新 Commitment TX 到 Metanet Overlay
-  - 定价: 由 Node_B 自行设定 (通常低于 x402 零售价, 体现批发折扣)
+  - 定价: 由 Node_B 自行设定 (通常低于下载计费零售价, 体现批发折扣)
   - 与 Owner↔Node 通道的区别仅在于双方角色 — 脚本结构和争议机制完全相同
 ```
 
 ---
 
-## 五、x402 支付通道 HTTP 协议扩展
+## 五、下载计费支付通道 HTTP 协议扩展
 
-> **前置依赖**: 本节是 x402 基础协议的支付通道扩展。x402 基础带宽计费规则见 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-x402-支付流程)。
+> **前置依赖**: 本节是下载计费基础协议的支付通道扩展。下载计费基础带宽计费规则见 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-下载计费支付流程)。
 
 ```
 新增 HTTP Headers:
@@ -308,8 +308,8 @@ MNT Token 参数:
   α = 带宽权重系数 (初始 0, 可通过矿工投票调整)
 
 proven_bandwidth:
-  - Metanet Node 在过去 N 块内的 x402 交易总量 (链上可验证)
-  - 更多 x402 = 更多带宽贡献 = 更低挖矿难度
+  - Metanet Node 在过去 N 块内的下载计费交易总量 (链上可验证)
+  - 更多下载计费 = 更多带宽贡献 = 更低挖矿难度
 
 效果:
   - α = 0: 纯 PoW (初始状态, 与 Bitcoin 相同)
@@ -318,6 +318,6 @@ proven_bandwidth:
 
 注意:
   - 这是远期优化, 初始版本使用纯 SHA256 PoW
-  - 需要充分的 x402 交易量才有意义
-  - 防作弊: x402 交易必须有对应的数据哈希和签名, 无法伪造
+  - 需要充分的下载计费交易量才有意义
+  - 防作弊: 下载计费交易必须有对应的数据哈希和签名, 无法伪造
 ```
