@@ -198,7 +198,7 @@ Metanet Node 在服务内容时读取此字段，自动按比例分配下载计�
 
 ## 七、下载计费支付通道
 
-> **下载计费基础协议**: 下载计费带宽计费规则、HTTP API (`POST /_bitfs/pay/{invoice_id}`)、免费配额逻辑、Invoice 验证流程等基础实现定义在 BitFS 设计文档中 — 见 [BitFS 系统设计 十三节](../bitfs/2-SystemDesign.zh.md#十三daemon-配置-lfcp) 和 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-下载计费支付流程)。本节仅描述 Metanet Overlay 引入的支付通道扩展。
+> **下载计费基础协议**: 下载计费带宽计费规则、HTTP API (`POST /_bitfs/pay/{invoice_id}`)、Invoice 验证流程等基础实现定义在 BitFS 设计文档中 — 见 [BitFS 系统设计 十三节](../bitfs/2-SystemDesign.zh.md#十三daemon-配置-lfcp) 和 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-下载计费支付流程)。本节仅描述 Metanet Overlay 引入的支付通道扩展。
 
 **实现边界（当前 vs 预留）**:
 

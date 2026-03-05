@@ -419,8 +419,8 @@
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
-| T15.2.1 | 正常获取 | 有效 hash, 配额内 | GET /data/{hash} | 200, 返回加密内容 | [unit] |
-| T15.2.2 | 配额超限触发 402 | 日配额已用完 | GET /data/{hash} | 402, X-Payment-Required header, JSON invoice | [unit] |
+| T15.2.1 | 正常获取 | 有效 hash, free 内容 | GET /data/{hash} | 200, 返回加密内容 | [unit] |
+| T15.2.2 | paid 内容触发 402 | paid 节点, 未支付 | GET /data/{hash} | 402, X-Payment-Required header, JSON invoice | [unit] |
 | T15.2.3 | 不存在的 hash | 无效 hash | GET /data/{invalid} | 404, content not found | [edge] |
 
 ## T15.3: 元数据查询
@@ -434,7 +434,7 @@
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
-| T15.4.1 | 正常支付 | 有效 invoice_id | POST /pay/{invoice_id} | 200, 配额恢复 | [unit] |
+| T15.4.1 | 正常支付 | 有效 invoice_id | POST /pay/{invoice_id} | 200, invoice 标记为 paid | [unit] |
 | T15.4.2 | 已支付 invoice | 重复支付 | POST /pay/{invoice_id} | 返回 already paid 错误 | [edge] |
 | T15.4.3 | 过期 invoice | >300 秒 | POST /pay/{invoice_id} | 返回 invoice expired 错误 | [edge] |
 
@@ -560,7 +560,7 @@
 | T20.3.2 | 密钥缓存复用 | 已购买过 | 再次 GET /data → 用缓存密钥解密 | 无需重复支付 | [integration] |
 | T20.3.3 | HTLC 超时回收 | buyer 未提交 HTLC | 等待 144 块 | buyer 资金回收 | [integration] |
 | T20.3.4 | 目录递归定价 | 目录设置 sell | 购买子文件 → 检查价格 | 子文件继承父目录价格 | [integration] |
-| T20.3.5 | 下载计费配额流程 | 免费配额耗尽 | GET /data → 402 → POST /pay → GET /data | 支付后正常获取 | [integration] |
+| T20.3.5 | 下载计费支付流程 | paid 内容未支付 | GET /data → 402 → POST /pay → GET /data | 支付后正常获取 | [integration] |
 
 ## T20.4: Daemon 与网络 (现有 1, 新增 4)
 
@@ -627,7 +627,7 @@
 
 | ID | 用例名称 | 属性 | 设计参照 | 标签 |
 |----|---------|------|---------|------|
-| T21.4.1 | 下载计费配额日重置 | free_quota_kb 每日每 IP 重置 | 十三-B.C | [property] |
+| T21.4.1 | 下载计费发票过期 | invoice_expiry 到期后拒绝支付 | 十三-B.C | [property] |
 | T21.4.2 | DNS 双向验证 | published pubkey = 链上 P_node 公钥 | 六 | [property] |
 | T21.4.3 | FREE 公开可解密 | FREE 模式 D_node=1, aes_key = KDF(P_node, key_hash) 可公开计算, 仍经 AES-GCM 加密 (非 identity) | 五 | [property] |
 | T21.4.4 | aes_key 派生确定性 | aes_key = KDF(ECDH(D_node, P_node), key_hash) — D_node 或 key_hash 任一变→输出变 | 二-B.D | [property] |
