@@ -3145,11 +3145,39 @@ TLV 定义:
     return false
 
 与 ACL 的关系:
-  - Share List: 简化版, 仅地址白名单, 无分组/权限级别
+  - Share List: 简化版, 仅地址白名单, 无分组/权限级别 (v0.0.1 不强制, parser 保留字段兼容)
   - ACL: 完整版, POSIX ACL 风格, 群签名/群加密, 支持子群
-  - 两者互斥: 同一 ChildEntry 不应同时设置 share_list 和 acl_ref
-  - 优先级: acl_ref > share_list > 默认 owner 权限
+  - 权限判定规则见下方"统一权限判定矩阵"
 ```
+
+### 统一权限判定矩阵 (v0.0.1)
+
+所有访问控制判定遵循以下规则链, 按顺序短路求值:
+
+#### 写操作
+
+| 条件 | 结果 |
+|------|------|
+| 请求者 = owner (持有 D_node) | **允许** |
+| 其他 | **拒绝** (v0.0.1 应用层强制, 不做链上约束) |
+
+#### 读操作
+
+| 优先级 | 条件 | 结果 |
+|--------|------|------|
+| 1 | 有 `acl_ref` 且解析成功 | 按 ACL 节点规则判定 |
+| 2 | 有 `acl_ref` 但解析失败 (节点不存在/损坏) | **拒绝** (fail-closed) |
+| 3 | 无 `acl_ref`, `access = FREE` | **允许** |
+| 4 | 无 `acl_ref`, `access = PAID` | 需 HTLC 支付后允许 |
+| 5 | 无 `acl_ref`, `access = PRIVATE` | 需 Method 42 握手 (仅 owner 或被授权方) |
+| 6 | 无 `acl_ref`, 无 `access` 字段 | **仅 owner** (默认, 向后兼容) |
+
+#### 设计约束
+
+- `share_list` 在 v0.0.1 中不参与判定, parser 保留字段以兼容未来扩展
+- `acl_ref` 始终指向 ACL 节点的压缩公钥 (33 bytes), 自动解析到最新版本
+- `acl_ref` 解析失败时 **必须 fail-closed** (拒绝访问), 不回退到 owner
+- 写权限链上强制 (covenant) 延迟到 v0.0.2+
 
 ### C. ACL 实现路径 (Phase 4)
 
