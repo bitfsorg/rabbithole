@@ -1761,7 +1761,7 @@ Errors:
 
 ```
 Request:  POST /_bitfs/pay/{invoice_id}
-Body:     (当前版本接受空 body, 生产环境需提交签名交易证明)
+Body:     hex-encoded raw transaction (签名的支付交易)
 
 Success:  200 OK
 { "status": "paid", "invoice_id": "<id>" }
@@ -1986,7 +1986,7 @@ X-Pay-URL: /_bitfs/pay/<invoice_id>
 #### Invoice 生命周期
 
 ```
-1. Created  -- 下载请求生成, 存入 Server.invoices map
+1. Created  -- 下载请求生成, 存入 Server.invoices map 并持久化到 ~/.bitfs/invoices/{id}.json
 2. Paid     -- POST /_bitfs/pay/{id} 标记 invoice.Paid = true
 3. Expired  -- 超过 expires_at 后不再有效 (当前实现未清理过期 invoice)
 ```
