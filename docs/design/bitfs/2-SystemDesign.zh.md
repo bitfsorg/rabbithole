@@ -1,10 +1,18 @@
 # BitFS 系统设计
 
-> **文档体系导航**: [总体设计](../0-OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · **系统设计** (本文档) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · **系统设计** (本文档) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第二层：模块划分、接口定义、数据流。
 > 各节的详细设计（算法、数据结构、协议细节）见 [3-DetailedDesign.zh.md](3-DetailedDesign.zh.md) 中对应的 B 节。
 > 交易结构的权威参考见 [交易规范](5-TransactionSpec.zh.md)。
+
+### 本文重点（新增）
+
+Bitcoin 交易结构与合约脚本是系统设计主线：
+
+- 交易结构：每个核心能力都需映射到明确的交易模板、输入输出约束与 UTXO 状态迁移。
+- 合约脚本：每条支付与权限关键路径都需映射到可验证的 Script 条件（锁定条件、解锁条件、失败回退路径）。
+- 审查顺序建议：先看“第四章 Metanet 交易格式”与“第十一章 买卖交易 -- HTLC 原子交换”，再看 Rabin/CLTV/收益权等合约扩展。
 
 ---
 
@@ -371,7 +379,7 @@ K+1         1B        Hardened flag (bool, 0|1)
 加密体系: Koblitz (secp256k1 ECC) 加密对称密钥 + AES-256-GCM 加密内容 (详见第五节)。
 
 - **FREE**: ECDH(D_node=1, P_node) trick → S_k = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) 可公开计算, AES-GCM(content, S_k), P_node 通过 DNSLink 公开
-- **PAID**: aes_key = KDF(ECDH(D_node, P_node).x, key_hash) — 与 PRIVATE 同密钥基础, 买家通过 HTLC/Token 获取 capsule → 还原 aes_key, AES-GCM(content, aes_key); CDN 带宽费另行通过 x402 收取
+- **PAID**: aes_key = KDF(ECDH(D_node, P_node).x, key_hash) — 与 PRIVATE 同密钥基础, 买家通过 HTLC/Token 获取 capsule → 还原 aes_key, AES-GCM(content, aes_key); CDN 带宽费另行通过下载计费收取
 - **PRIVATE**: ECDH(D_node, P_node) → 仅 Owner 可解密, TLV 内部加密 (encrypted=true, enc_payload 加密, 不存储明文 key_hash/file_index — 设计决策 #10)
   - 元数据加密密钥: salt = random(16B), meta_key = HKDF(ECDH(D_node, P_node).x, salt, "bitfs-metadata-encryption")
   - EncPayload 格式: salt(16B) || nonce(12B) || AES-GCM(TLV) || tag(16B)
@@ -914,7 +922,13 @@ exit / quit / bye             退出
 - **重复购买 = 重复收费**: Seller 不做去重
 - **Buyer 负责缓存**: 购买后 key_capsule 在链上 (HTLC 揭示), 本地缓存到 ~/.bitfs/cache/keys/
 - **后续访问不经过 Seller**: Buyer 直接从 Seller daemon 拉加密数据 + 本地解密
-- **一期不需要支付通道**: BSV 链上 HTLC 手续费极低, 单次购买场景足够。流媒体/大文件微支付场景的支付通道见 [Metanet Chain 设计](../metanet/) (CDN 阶段引入)
+- **当前实现边界**: BitFS 文件购买以链上 HTLC/Token 为主, BSV 链上手续费足够覆盖单次购买场景
+- **协议预留边界**: 流媒体/大文件微支付的支付通道由 Metanet Overlay 文档定义, 不在 BitFS 协议层强制
+
+| 能力 | 当前实现边界 | 协议预留边界 |
+|------|-------------|-------------|
+| BitFS buy 流程 | `bget --buy` + HTLC/Token | 保留与上层通道体系的兼容接口 |
+| 高频微支付 | 非必需 | 见 [Metanet 设计](../metanet/) 的支付通道章节 |
 
 ### Method 42 握手协议
 
@@ -1645,7 +1659,7 @@ Owner (本地有 ~/.bitfs/):
 Remote (通过 daemon):
   git-remote-bitfs → HTTP → daemon
     GET /_bitfs/git/refs/...     (读 refs)
-    GET /_bitfs/data/...         (下载 packfile, 可能 x402)
+    GET /_bitfs/data/...         (下载 packfile, 可能 下载计费)
     POST /_bitfs/git/push        (上传 packfile + 更新 refs)
 ```
 
@@ -1663,6 +1677,23 @@ BitFS 天然就是 Git LFS — Metanet 存元数据指针, 实际内容在内容
 
 ## 十三、Daemon 配置 (LFCP)
 
+### 三种内容存储/获取方式（边界输入）
+
+| 方式 | 存储层 | 获取路径 | 约束 |
+|------|--------|---------|------|
+| 链上嵌入交易 | Layer 1 | 直接读取链上交易内容 | 成本高、体积受限、可能被矿工裁剪 |
+| BitFS Daemon 自托管 | Layer 2 | `GET /_bitfs/data/{hash}` | 需要自运维与持续在线 |
+| Metanet SP 托管 | Layer 3 | 由 Metanet Service Provider 提供 CDN 服务 | 依赖 SP 可用性与服务策略 |
+
+### 链上/链下职责边界（四类对象）
+
+| 对象 | Layer 1（链上） | Layer 2（Daemon） | Layer 3（Metanet SP） |
+|------|-----------------|------------------|------------------------|
+| 元数据 | 权威记录（Metanet DAG/TLV） | 缓存与查询加速 | 可缓存，不改写权威 |
+| 内容 | 可选嵌入（小数据） | 默认存储与服务 | CDN 分发与缓存 |
+| 权限 | 所有权/可售性可验证锚点 | 会话鉴权与本地 ACL 执行 | 分发侧访问策略执行 |
+| 支付 | HTLC 购买结算 | 下载计费发票控制 | 托管结算与节点间结算 |
+
 ### Daemon 角色 — Local Full-Copy Peer (LFCP)
 
 Daemon 作为 **LFCP (Local Full-Copy Peer)**, 是 Owner 节点数据的本地完整副本服务。任何第三方也可以为公开内容运行 LFCP。
@@ -1671,7 +1702,7 @@ Daemon 作为 **LFCP (Local Full-Copy Peer)**, 是 Owner 节点数据的本地�
    - 链下内容 (默认): 从本地存储服务加密内容
    - 链上内容: 从区块链交易中提取加密内容 (解析 OP_DROP 数据交易)
 2. **Metanet 元数据服务** -- 为 Visitor 提供 Metanet 树结构查询 (SPV 模式下 Visitor 不查链)
-3. **x402 网关** -- 收取 CDN 带宽费
+3. **下载计费网关** -- 收取 CDN 带宽费
 4. **HTLC/Token 处理** -- 处理 sell/buy: 握手 → 提供 capsule_hash → 揭示 capsule 领款; Token 批量购买
 5. **WebMCP + Agent 支持** -- 为浏览器 Agent 和 CLI Agent 提供自描述接口
 6. **公开内容镜像** -- 任何第三方可运行 LFCP 缓存公开内容, 通过 SRV DNS 记录加入 CDN 负载均衡
@@ -1679,7 +1710,7 @@ Daemon 作为 **LFCP (Local Full-Copy Peer)**, 是 Owner 节点数据的本地�
 > **Daemon 重启行为**: Daemon 状态持久化于 `~/.bitfs/daemon.db`, 重启后自动恢复:
 > - **未完成的交易组**: 扫描 `pending_tx_group` 表, 自动续发中断的多笔交易操作 (见详细设计四-B)。
 > - **活跃 session**: Method 42 握手 session 存储在 daemon.db 中, 重启后仍有效 (受 TTL 约束)。
-> - **x402 计费状态**: 按 IP 的每日带宽用量记录持久化, 重启不影响配额计算。
+> - **下载计费状态**: 发票状态默认持久化到 `BITFS_HOME/invoices`，重启后自动恢复已支付状态，保持结算一致性。
 > - **进行中的请求**: 重启时所有进行中的 HTTP 请求会被中断 (客户端收到连接断开)。客户端应自行重试, 所有 API 端点均为幂等操作。
 
 ### HTTP API
@@ -1693,7 +1724,7 @@ GET  /_bitfs/health                       健康检查
 --- 内容端点 ---
 GET  /                                     根路径 (Content Negotiation: HTML/Markdown/JSON)
 GET  /{path}                               路径访问 (Content Negotiation, 目录返回 index.html)
-GET  /_bitfs/data/{hash}                   获取加密数据 (可能触发 x402)
+GET  /_bitfs/data/{hash}                   获取加密数据 (可能触发 下载计费)
 GET  /_bitfs/meta/{pnode}/{path}           查询 Metanet 元数据
 GET  /_bitfs/versions/{pnode}/{path}       版本历史
 
@@ -1703,7 +1734,7 @@ POST /_bitfs/handshake                     Method 42 ECDH 握手 (双向身份�
 --- 购买与支付 ---
 GET  /_bitfs/buy/{txid}                    获取购买信息 (capsule_hash, 价格)
 POST /_bitfs/buy/{txid}                    提交 HTLC, Seller 揭示 capsule
-POST /_bitfs/pay/{invoice_id}              提交 BSV 交易 (x402 CDN 带宽费, 见下方验证流程)
+POST /_bitfs/pay/{invoice_id}              提交 BSV 交易 (下载计费 CDN 带宽费, 见下方验证流程)
 
 --- 管理端点 (需 admin_token 认证) ---
 GET  /_bitfs/sales                         销售记录
@@ -1818,7 +1849,7 @@ Install BitFS CLI: `go install github.com/bitfs/cli/cmd/...@latest`
 
 这使 AI Agent (如 Claude, GPT) 能自动发现 BitFS 站点并学会如何访问。
 
-### x402 流程 (人类 vs Agent)
+### 下载计费流程 (人类 vs Agent)
 
 **免费内容**: 直接提供，人类和 Agent 无差异。
 
@@ -1884,7 +1915,7 @@ logfile =
 
 ---
 
-> **详细设计**: HTTP API、握手协议、x402、HTLC → [十三-B](3-DetailedDesign.zh.md#十三-b节点间通信协议详细设计)
+> **详细设计**: HTTP API、握手协议、下载计费、HTLC → [十三-B](3-DetailedDesign.zh.md#十三-b节点间通信协议详细设计)
 
 
 ## 十四、技术栈
@@ -1932,7 +1963,7 @@ libbitfs-go/                  # github.com/tongxiaofeng/libbitfs-go
 ├── spv/                      # SPV 轻节点 (Merkle proof)
 ├── storage/                  # 内容寻址存储
 ├── paymail/                  # Paymail + bitfs:// URI 解析
-├── x402/                     # x402 支付协议
+├── payment/                  # 下载计费支付协议
 ├── network/                  # 区块链服务抽象
 ├── config/                   # 配置文件解析
 └── revshare/                 # 收益分成
@@ -1972,7 +2003,7 @@ BSV 费率是动态的。客户端需要:
 ### Daemon HTTP 错误码
 
 ```
-400 请求格式错误    402 需要付费 (x402)
+400 请求格式错误    402 需要付费 (下载计费)
 404 内容未找到     408 超时    409 交易冲突
 429 限流           500 内部错误  503 存储不可用
 ```
@@ -2034,7 +2065,7 @@ Metanet 协议层面, CreateChild 的 Input 0 可花费锁定到 P_parent 的**�
 
 ---
 
-> Metanet Chain (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
+> Metanet Overlay Network (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)
 
 ---
 

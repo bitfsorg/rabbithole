@@ -3,7 +3,7 @@
 > 本文档为 Metanet 设计文档体系的第三层：算法、数据结构、协议细节。
 >
 > **文档体系**:
-> - [整体设计](../0-OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
+> - [整体设计](../OverallDesign.zh.md) — 两产品生态、三层架构、界面划分
 > - [概念设计](1-ConceptDesign.zh.md) — 产品定位、核心理念、设计原则
 > - [系统设计](2-SystemDesign.zh.md) — 节点架构、合约、支付通道
 > - **详细设计** (本文档) — 共识、挖矿、结算协议细节
@@ -11,7 +11,17 @@
 
 ---
 
-本文档补充 Metanet Chain 的精确协议细节、Script 设计和经济参数, 与系统设计各节对应。
+本文档补充 Metanet Overlay Network 的精确协议细节、Script 设计和经济参数, 与系统设计各节对应。
+
+### 本文重点（新增）
+
+详细设计阶段优先审查交易结构与合约代码：
+
+- Script 合约：一、Verify-Then-Pay 存储合约 Script
+- 支付状态迁移：四、支付通道协议；五、下载计费支付通道 HTTP 协议扩展
+- 链上封装与共识：六、ML Block 结构与挖矿
+
+阅读建议：先核对每条路径的锁定脚本、解锁参数和超时回退，再核对加密与网络层流程，确保“链上可验证约束”先于“链下实现细节”。
 
 ---
 
@@ -135,7 +145,7 @@ func VerifyStorageProof(
 
 ## 四、支付通道协议
 
-> **适用范围**: 本节描述的 2-of-2 多签支付通道协议适用于所有三种通道类型（BSV User↔Node 通道、MNT Owner↔Node 通道、MNT Node↔Node 通道）。三者使用相同的脚本结构和撤销逻辑，唯一区别是锁定的币种（BSV 或 MNT）和所在链（BSV 主链或 Metanet Chain）。
+> **适用范围**: 本节描述的 2-of-2 多签支付通道协议适用于所有三种通道类型（BSV User↔Node 通道、MNT Owner↔Node 通道、MNT Node↔Node 通道）。三者使用相同的脚本结构和撤销逻辑，唯一区别是锁定的币种（BSV 或 MNT）和所在链（BSV 主链或 Metanet Overlay）。
 
 ```
 支付通道交易结构:
@@ -153,7 +163,7 @@ func VerifyStorageProof(
    Output 1: User   → user_balance
    其中 node_balance + user_balance = channel_capacity
 
-   每次 x402 请求:
+   每次下载计费请求:
      node_balance   += price
      user_balance -= price
      双方签名新的 Commitment TX
@@ -174,23 +184,23 @@ func VerifyStorageProof(
   min_deposit:       10000 sat (最小存款)
   max_duration:      144 blocks (约 1 天, 最长通道寿命)
   dispute_window:    6 blocks (争议窗口)
-  update_frequency:  每次 x402 请求
+  update_frequency:  每次下载计费请求
 
 Node↔Node MNT 通道结算说明:
   - 场景: Node_A 从 Node_B 批发热门数据 (系统设计第四节 "Metanet Node 间批发")
-  - 通道位于 Metanet Chain (MNT Token), 非 BSV 主链
+  - 通道位于 Metanet Overlay (MNT Token), 非 BSV 主链
   - Funding: 买方 Node_A 锁入 MNT Token
   - 更新: 每次数据传输 (chunk 级别), 双方签署新的余额分配
-  - 结算: 通道到期或余额耗尽时, 广播最新 Commitment TX 到 Metanet Chain
-  - 定价: 由 Node_B 自行设定 (通常低于 x402 零售价, 体现批发折扣)
+  - 结算: 通道到期或余额耗尽时, 广播最新 Commitment TX 到 Metanet Overlay
+  - 定价: 由 Node_B 自行设定 (通常低于下载计费零售价, 体现批发折扣)
   - 与 Owner↔Node 通道的区别仅在于双方角色 — 脚本结构和争议机制完全相同
 ```
 
 ---
 
-## 五、x402 支付通道 HTTP 协议扩展
+## 五、下载计费支付通道 HTTP 协议扩展
 
-> **前置依赖**: 本节是 x402 基础协议的支付通道扩展。x402 基础带宽计费规则见 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-x402-支付流程)。
+> **前置依赖**: 本节是下载计费基础协议的支付通道扩展。下载计费基础带宽计费规则见 [BitFS 详细设计 十三-B.C](../bitfs/3-DetailedDesign.zh.md#c-下载计费支付流程)。
 
 ```
 新增 HTTP Headers:
@@ -308,8 +318,8 @@ MNT Token 参数:
   α = 带宽权重系数 (初始 0, 可通过矿工投票调整)
 
 proven_bandwidth:
-  - Metanet Node 在过去 N 块内的 x402 交易总量 (链上可验证)
-  - 更多 x402 = 更多带宽贡献 = 更低挖矿难度
+  - Metanet Node 在过去 N 块内的下载计费交易总量 (链上可验证)
+  - 更多下载计费 = 更多带宽贡献 = 更低挖矿难度
 
 效果:
   - α = 0: 纯 PoW (初始状态, 与 Bitcoin 相同)
@@ -318,6 +328,6 @@ proven_bandwidth:
 
 注意:
   - 这是远期优化, 初始版本使用纯 SHA256 PoW
-  - 需要充分的 x402 交易量才有意义
-  - 防作弊: x402 交易必须有对应的数据哈希和签名, 无法伪造
+  - 需要充分的下载计费交易量才有意义
+  - 防作弊: 下载计费交易必须有对应的数据哈希和签名, 无法伪造
 ```

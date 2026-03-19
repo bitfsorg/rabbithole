@@ -18,14 +18,14 @@ docs/design/diagrams/svg/
 docs/plans/
 
 # Independent git repos (subprojects)
-bitfs/
-metanet/
-den-explorer/
-websites/
-bitfs-app/
-bitfs-desktop/
-bitfs-extension/
-git-remote-bitfs/
-libbitfs-go/
-libbitfs-ts/
-.github/
+/bitfs/
+/metanet/
+/den-explorer/
+/websites/
+/bitfs-app/
+/bitfs-desktop/
+/bitfs-extension/
+/git-remote-bitfs/
+/libbitfs-go/
+/libbitfs-ts/
+/.github/

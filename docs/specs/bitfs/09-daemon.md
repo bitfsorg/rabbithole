@@ -30,8 +30,6 @@ type TLSConfig struct {
 
 type PaymentConfig struct {
     Enabled       bool   `toml:"enabled"`
-    PricePerMB    uint64 `toml:"price_per_mb"`    // CDN bandwidth fee (sat)
-    FreeQuotaMB   uint64 `toml:"free_quota_mb"`
     InvoiceExpiry int64  `toml:"invoice_expiry"`  // seconds
 }
 
@@ -103,9 +101,14 @@ func (d *Daemon) SetSPV(spv SPVService)
 // SetChain attaches a blockchain service for payment broadcast. Must be called before Start.
 func (d *Daemon) SetChain(c ChainService)
 
+// SetInvoiceDir configures invoice persistence directory. Must be called before Start.
+func (d *Daemon) SetInvoiceDir(dir string)
+
 // RegisterRoutes registers all HTTP handlers on the provided mux.
 func (d *Daemon) RegisterRoutes(mux *http.ServeMux)
 ```
+
+`bitfs daemon start` 默认将发票持久化目录设置为 `<datadir>/invoices`，用于崩溃恢复与支付状态连续性。
 
 ### HTTP 端点
 

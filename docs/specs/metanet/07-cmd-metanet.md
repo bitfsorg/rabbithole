@@ -22,7 +22,7 @@ metanet start [--mine] [--port <port>] [--datadir <path>]
     启动 Metanet Node 守护进程。
     - 连接到 Metanet Chain 对等节点
     - 开始参与覆盖网络
-    - 开始提供 x402 内容请求服务
+    - 开始提供下载计费内容请求服务
     - 如果指定 --mine：启用合并挖矿
     - 在前台运行（使用 systemd/launchd 实现后台运行）
 
@@ -39,7 +39,7 @@ metanet status [--json]
     - 已连接对等节点数
     - 缓存内容（数量、总大小）
     - 活跃存储合约
-    - 收入汇总（来自 x402 的 BSV、来自合约/挖矿的 MNT）
+    - 收入汇总（来自下载计费的 BSV、来自合约/挖矿的 MNT）
     - 挖矿状态（如已启用）
 
 metanet contracts [--active|--expired|--all] [--json]
@@ -83,7 +83,7 @@ network = "mainnet"  # or "testnet"
 max_cache_size = "100GB"
 # Maximum storage for archive contracts
 max_archive_size = "1TB"
-# Minimum x402 revenue rate to cache content (sat/KB/day)
+# Minimum download revenue rate to cache content (sat/KB/day)
 min_revenue_rate = 1
 
 [mining]
@@ -182,7 +182,7 @@ mnt_max_duration = 1008  # ~1 week
         "next_proof_deadline": 850234
     },
     "revenue": {
-        "bsv_x402_total": 125000,
+        "bsv_download_total": 125000,
         "mnt_contract_total": 5000000,
         "mnt_mining_total": 15000000000
     },
@@ -209,7 +209,7 @@ mnt_max_duration = 1008  # ~1 week
 ## 安全考量
 
 1. **密钥保护**：节点私钥（`node.key`）在静态存储时使用密码短语加密。CLI 在 `start` 时提示输入密码（或从 `METANET_PASSPHRASE` 环境变量读取，用于自动化部署）。
-2. **默认无远程访问**：守护进程仅在配置端口上监听覆盖网络和 x402 流量。除非显式配置，否则不暴露管理 API。
+2. **默认无远程访问**：守护进程仅在配置端口上监听覆盖网络和下载计费流量。除非显式配置，否则不暴露管理 API。
 3. **通道状态持久化**：每次更新后支付通道状态都会持久化到磁盘，防止崩溃时丢失资金。
 4. **优雅关闭**：`metanet stop` 会协作关闭支付通道并宣布离开，防止对手方混乱。
 5. **测试网隔离**：测试网模式使用独立的数据目录和引导对等节点，防止主网污染。

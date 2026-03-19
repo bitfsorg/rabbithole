@@ -2,14 +2,14 @@
 
 ## 目的
 
-`payment` 包实现 Metanet CDN 的双通道支付：用于终端用户 x402 微支付的 BSV 通道和用于节点间经济的 MNT 通道。支付通道（Payment Channel）实现链下微交易与链上结算，支持高频率的 x402 内容检索而无需逐笔交易费用。
+`payment` 包实现 Metanet CDN 的双通道支付：用于终端用户下载计费微支付的 BSV 通道和用于节点间经济的 MNT 通道。支付通道（Payment Channel）实现链下微交易与链上结算，支持高频率的下载计费内容检索而无需逐笔交易费用。
 
 通道设计使用标准 Bitcoin Script（2-of-2 多重签名资金锁定、OP_CHECKSEQUENCEVERIFY 用于争议窗口、撤销密钥用于惩罚机制）。共有三种通道类型：
-- **BSV 通道**（用户 <-> Metanet Node）：用于内容检索的 x402 流式微支付
+- **BSV 通道**（用户 <-> Metanet Node）：用于内容检索的下载计费流式微支付
 - **MNT 通道**（所有者 <-> Metanet Node）：CDN 托管费用支付
 - **MNT 通道**（Metanet Node <-> Metanet Node）：节点间批量数据交易
 
-x402 HTTP 协议扩展通过自定义 HTTP 头实现基于通道的支付。
+下载计费 HTTP 协议扩展通过自定义 HTTP 头实现基于通道的支付。
 
 ## 公开 API
 
@@ -20,7 +20,7 @@ x402 HTTP 协议扩展通过自定义 HTTP 头实现基于通道的支付。
 type ChannelType int
 
 const (
-    ChannelBSV ChannelType = iota  // BSV: User <-> Node (x402)
+    ChannelBSV ChannelType = iota  // BSV: User <-> Node (download billing)
     ChannelMNT                      // MNT: Owner <-> Node or Node <-> Node
 )
 
@@ -54,8 +54,8 @@ type ChannelParams struct {
     DisputeWindow   uint32        // CSV dispute window in blocks (6 default)
 }
 
-// x402ChannelHeaders contains the HTTP header fields for x402 channel payments.
-type x402ChannelHeaders struct {
+// bandwidthChannelHeaders contains the HTTP header fields for channel payments.
+type bandwidthChannelHeaders struct {
     // Request headers
     AcceptChannel  bool     // X-Accept-Channel
     ChannelID      string   // X-Channel-ID: <funding_txid>:<vout>
@@ -144,7 +144,7 @@ func BuildPunishmentTx(
     claimerPubKey []byte,
 ) ([]byte, error)
 
-// VerifyVoucher verifies an x402 payment voucher (signed commitment update).
+// VerifyVoucher verifies a bandwidth payment voucher (signed commitment update).
 func VerifyVoucher(
     ch *Channel,
     voucher []byte,
@@ -215,7 +215,7 @@ Output 1 (Initiator):
 2. 在争议窗口（CSV 区块数）内，使用撤销密钥提交惩罚交易
 3. 惩罚交易领取通道内的全部余额
 
-### x402 通道 HTTP 头
+### 下载计费通道 HTTP 头
 
 ```
 Request:

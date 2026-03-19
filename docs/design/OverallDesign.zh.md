@@ -20,7 +20,7 @@
 | 货币 | BSV | MNT Token |
 | 类比 | IPFS (协议层) | Filecoin (激励层) |
 
-**关键区别**：Filecoin 激励存储 (Proof-of-Replication)；Metanet 激励检索 (payment 按次付费)。热门内容自组织复制，冷数据自然淘汰——市场驱动而非强制冗余。
+**关键区别**：Filecoin 激励存储 (Proof-of-Replication)；Metanet 激励检索（下载计费按次付费）。热门内容自组织复制，冷数据自然淘汰——市场驱动而非强制冗余。
 
 ---
 
@@ -29,7 +29,7 @@
 <table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
 <tr style="background:#eaf0f7;">
 <td style="border:1px solid #999; padding:0.5em; width:22%; font-weight:600;">Layer 1: BSV 主链</td>
-<td style="border:1px solid #999; padding:0.5em; width:38%;">文件元数据、所有权证明、HTLC 交易、payment 检索费</td>
+<td style="border:1px solid #999; padding:0.5em; width:38%;">文件元数据、所有权证明、HTLC 交易、下载计费结算</td>
 <td style="border:1px solid #999; padding:0.5em; width:22%;">终端用户、AI Agent</td>
 <td style="border:1px solid #999; padding:0.5em; width:18%; text-align:center;">BSV</td>
 </tr>
@@ -40,14 +40,33 @@
 <td style="border:1px solid #999; padding:0.5em; text-align:center;">无</td>
 </tr>
 <tr style="background:#f7f0ea;">
-<td style="border:1px solid #999; padding:0.5em; font-weight:600;">Layer 3: Metanet Chain</td>
-<td style="border:1px solid #999; padding:0.5em;">CDN 托管、节点激励、支付通道批量结算</td>
+<td style="border:1px solid #999; padding:0.5em; font-weight:600;">Layer 3: Metanet Overlay Network</td>
+<td style="border:1px solid #999; padding:0.5em;">CDN 托管、节点激励、支付通道结算、ML 共识排序 (5 分钟 PoW)</td>
 <td style="border:1px solid #999; padding:0.5em;">内容所有者、节点运营商</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center;">MNT</td>
 </tr>
 </table>
 
-**数据无需跨链**：BSV 主链只存元数据 (Metanet DAG 交易)；内容数据始终在链下流转 (Daemon 或 CDN 节点)。Metanet Chain 管理经济激励，不承载文件内容。
+**数据无需跨链**：BSV 主链只存元数据 (Metanet DAG 交易)；内容数据始终在链下流转 (Daemon 或 CDN 节点)。Metanet Overlay Network 管理经济激励与 ON 层共识排序（CSW Multilevel Blockchain，Bitcoin 风格 PoW，5 分钟出块），不承载文件内容。
+
+### 2.1 数据三种存储/获取方式
+
+| 方式 | 所在层 | 优点 | 代价与风险 |
+|------|--------|------|-----------|
+| 嵌入链上交易 | Layer 1 | 永久可审计、无需额外服务端 | 成本高，体积受限，且可能被矿工裁剪 |
+| BitFS Daemon 自托管 | Layer 2 | 完全自控、协议最简、可直接服务 | 需要持续运维与在线 |
+| Metanet SP 托管 | Layer 3 | CDN 可用性高、可扩展、可市场化分发 | 依赖 SP 服务质量与结算策略 |
+
+三种方式可组合：例如“元数据上链 + 内容在 L2/L3 提供 + 支付按对象分层结算”。
+
+### 2.2 链上/链下职责边界（审查基线）
+
+| 对象 | 主放置层 | 边界定义 | 越层判定（需整改） |
+|------|----------|----------|-------------------|
+| 元数据 | Layer 1 | 文件系统结构、版本、哈希承诺上链；L2/L3 仅缓存 | 将权威元数据仅放链下 |
+| 内容 | Layer 2/3（默认） | 文件实体默认链下；仅在必要时选择链上嵌入 | 将大内容默认塞入链上 |
+| 权限 | Layer 1 + Layer 2/3 | 所有权/可售性等链上可验证；会话态鉴权在服务层 | 仅靠链下 ACL 且无链上背书 |
+| 支付 | Layer 1 + Layer 2/3 | 购买结算走链上 HTLC；下载计费发票在服务层生成并结算可上链 | 将结算状态长期仅保留在内存或仅链下不可追溯 |
 
 ---
 
@@ -66,7 +85,7 @@ libbitfs-go/
 ├── spv/          # SPV 轻节点 (本地 tx + Merkle proof)
 ├── storage/      # 内容存储抽象 (链下/链上)
 ├── paymail/      # Paymail 身份解析 + bitfs:// URI
-├── payment/      # payment 支付协议 + Token 预购
+├── payment/      # 下载计费协议 + Token 预购
 ├── network/      # 区块链服务抽象 (RPC/SPV 客户端)
 ├── config/       # 配置文件解析 (key=value)
 └── revshare/     # Revenue Share / ISO 证券化
@@ -89,7 +108,7 @@ libbitfs-go/
 <td style="border:1px solid #999; padding:0.5em; width:10%; text-align:center; background:#fff;">→</td>
 <td style="border:1px solid #999; padding:0.5em; width:20%; text-align:center; background:#e8e8e8; font-weight:600;">BSV 主链</td>
 <td style="border:1px solid #999; padding:0.5em; width:10%; text-align:center; background:#fff;">→</td>
-<td style="border:1px solid #999; padding:0.5em; width:30%; background:#fafafa;">文件元数据 + payment/HTLC 支付</td>
+<td style="border:1px solid #999; padding:0.5em; width:30%; background:#fafafa;">文件元数据 + 下载计费/HTLC 支付</td>
 </tr>
 <tr>
 <td colspan="5" style="border:1px solid #999; padding:0.3em; text-align:center; font-size:9pt; color:#555; background:#fff;">↕ 内容哈希引用 (非跨链)</td>
@@ -97,7 +116,7 @@ libbitfs-go/
 <tr>
 <td style="border:1px solid #999; padding:0.5em; text-align:right; background:#f7f0ea;">内容所有者</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
-<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#e8e8e8; font-weight:600;">Metanet Chain</td>
+<td style="border:1px solid #999; padding:0.5em; text-align:center; background:#e8e8e8; font-weight:600;">Metanet Overlay Network</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center; background:#fff;">→</td>
 <td style="border:1px solid #999; padding:0.5em; background:#fafafa;">CDN 托管合约 + MNT 结算</td>
 </tr>
@@ -115,7 +134,7 @@ libbitfs-go/
 
 | 币种 | 使用场景 | 接触者 |
 |------|----------|--------|
-| **BSV** | payment 检索费、HTLC 文件购买、Metanet DAG 交易手续费 | 所有用户 |
+| **BSV** | 下载计费、HTLC 文件购买、Metanet DAG 交易手续费 | 所有用户 |
 | **MNT** | CDN 托管费、挖矿奖励、节点间批发结算 | 仅内容所有者和节点运营商 |
 
 **设计目标**：普通用户只接触 BSV。MNT 是运营商侧的内部结算代币，对终端用户完全透明。
@@ -146,10 +165,11 @@ design/
 ## 六、共享设计原则
 
 1. **Unix 哲学** — 每个工具做一件事，可管道组合 (`bcat txid | jq .`)
-2. **Agent-first** — CLI 输出结构化 (JSON)，payment 付费墙即可编程支付接口
+2. **Agent-first** — CLI 输出结构化 (JSON)，下载计费付费墙即可编程支付接口
 3. **默认加密** — Method 42 (ECDH + BIP32)，所有数据加密存储，密钥由文件路径确定性派生
 4. **SPV 模式** — 本地保存交易 + Merkle proof，从不查询区块链全节点
-5. **BSV 同构** — Metanet Chain 使用与 BSV 相同的交易格式和 Script 引擎
+5. **Overlay + ML 共识** — Metanet 是 BSV 上的 Overlay Network；ON 层按 CSW Multilevel Blockchain 采用 Bitcoin 风格 PoW（5 分钟出块）排序，区块通过合法 BSV 交易确认
 6. **BRC 标准兼容** — 遵循 BSV Association 的 BRC 标准体系
 7. **BSV 官方库** — 唯一 BSV 依赖为 `github.com/bsv-blockchain/go-sdk`
 8. **元数据与内容分离** — 链上只存元数据 (Metanet DAG)，内容独立存储
+9. **交易与合约优先** — 系统设计与详细设计中，Bitcoin 交易结构 (输入/输出/锁定脚本/状态迁移) 与合约脚本验证路径是核心主线；功能设计必须可映射到可审计交易与可验证 Script
