@@ -362,7 +362,7 @@ K+1         1B        Hardened flag (bool, 0|1)
   ISOConfig iso                    = 0x2F;  // tag 47: ISO 配置 (可选, 仅 ISO 发起时写入)
 
   // ACL 引用
-  bytes acl_ref = 0x30;                  // tag 48: ACL 引用 (群签名公钥哈希或 ACL 规则 TxID)
+  bytes acl_ref = 0x30;                  // tag 48: ACL 引用 (ACL 节点的压缩公钥, 33 bytes, 永久标识, 自动解析到最新版本)
 }
 ```
 

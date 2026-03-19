@@ -3155,7 +3155,7 @@ TLV 定义:
 
 ```
 ACL 节点 TLV:
-  field 41, tag 0x29 (TagACLRef)
+  field 48, tag 0x30 (TagACLRef)
   value: 33 bytes compressed public key (指向 ACL Metanet 节点)
 
 BLS12-381 库选型:
