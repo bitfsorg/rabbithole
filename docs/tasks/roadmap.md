@@ -21,4 +21,6 @@
 
 ## P3 — 远期探索
 
+- [ ] **写权限链上强制（下个版本）** — 通过 covenant / capability-UTXO 等机制把写权限从“应用层执法”升级到“链上硬约束”。`v0.0.1` 暂不纳入，后续版本单独评审交易体积、隐私与运维复杂度。
 - [ ] **AMP (Agent Messaging Protocol)** — Agent 间点对点加密消息协议，独立于 BitFS 的协议规范（仅依赖 BSV + Paymail + ECDH）。双通道模型: 在线 HTTP 直连 (`/_amp/deliver`)，离线 BSV OP_RETURN (`0x616d70` 标识) 作为永久信箱。TLV 二进制格式，Method 42 E2E 加密。内置任务协作消息类型 (task-request/result/status/ack)。对标 Google A2A 协议但更精简、加密优先、支持离线投递和链上支付。设计文档: `docs/tasks/2026-03-04-amp-protocol-design.md`
+- [ ] **收益分配/ISO/目录证明扩展字段（远期）** — `revenue_share`、`registry_txid`、`registry_vout`、`iso`、`merkle_root` 相关术语与功能暂不进入当前核心 TLV；后续在收益分配、代币化与不可信分发证明能力需要落地时，作为远期扩展专题单独设计与实现，避免影响当前核心文件系统元信息协议收敛。

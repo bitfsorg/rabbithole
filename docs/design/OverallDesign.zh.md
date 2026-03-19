@@ -172,3 +172,4 @@ design/
 6. **BRC 标准兼容** — 遵循 BSV Association 的 BRC 标准体系
 7. **BSV 官方库** — 唯一 BSV 依赖为 `github.com/bsv-blockchain/go-sdk`
 8. **元数据与内容分离** — 链上只存元数据 (Metanet DAG)，内容独立存储
+9. **交易与合约优先** — 系统设计与详细设计中，Bitcoin 交易结构 (输入/输出/锁定脚本/状态迁移) 与合约脚本验证路径是核心主线；功能设计必须可映射到可审计交易与可验证 Script

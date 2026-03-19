@@ -9,6 +9,14 @@
 > - [详细设计](3-DetailedDesign.zh.md) — 共识、挖矿、结算协议细节
 > - [测试设计](4-TestDesign.zh.md) — 测试用例设计
 
+### 本文重点（新增）
+
+Metanet 的系统边界以 Bitcoin 交易结构和合约脚本为核心：
+
+- 交易层：ON 交易与 ML Block 必须可封装为合法 BSV 交易并可审计。
+- 合约层：Verify-Then-Pay、支付通道、回退路径都必须落到可验证 Script 条件。
+- 审查顺序建议：先看“第五章 冷数据: Verify-Then-Pay 合约模式”与“第七章 下载计费支付通道”，再看“第八章 BSV <-> Overlay Network 交互”。
+
 ---
 
 ## 一、三层架构
