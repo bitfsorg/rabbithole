@@ -10,6 +10,7 @@
 - **标题**: Metanet 网络: 激励检索的去中心化 CDN
 - **英文标题**: The Metanet Network: A Decentralized CDN That Incentivizes Retrieval
 - **作者**: Alex Tong — alex@bitfs.org
+- **版本**: v0.0.1 (2026-03-20)
 
 ---
 
