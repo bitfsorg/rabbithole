@@ -10,6 +10,7 @@
 - **标题**: BitFS: 基于区块链的点对点加密文件系统
 - **英文标题**: BitFS: A Peer-to-Peer Encrypted File System on Blockchain
 - **作者**: Alex Tong — alex@bitfs.org
+- **版本**: v0.0.1 (2026-03-20)
 
 ---
 
@@ -114,6 +115,8 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 | 免费 | aes_key = HKDF(P_node.x, key_hash, "bitfs-file-encryption")（平凡密钥） | 知道 P_node 的任何人 |
 | 付费 | 标准 Method 42 ECDH capsule 交换 | 买方（HTLC 交换后）|
 
+**v0.0.1 权限判定**：读操作按 acl_ref → access 字段 → owner fallback 优先级链短路求值；acl_ref 解析失败时 fail-closed；写操作仅 owner（应用层强制）。
+
 **平凡密钥技巧**：免费数据使用 P_node.x 作为 KDF 输入 → aes_key = HKDF(P_node.x, key_hash, "bitfs-file-encryption")。P_node 通过 DNS 公开 → 任何人可派生解密密钥，但磁盘上仍加密 → 统一存储模型。
 
 **私有数据**：整个 Metanet 载荷用所有者对称密钥加密 → 文件名/大小/时间戳/目录结构在链上不可见。
@@ -149,6 +152,7 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 - 输出[2] 刷新父节点 UTXO → 自持续 UTXO 链，无需预先充值
 - TLV 载荷编码：节点类型、操作(CREATE/UPDATE/DELETE)、内容元数据、访问控制、目录子节点、可选字段(关键词/描述/域名绑定)
 - 定价：price_per_kb (satoshis/KB)，支持目录继承
+- Paymail 绑定：Vault 可通过 `paymail bind` 关联 `user@domain` 地址，支持 .well-known/bsvalias 发现
 
 ---
 
@@ -168,6 +172,13 @@ m/44'/236'/2'/0/0     Vault #1 根目录（独立树）
 ```
 
 **原子性保证**：卖方收到付款 ↔ 买方收到密钥胶囊。无需可信中介。
+
+**HTLC Script 设计**：
+- 106 字节纯 Bitcoin Script（无 sCrypt 依赖）
+- 结构：`<invoiceId> DROP IF SHA256 <capsuleHash> EQUALVERIFY DUP HASH160 <sellerPkh> EQUALVERIFY CHECKSIG ELSE DUP HASH160 <buyerPkh> EQUALVERIFY CHECKSIG ENDIF`
+- Claim 路径：卖方提交 `<sig> <pubkey> <fileTxID||capsule> TRUE`（64 字节原像）
+- Refund 路径：买方提交 `<sig> <pubkey> FALSE`（nLockTime 强制超时，不使用 OP_CLTV）
+- Go 和 TypeScript 实现产生字节一致的 106 字节脚本
 
 **Method 42 握手**：
 - 交换 P_buyer/P_seller + nonce + timestamp
