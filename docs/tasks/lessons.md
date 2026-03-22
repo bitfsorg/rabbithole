@@ -20,6 +20,11 @@
 - **libbitfs-ts linking**: bitfs-app 用 `"@bitfs/libbitfs": "file:../../../libbitfs-ts"`，路径层级取决于 worktree 位置
 - **Change UTXO ScriptPubKey**: 构建交易时 change output 必须带 ScriptPubKey，否则后续交易引用时无法签名
 
+## Critical Bugs Found
+
+- **Vault Close() clobber**: `Close()` called `State.Save()` unconditionally, so daemon shutdown overwrote concurrent CLI state updates. Fix: Close() only saves wallet state; all node mutations persist via `withWriteLock`. Rule: **long-running processes must not blindly save state on exit — use reload-before-save or skip saving stale data**.
+- **State mutations outside withWriteLock**: `Publish` mutated `State.PublishBindings` directly without saving, relying on Close(). Rule: **every state mutation must either go through withWriteLock or call Save() explicitly**.
+
 ## Anti-Patterns
 
 - 不要在一个超长对话中同时设计+全部实施
