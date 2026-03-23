@@ -88,6 +88,7 @@ libbitfs-go/
 ├── payment/      # 下载计费协议 + Token 预购
 ├── network/      # 区块链服务抽象 (RPC/SPV 客户端)
 ├── config/       # 配置文件解析 (key=value)
+├── vault/        # Vault 状态管理、交易构建、文件读取操作
 └── revshare/     # Revenue Share / ISO 证券化
 ```
 

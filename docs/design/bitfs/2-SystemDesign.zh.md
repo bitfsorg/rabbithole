@@ -1,10 +1,9 @@
 # BitFS 系统设计
 
-> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · **系统设计** (本文档) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · **系统设计** (本文档) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第二层：模块划分、接口定义、数据流。
 > 各节的详细设计（算法、数据结构、协议细节）见 [3-DetailedDesign.zh.md](3-DetailedDesign.zh.md) 中对应的 B 节。
-> 交易结构的权威参考见 [交易规范](5-TransactionSpec.zh.md)。
 
 ### 本文重点（新增）
 
@@ -311,7 +310,7 @@ Payload = Field₁ || Field₂ || ... || Fieldₙ
 - `FILE` (0)
 - `DIR` (1)
 - `LINK` (2)
-*(注: Anchor 锚点节点类型被移除, 直接纳入普通 DIR/EXT 范畴)*
+- `ANCHOR` (3) — used by git-remote-bitfs for Git commit anchors
 
 **访问级别 (AccessLevel)**:
 - `PRIVATE` (0): 仅 Owner 可解密 (`ECDH(D_node, P_node)`)

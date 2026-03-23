@@ -96,5 +96,5 @@ Metanet 是 BSV 上的 Overlay Network (ON)。ON 层采用 CSW Multilevel Blockc
 4. **ON 层 PoW 共识** — 采用 Bitcoin 风格 SHA256 PoW（5 分钟出块，2 年减半），挖矿与存储解耦；共识结果通过 BSV 载体交易获得最终确认。
 5. **低准入门槛** — 矿工参与要求极低，同时网络节点也可以是轻量服务。
 6. **市场驱动** — 热数据靠下载计费正反馈自组织，协议不做中心化调度。
-7. **BSV 作为底层信任根** — MNT Token 的账本通过 ML Block 嵌入 BSV 交易中，BSV 主链直接保证最终性和不可篡改性，避免了独立独立链算力不足时的安全风险。
+7. **BSV 作为底层信任根** — MNT Token 的账本通过 ML Block 嵌入 BSV 交易中，BSV 主链直接保证最终性和不可篡改性，避免了独立链算力不足时的安全风险。
 8. **BRC 标准兼容** — 遵循 BSV Association 的 Overlay BRC 标准体系，网络节点通过 `nServices` (NODE_METANET) 标识实现 BSV P2P 网络的节点发现。

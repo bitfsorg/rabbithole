@@ -1,6 +1,6 @@
 # BitFS 测试设计
 
-> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · **测试设计** (本文档) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · **测试设计** (本文档)
 >
 > 本文档为 BitFS 设计文档体系的第四层：测试用例设计。
 > 设计章节交叉引用: 系统设计章节（如"第二节"）见 [2-SystemDesign](2-SystemDesign.zh.md)，详细设计章节（如"第四-B节"）见 [3-DetailedDesign](3-DetailedDesign.zh.md)。
@@ -22,8 +22,8 @@
 
 | # | 类别 | 设计参照 | 代码文件 | 现有 | 目标 |
 |---|------|---------|---------|------|------|
-| T1 | TLV Schema | 四 | `proto/bitfs_test.go` | 61 | 72 |
-| T2 | HD Wallet | 二-B | `method42/hdwallet_test.go` | 33 | 44 |
+| T1 | TLV Schema | 四 | `libbitfs-go/metanet/metanet_test.go` | 61 | 72 |
+| T2 | HD Wallet | 二-B | `libbitfs-go/wallet/wallet_test.go` | 33 | 44 |
 | T3 | Method 42 加密 | 五, 二-B.D | `method42/encrypt_test.go` | 23 | 40 |
 | T4 | Vault 管理 | 二 | `method42/vault_test.go` | 24 | 32 |
 | T5 | 握手协议 | 十三-B.B | `method42/handshake_test.go` | 8 | 17 |
@@ -62,7 +62,7 @@
 
 ## T1. TLV Schema
 
-**设计参照**: 第四节 | **代码文件**: `src/proto/bitfs_test.go` | **现有/目标**: 61 / 72
+**设计参照**: 第四节 | **代码文件**: `libbitfs-go/metanet/metanet_test.go` | **现有/目标**: 61 / 72
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -76,7 +76,7 @@
 
 ## T2. HD Wallet
 
-**设计参照**: 第二-B节 | **代码文件**: `libbitfs-go/method42/hdwallet_test.go` | **现有/目标**: 33 / 44
+**设计参照**: 第二-B节 | **代码文件**: `libbitfs-go/wallet/wallet_test.go` | **现有/目标**: 33 / 44
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -467,7 +467,7 @@
 
 ## T16. CLI 工具
 
-**设计参照**: 第八节, 第九-B节 | **代码文件**: `src/cmd/*_test.go` | **现有/目标**: 139 / 181
+**设计参照**: 第八节, 第九-B节 | **代码文件**: `bitfs/cmd/b*/*_test.go` | **现有/目标**: 139 / 181
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -1029,8 +1029,8 @@ Hash Chain 批量预购令牌的生成、验证和兑换测试。
 
 | 测试类别 | 设计章节 | 代码路径 |
 |----------|---------|---------|
-| T1 TLV Schema | 四 (Metanet 交易格式) | `src/proto/bitfs_test.go` |
-| T2 HD Wallet | 二-B (HD 钱包派生规则详细设计) | `libbitfs-go/method42/hdwallet_test.go` |
+| T1 TLV Schema | 四 (Metanet 交易格式) | `libbitfs-go/metanet/metanet_test.go` |
+| T2 HD Wallet | 二-B (HD 钱包派生规则详细设计) | `libbitfs-go/wallet/wallet_test.go` |
 | T3 Method 42 加密 | 五 (数据类型与加密模型), 二-B.D (Method 42 加密密钥派生) | `libbitfs-go/method42/encrypt_test.go` |
 | T4 Vault 管理 | 二 (HD 钱包与 Vault) | `libbitfs-go/method42/vault_test.go` |
 | T5 握手协议 | 十三-B.B (Method 42 握手协议) | `libbitfs-go/method42/handshake_test.go` |
@@ -1044,7 +1044,7 @@ Hash Chain 批量预购令牌的生成、验证和兑换测试。
 | T13 DNSLink | 六 (DNSLink 与发布) | `libbitfs-go/paymail/dnslink_test.go` |
 | T14 URI 寻址 | 六 (DNSLink 与发布) | `libbitfs-go/paymail/uri_test.go` |
 | T15 Daemon HTTP | 十三-B.A (HTTP API 详细规范) | `bitfs/internal/daemon/daemon_test.go` |
-| T16 CLI 工具 | 八 (b* 独立工具), 九-B (CLI 命令详细参考) | `src/cmd/*_test.go` |
+| T16 CLI 工具 | 八 (b* 独立工具), 九-B (CLI 命令详细参考) | `bitfs/cmd/b*/*_test.go` |
 | T17 CLI 通用 | 八 (b* 独立工具) | `bitfs/cmd/bitfs/common_test.go` |
 | T18 配置与错误处理 | 十六 (错误处理) | `libbitfs-go/config/config_test.go` |
 | T19 Shell 交互 | 十 (Shell 交互模式), 九-B.C (Shell 命令参考) | `bitfs/cmd/bitfs/shell_test.go` |

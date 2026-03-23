@@ -1,6 +1,6 @@
 # BitFS 概念设计
 
-> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · **概念设计** (本文档) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · **概念设计** (本文档) · [系统设计](2-SystemDesign.zh.md) · [详细设计](3-DetailedDesign.zh.md) · [测试设计](4-TestDesign.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第一层：项目愿景、核心概念、架构概览。
 > Metanet Overlay Network (去中心化 CDN) 设计已移至独立文档: [../metanet/](../metanet/)

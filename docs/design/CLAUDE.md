@@ -12,8 +12,7 @@ design/
 │   ├── 1-ConceptDesign.zh.md            概念设计 (愿景, 架构, 设计决策)
 │   ├── 2-SystemDesign.zh.md             系统设计 (模块, 接口, 数据流)
 │   ├── 3-DetailedDesign.zh.md           详细设计 (算法, 数据结构, 协议)
-│   ├── 4-TestDesign.zh.md              测试设计 (~980 测试用例)
-│   └── 5-TransactionSpec.zh.md         交易规范 (权威参考, 13 项设计决策)
+│   └── 4-TestDesign.zh.md              测试设计 (~980 测试用例)
 ├── metanet/                           ← Metanet CDN 网络设计
 │   ├── 1-ConceptDesign.zh.md            概念设计 (CDN 模型, 经济设计)
 │   ├── 2-SystemDesign.zh.md             系统设计 (节点, 合约, 支付通道)
