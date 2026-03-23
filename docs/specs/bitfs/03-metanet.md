@@ -2,7 +2,7 @@
 
 ## 目的
 
-在 BSV 区块链上实现 Unix 文件系统模型的 Metanet DAG 解析器。将 Metanet 协议概念映射到 Unix 文件系统原语：inode = P_node，dirent = ChildEntry，支持硬链接、软链接（本地和远程）以及目录遍历。
+在 BSV 区块链上实现 Unix 文件系统模型的 Metanet DAG 解析器。将 Metanet 协议概念映射到 Unix 文件系统原语：inode = P_node，dirent = ChildEntry，支持软链接（本地和远程）以及目录遍历。
 
 设计参考：ConceptDesign #5, #6, #16, #17; SystemDesign 第 3, 4 节; DetailedDesign 第 4-B 节。
 

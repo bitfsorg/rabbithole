@@ -1,10 +1,9 @@
 # BitFS 详细设计
 
-> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · **详细设计** (本文档) · [测试设计](4-TestDesign.zh.md) · [交易规范](5-TransactionSpec.zh.md)
+> **文档体系导航**: [总体设计](../OverallDesign.zh.md) · [概念设计](1-ConceptDesign.zh.md) · [系统设计](2-SystemDesign.zh.md) · **详细设计** (本文档) · [测试设计](4-TestDesign.zh.md)
 >
 > 本文档为 BitFS 设计文档体系的第三层：算法、数据结构、协议细节。
 > 每个 B 节对应系统设计中同编号章节的详细展开。
-> 交易结构的权威参考见 [交易规范](5-TransactionSpec.zh.md)。
 
 **B 节与系统设计章节对应关系**:
 
@@ -38,7 +37,7 @@
 
 ## 二-B、HD 钱包派生规则详细设计
 
-本节补充 HD 钱包的精确派生路径、Method 42 密钥派生公式和钱包存储格式, 与 `src/internal/method42/hdwallet.go` 和 `encrypt.go` 的实现一致。
+本节补充 HD 钱包的精确派生路径、Method 42 密钥派生公式和钱包存储格式, 与 `libbitfs-go/wallet/hd.go` 和 `libbitfs-go/method42/encrypt.go` 的实现一致。
 
 ### A. BIP39 助记词
 
@@ -2043,7 +2042,8 @@ Buyer                                Seller Daemon
   3. buyer_mask = HKDF-SHA256(ikm=ECDH(D_node, P_buyer).x, salt=key_hash, info="bitfs-buyer-mask")
      // 每个买家唯一的掩码 (HKDF 确保密钥隔离)
   4. capsule = aes_key XOR buyer_mask (32 bytes)
-  5. capsule_hash = SHA256(capsule)
+  5. capsule_hash = SHA256(fileTxID || capsule)
+     // 将 capsule hash 绑定到文件的 TxID, 防止跨文件 capsule 重用
 
 输出:
   KeyCapsule {
@@ -2076,31 +2076,35 @@ ECDH 对称性保证:
 #### HTLC 脚本结构
 
 ```
+<invoiceId(16B)> OP_DROP
 OP_IF
   // Seller 领取路径: 揭示 capsule preimage + seller 签名
-  OP_SHA256 <capsule_hash(32B)> OP_EQUALVERIFY
-  <seller_pubkey(33B)> OP_CHECKSIG
+  OP_SHA256 <capsuleHash(32B)> OP_EQUALVERIFY
+  OP_DUP OP_HASH160 <sellerPkh(20B)> OP_EQUALVERIFY OP_CHECKSIG
 OP_ELSE
-  // Buyer 退款路径: 2-of-2 多签 (通过 nLockTime 预签名退款交易实现)
-  OP_2 <buyer_pubkey(33B)> <seller_pubkey(33B)> OP_2 OP_CHECKMULTISIG
+  // Buyer 退款路径: P2PKH (通过 nLockTime 预签名退款交易实现)
+  OP_DUP OP_HASH160 <buyerPkh(20B)> OP_EQUALVERIFY OP_CHECKSIG
 OP_ENDIF
 
 Seller 领取 (揭示 capsule):
-  scriptSig: <sig_seller> <capsule> OP_TRUE
-  → SHA256(capsule) == capsule_hash ✓, Sig(seller) ✓
+  scriptSig: <sig_seller> <seller_pubkey> <fileTxID||capsule> OP_TRUE
+  → SHA256(fileTxID||capsule) == capsuleHash ✓, Hash160(seller_pubkey) == sellerPkh ✓, Sig(seller) ✓
 
-Buyer 退款 (通过预签名 2-of-2 多签交易, nLockTime 超时后广播):
-  scriptSig: OP_0 <sig_buyer> <sig_seller_presigned> OP_FALSE
-  → timeout 已过, Sig(buyer) ✓
+Buyer 退款 (nLockTime 超时后广播):
+  scriptSig: <sig_buyer> <buyer_pubkey> OP_FALSE
+  → Hash160(buyer_pubkey) == buyerPkh ✓, Sig(buyer) ✓
 
-默认超时: 144 blocks (约 1 天)
+InvoiceID 前缀提供重放保护, 将 HTLC 绑定到特定发票。
+超时通过 nLockTime 强制执行, 不嵌入脚本中。
+默认超时: 72 blocks (约 12 小时)
+总脚本大小: 106 字节固定
 ```
 
 #### Capsule 验证
 
 ```
-VerifyCapsuleHash(capsule, expected_hash):
-  actual = SHA256(capsule)
+VerifyCapsuleHash(fileTxID, capsule, expected_hash):
+  actual = SHA256(fileTxID || capsule)
   return actual == expected_hash
 ```
 

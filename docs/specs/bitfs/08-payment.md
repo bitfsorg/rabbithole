@@ -49,7 +49,7 @@ type Invoice struct {
     PaymentAddr string `json:"payment_addr"`  // BSV address for payment
     Expiry      int64  `json:"expiry"`        // Unix timestamp
     KeyHash     []byte `json:"key_hash"`      // Content key hash
-    CapsuleHash []byte `json:"capsule_hash"`  // SHA256(ECDH capsule) for HTLC
+    CapsuleHash []byte `json:"capsule_hash"`  // SHA256(fileTxID || capsule) for HTLC
 }
 
 // PaymentHeaders holds the payment protocol HTTP headers.
@@ -70,12 +70,12 @@ type PaymentProof struct {
 // HTLCParams holds parameters for creating an HTLC transaction.
 type HTLCParams struct {
     BuyerPubKey  []byte // Buyer's compressed public key (33 bytes)
-    SellerPubKey []byte // Seller's compressed public key (33 bytes, for 2-of-2 multisig refund)
+    SellerPubKey []byte // Seller's compressed public key (33 bytes, used to derive sellerPkh via Hash160)
     SellerAddr   []byte // Seller's P2PKH address hash (20 bytes)
-    CapsuleHash  []byte // SHA256(capsule), 32 bytes
+    CapsuleHash  []byte // SHA256(fileTxID || capsule), 32 bytes
     Amount       uint64 // Payment amount in satoshis
     Timeout      uint32 // Refund timeout in blocks (default 72 = ~12h). Must be in [MinHTLCTimeout, MaxHTLCTimeout].
-    InvoiceID    []byte // Optional invoice ID for replay protection (16 bytes). If nil/empty, script omits the prefix.
+    InvoiceID    []byte // Mandatory (exactly 16 bytes). Provides replay protection by binding the HTLC to a specific invoice.
 }
 
 // HTLCUTXO represents an unspent output for HTLC funding.
@@ -97,7 +97,7 @@ type HTLCFundingParams struct {
     UTXOs        []*HTLCUTXO    // Buyer's unspent outputs
     ChangeAddr   []byte         // 20-byte change address hash
     FeeRate      uint64         // Satoshis per byte (0 = use default)
-    InvoiceID    []byte         // Optional 16-byte invoice ID for replay protection
+    InvoiceID    []byte         // Mandatory 16-byte invoice ID for replay protection
 }
 
 // HTLCFundingResult holds the result of building an HTLC funding transaction.
@@ -178,16 +178,17 @@ func ParsePaymentHeaders(resp *http.Response) (*PaymentHeaders, error)
 //   3. Find output matching invoice amount and address
 func VerifyPayment(proof *PaymentProof, invoice *Invoice) error
 
-// BuildHTLC constructs an HTLC locking script. When InvoiceID is provided,
-// the script is prefixed with <invoice_id_16> OP_DROP for replay protection:
+// BuildHTLC constructs a 106-byte HTLC locking script:
 //
-//   [<invoice_id_16> OP_DROP]   // optional, present when InvoiceID is non-empty
+//   <invoiceId(16B)> OP_DROP
 //   OP_IF
-//     OP_SHA256 <capsule_hash> OP_EQUALVERIFY
-//     OP_DUP OP_HASH160 <seller_addr> OP_EQUALVERIFY OP_CHECKSIG
+//     OP_SHA256 <capsuleHash(32B)> OP_EQUALVERIFY
+//     OP_DUP OP_HASH160 <sellerPkh(20B)> OP_EQUALVERIFY OP_CHECKSIG
 //   OP_ELSE
-//     OP_2 <buyer_pubkey> <seller_pubkey> OP_2 OP_CHECKMULTISIG
+//     OP_DUP OP_HASH160 <buyerPkh(20B)> OP_EQUALVERIFY OP_CHECKSIG
 //   OP_ENDIF
+//
+// Timeout enforced via nLockTime, not embedded in script.
 func BuildHTLC(params *HTLCParams) ([]byte, error)
 
 // ParseHTLCPreimage extracts the capsule (preimage) from a spent HTLC input.
@@ -253,23 +254,25 @@ X-Expiry: 1708000000
 
 ### HTLC 脚本
 
-卖方声索路径使用哈希锁 + P2PKH，买方退款路径使用 2-of-2 多重签名（因为 BSV 中 OP_CHECKLOCKTIMEVERIFY 已被还原为 NOP）。退款通过预签名交易实现：卖方预先签署带有 nLockTime 的退款交易，买方补充签名后保留完整退款交易，到期后广播即可。
+卖方声索路径使用哈希锁 + P2PKH，买方退款路径也使用 P2PKH。超时通过 nLockTime 强制执行（BSV 中 OP_CHECKLOCKTIMEVERIFY 已被还原为 NOP）。
 
-当提供 InvoiceID 时，脚本以 `<invoice_id_16> OP_DROP` 前缀开始，用于重放保护——将 HTLC 绑定到特定发票，防止旧 HTLC 脚本被重用。
+InvoiceID 前缀提供重放保护——将 HTLC 绑定到特定发票，防止旧 HTLC 脚本被重用。InvoiceID 为必填字段（恰好 16 字节）。
 
 ```
-[<invoice_id_16> OP_DROP]   // 可选，InvoiceID 非空时存在
+<invoiceId(16B)> OP_DROP
 OP_IF
-  OP_SHA256 <capsule_hash> OP_EQUALVERIFY
-  OP_DUP OP_HASH160 <seller_addr> OP_EQUALVERIFY OP_CHECKSIG
+  OP_SHA256 <capsuleHash(32B)> OP_EQUALVERIFY
+  OP_DUP OP_HASH160 <sellerPkh(20B)> OP_EQUALVERIFY OP_CHECKSIG
 OP_ELSE
-  OP_2 <buyer_pubkey> <seller_pubkey> OP_2 OP_CHECKMULTISIG
+  OP_DUP OP_HASH160 <buyerPkh(20B)> OP_EQUALVERIFY OP_CHECKSIG
 OP_ENDIF
 ```
 
-卖方声索解锁脚本：`<sig+flag> <seller_pubkey> <capsule> OP_TRUE`
+总脚本大小：106 字节固定。超时通过 nLockTime 强制执行，不嵌入脚本中。
 
-买方退款解锁脚本：`OP_0 <buyer_sig+flag> <seller_sig+flag> OP_FALSE`
+卖方声索解锁脚本：`<sig+flag> <seller_pubkey> <fileTxID||capsule> OP_TRUE`
+
+买方退款解锁脚本：`<sig+flag> <buyer_pubkey> OP_FALSE`
 
 ## 错误处理
 

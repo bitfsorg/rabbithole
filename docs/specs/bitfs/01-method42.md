@@ -167,7 +167,7 @@ func ComputeCapsule(nodePrivateKey *ec.PrivateKey, nodePublicKey *ec.PublicKey, 
 // ComputeCapsuleHash computes SHA256(fileTxID ‖ capsule) for the HTLC hash lock.
 // Binding the capsule hash to the file's transaction ID prevents a malicious
 // seller from reusing a valid capsule across different files.
-func ComputeCapsuleHash(fileTxID, capsule []byte) []byte
+func ComputeCapsuleHash(fileTxID, capsule []byte) ([]byte, error)
 
 // FreePrivateKey returns a private key with scalar value 1.
 // Used for AccessFree mode where ECDH(1, P_node) = P_node.
