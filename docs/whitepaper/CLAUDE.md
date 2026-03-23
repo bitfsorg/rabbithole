@@ -8,13 +8,15 @@
 whitepaper/
 ├── BitFS-Whitepaper-Outline.md      ← BitFS 白皮书大纲 (中文，源文件)
 ├── BitFS-Whitepaper.en.tex          ← 英文 LaTeX
-├── BitFS-Whitepaper.en.pdf          ← 英文 PDF
-├── BitFS-Whitepaper.zh.pdf          ← 中文 PDF (从 design/ 的中文设计文档生成)
+├── BitFS-Whitepaper.zh.tex          ← 中文 LaTeX
 ├── Metanet-Whitepaper-Outline.md    ← Metanet 白皮书大纲 (中文，源文件)
 ├── Metanet-Whitepaper.en.tex        ← 英文 LaTeX
-├── Metanet-Whitepaper.en.pdf        ← 英文 PDF
 ├── Metanet-Whitepaper.zh.tex        ← 中文 LaTeX
-└── Metanet-Whitepaper.zh.pdf        ← 中文 PDF
+└── pdf/
+    ├── BitFS-Whitepaper.en.pdf      ← 英文 PDF
+    ├── BitFS-Whitepaper.zh.pdf      ← 中文 PDF
+    ├── Metanet-Whitepaper.en.pdf    ← 英文 PDF
+    └── Metanet-Whitepaper.zh.pdf    ← 中文 PDF
 ```
 
 ## 工作流
