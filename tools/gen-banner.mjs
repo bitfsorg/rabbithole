@@ -111,7 +111,7 @@ ${coloredHtml}
 }
 
 const htmlContent = `<!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>BitFS CLI Banner — Final Preview</title>
@@ -175,5 +175,6 @@ ${htmlSections}
 </body>
 </html>`;
 
-writeFileSync("/Users/alex/Codes/RabbitHole/tools/banner-preview.html", htmlContent);
+const outputPath = new URL('./banner-preview.html', import.meta.url).pathname;
+writeFileSync(outputPath, htmlContent);
 console.log(`\n${dim}HTML preview written to tools/banner-preview.html${reset}`);

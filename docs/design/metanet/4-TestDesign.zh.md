@@ -30,11 +30,11 @@
 
 | # | 类别 | 设计参照 | 代码文件 | 目标 |
 |---|------|---------|---------|------|
-| T1 | 存储合约 | 系统设计五, 详细设计一 | `metanet_chain/storage_deal_test.go` | 2 |
-| T2 | 存储证明 | 系统设计五, 详细设计二 | `metanet_chain/storage_proof_test.go` | 5 |
-| T3 | ECDH 双层加密 | 系统设计五, 详细设计三 | `metanet_chain/ecdh_test.go` | 4 |
-| T4 | 支付与检索 | 系统设计七, 详细设计四-五 | `metanet_chain/payment_test.go` | 7 |
-| T5 | ON 层 PoW 与热数据 | 系统设计二, 详细设计六 | `metanet_chain/mining_test.go` | 2 |
+| T1 | 存储合约 | 系统设计五, 详细设计一 | `metanet/internal/contract/storage_deal_test.go` | 2 |
+| T2 | 存储证明 | 系统设计五, 详细设计二 | `metanet/internal/proof/storage_proof_test.go` | 5 |
+| T3 | ECDH 双层加密 | 系统设计五, 详细设计三 | `metanet/internal/contract/ecdh_test.go` | 4 |
+| T4 | 支付与检索 | 系统设计七, 详细设计四-五 | `metanet/internal/payment/payment_test.go` | 7 |
+| T5 | ON 层 PoW 与热数据 | 系统设计二, 详细设计六 | `metanet/internal/mining/mining_test.go` | 2 |
 | | **合计** | | | **20** |
 
 ---
@@ -42,7 +42,7 @@
 ## T1. 存储合约
 
 **设计参照**: 系统设计第五节, 详细设计第一节
-**代码文件**: `metanet_chain/storage_deal_test.go`
+**代码文件**: `metanet/internal/contract/storage_deal_test.go`
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
@@ -54,7 +54,7 @@
 ## T2. 存储证明
 
 **设计参照**: 系统设计第五节, 详细设计第二节
-**代码文件**: `metanet_chain/storage_proof_test.go`
+**代码文件**: `metanet/internal/proof/storage_proof_test.go`
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
@@ -69,7 +69,7 @@
 ## T3. ECDH 双层加密
 
 **设计参照**: 系统设计第五节, 详细设计第三节
-**代码文件**: `metanet_chain/ecdh_test.go`
+**代码文件**: `metanet/internal/contract/ecdh_test.go`
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
@@ -83,7 +83,7 @@
 ## T4. 支付与检索
 
 **设计参照**: 系统设计第七节, 详细设计第四-五节
-**代码文件**: `metanet_chain/payment_test.go`
+**代码文件**: `metanet/internal/payment/payment_test.go`
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
@@ -100,7 +100,7 @@
 ## T5. ON 层 PoW 与热数据
 
 **设计参照**: 系统设计第二节, 详细设计第六节
-**代码文件**: `metanet_chain/mining_test.go`
+**代码文件**: `metanet/internal/mining/mining_test.go`
 
 | ID | 用例名称 | 前置条件 | 操作 | 期望结果 | 标签 |
 |----|---------|---------|------|---------|------|
@@ -113,8 +113,8 @@
 
 | 测试类别 | 系统设计章节 | 详细设计章节 | 代码路径 |
 |----------|------------|------------|---------|
-| T1 存储合约 | 五 (冷数据: Archive 合约模式) | 一 (存储合约 Bitcoin Script) | `metanet_chain/storage_deal_test.go` |
-| T2 存储证明 | 五 (冷数据: Archive 合约模式) | 二 (存储证明 Bitcoin Script) | `metanet_chain/storage_proof_test.go` |
-| T3 ECDH 双层加密 | 五 (冷数据: Archive 合约模式) | 三 (ECDH 双层加密流程) | `metanet_chain/ecdh_test.go` |
-| T4 支付与检索 | 七 (下载计费支付通道) | 四-五 (支付通道协议, HTTP 扩展) | `metanet_chain/payment_test.go` |
-| T5 ON 层 PoW 与热数据 | 二 (Metanet Overlay 基本设计) | 六 (ML Block 结构与挖矿) | `metanet_chain/mining_test.go` |
+| T1 存储合约 | 五 (冷数据: Archive 合约模式) | 一 (存储合约 Bitcoin Script) | `metanet/internal/contract/storage_deal_test.go` |
+| T2 存储证明 | 五 (冷数据: Archive 合约模式) | 二 (存储证明 Bitcoin Script) | `metanet/internal/proof/storage_proof_test.go` |
+| T3 ECDH 双层加密 | 五 (冷数据: Archive 合约模式) | 三 (ECDH 双层加密流程) | `metanet/internal/contract/ecdh_test.go` |
+| T4 支付与检索 | 七 (下载计费支付通道) | 四-五 (支付通道协议, HTTP 扩展) | `metanet/internal/payment/payment_test.go` |
+| T5 ON 层 PoW 与热数据 | 二 (Metanet Overlay 基本设计) | 六 (ML Block 结构与挖矿) | `metanet/internal/mining/mining_test.go` |
