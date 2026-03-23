@@ -21,12 +21,14 @@ Two core value props: **Agent Friendly** + **Data can stay off-chain**.
 RabbitHole/
 ├── bitfs/             — BitFS CLI + daemon (Go)
 ├── libbitfs-go/       — Shared core library (Go, independent repo)
-├── libbitfs-ts/       — Shared core library (TypeScript, planned)
+├── libbitfs-ts/       — Shared core library (TypeScript, 11 packages, 11,498 LOC)
 ├── metanet/           — Metanet CDN node (Go)
 ├── den-explorer/      — Blockchain explorer (Go + htmx, independent repo)
 ├── git-remote-bitfs/  — Git remote helper (Go, independent repo)
-├── bitfs-app/         — Desktop/mobile client (Flutter, independent repo)
+├── bitfs-app/         — Mobile client (Expo SDK 55 + React Native, independent repo)
+├── bitfs-desktop/     — Desktop client (Wails/Go, independent repo)
 ├── bitfs-extension/   — Browser extension (TypeScript, independent repo)
+├── bitfs-explorer/    — BitFS Explorer Chrome extension (TypeScript, independent repo)
 ├── websites/          — Official websites (bitfs.org + metanet.org)
 ├── docs/              — Design docs, whitepapers, specs, slides, VI
 └── tools/             — Build tools (Mermaid renderer)
@@ -38,7 +40,7 @@ Sub-projects marked "independent repo" have their own `.git` and can be checked 
 
 - **Go 1.25+** — CLI, daemon, libraries, CDN node, explorer
 - **BSV SDK** — `github.com/bsv-blockchain/go-sdk` (sole blockchain dependency)
-- **Flutter 3.27+** — Cross-platform client
+- **Expo SDK 55 + React Native** — Mobile client
 - **TypeScript** — Browser extension, planned TS library
 
 ## Documentation

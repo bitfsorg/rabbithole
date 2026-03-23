@@ -28,4 +28,6 @@ docs/plans/
 /git-remote-bitfs/
 /libbitfs-go/
 /libbitfs-ts/
+/bitfs-explorer/
 /.github/
+.wrangler/

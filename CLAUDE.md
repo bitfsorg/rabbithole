@@ -38,7 +38,7 @@ bun tools/mermaid/cli.ts <dir> [--theme bitfs]          # Mermaid → SVG
 
 ### 独立 Git 仓库
 
-`libbitfs-go/`、`libbitfs-ts/`、`bitfs-app/`、`bitfs-extension/`、`git-remote-bitfs/` 各有自己的 `.git`，被 RabbitHole `.gitignore` 排除。`bitfs/go.mod` 通过 `replace => ../libbitfs-go` 引用共享库。
+`libbitfs-go/`、`libbitfs-ts/`、`den-explorer/`、`bitfs-app/`、`bitfs-desktop/`、`bitfs-extension/`、`bitfs-explorer/`、`git-remote-bitfs/` 各有自己的 `.git`，被 RabbitHole `.gitignore` 排除。`bitfs/go.mod` 通过 `replace => ../libbitfs-go` 引用共享库。
 
 ### 任务管理
 
@@ -60,7 +60,9 @@ RabbitHole/
 ├── den-explorer/      ← 区块链浏览器 (Go + htmx, 独立 repo)
 ├── git-remote-bitfs/  ← Git remote helper (独立 repo)
 ├── bitfs-app/         ← 移动客户端 Expo/React Native (独立 repo)
+├── bitfs-desktop/     ← 桌面客户端 Wails/Go (独立 repo)
 ├── bitfs-extension/   ← Chrome 扩展 MV3 (独立 repo)
+├── bitfs-explorer/    ← BitFS Explorer Chrome 扩展 (独立 repo)
 └── tools/             ← Mermaid 渲染器 (Bun CLI)
 ```
 
@@ -71,7 +73,7 @@ RabbitHole/
 Module: `github.com/bitfsorg/bitfs`
 
 - `cmd/bitfs/` — 主 CLI（wallet/vault/put/mkdir/rm/mv/cp/link/sell/encrypt/publish/shell/daemon）
-- `cmd/b*/` — 只读工具集（bls/bcat/bget/bstat/btree），通过 HTTP 连接 daemon
+- `cmd/b*/` — 只读工具集（bls/bcat/bget/bmget/bstat/btree），通过 HTTP 连接 daemon
 - `internal/engine/` — 统一业务逻辑层（所有 CLI 命令、shell REPL、daemon 适配器共用）
 - `internal/daemon/` — LFCP HTTP 服务器（内容服务、Metanet 元数据、Method 42 握手、payment 支付）
 - `internal/client/` — b-tools 的 HTTP 客户端
@@ -147,7 +149,7 @@ Markdown 是唯一源文件，不要直接编辑生成物：
 ## 技术栈
 
 - Go 1.25.6 + `github.com/bsv-blockchain/go-sdk` v1.2.18
-- `github.com/stretchr/testify` v1.11.1, `golang.org/x/crypto` v0.47.0
+- `github.com/stretchr/testify` v1.11.1, `golang.org/x/crypto` v0.48.0
 - Content-addressed file store with hash-sharded directories (~/.bitfs/storage/)
 
 ## 许可证
