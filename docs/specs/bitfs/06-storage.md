@@ -2,7 +2,7 @@
 
 ## 目的
 
-BitFS 的内容存储抽象层。提供扁平键值存储，其中 `key_hash`（SHA256(SHA256(plaintext))）映射到加密密文。支持链下存储（默认，在 `~/.bitfs/store/` 中）和链上引用追踪。
+BitFS 的内容存储抽象层。提供扁平键值存储，其中 `key_hash`（SHA256(SHA256(plaintext))）映射到加密密文。支持链下存储（默认，在 `~/.bitfs/storage/` 中）和链上引用追踪。
 
 设计参考：ConceptDesign #14, #25, #60; SystemDesign 第 4 节（内容存储）; DetailedDesign 第 8-B 节。
 
@@ -59,7 +59,7 @@ type FileStore struct {
 
 ```go
 // NewFileStore creates a new file-based content store.
-// baseDir is typically "~/.bitfs/store".
+// baseDir is typically "~/.bitfs/storage".
 func NewFileStore(baseDir string) (*FileStore, error)
 
 // KeyHashToPath converts a key_hash to its filesystem path.
@@ -141,7 +141,7 @@ func (r *ContentResolver) Fetch(keyHash []byte) ([]byte, error)
 
 ### 文件布局
 ```
-~/.bitfs/store/
+~/.bitfs/storage/
   ab/
     abcdef0123456789...  (hex-encoded key_hash, content = ciphertext)
   cd/
