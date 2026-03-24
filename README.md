@@ -41,7 +41,7 @@ Sub-projects marked "independent repo" have their own `.git` and can be checked 
 - **Go 1.25+** — CLI, daemon, libraries, CDN node, explorer
 - **BSV SDK** — `github.com/bsv-blockchain/go-sdk` (sole blockchain dependency)
 - **Expo SDK 55 + React Native** — Mobile client
-- **TypeScript** — Browser extension, planned TS library
+- **TypeScript** — Browser extension, shared TS library (libbitfs-ts)
 
 ## Documentation
 
