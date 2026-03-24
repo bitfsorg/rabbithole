@@ -96,10 +96,13 @@ Module: `github.com/bitfsorg/libbitfs-go`
 | config | 配置文件解析（key=value 格式） |
 | paymail | Paymail 协议（.well-known/bsvalias 发现、PKI 端点解析） |
 | payment | HTTP 402 支付协议（HTLC 构建、支付验证） |
+| vault | Vault 状态管理、交易构建、文件读写操作 |
+| engine | 钱包状态变更操作，进程级文件锁 |
+| revshare | 收益分成分配逻辑 |
 
 ### metanet/ — Metanet CDN 节点 (开发中)
 
-7 个包: chain（区块/Token）、mining（AuxPoW）、contract（存储合约）、proof（存储证明）、payment（支付通道）、overlay（BRC Overlay）、config。Phase 1 完成，Phase 2 进行中。
+7 个包: chain（区块/Token）、mining（SHA256 独立挖矿）、contract（存储合约）、proof（存储证明）、payment（支付通道）、overlay（BRC Overlay）、config。Phase 1 完成，Phase 2 进行中。
 
 ### 其他子项目
 
