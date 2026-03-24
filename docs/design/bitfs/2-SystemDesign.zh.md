@@ -1954,7 +1954,7 @@ bitfs/
 └── go.sum
 
 # 共享核心库 (独立仓库)
-libbitfs-go/                  # github.com/tongxiaofeng/libbitfs-go
+libbitfs-go/                  # github.com/bitfsorg/libbitfs-go
 ├── method42/                 # Method 42 ECDH 加密引擎
 ├── wallet/                   # HD 钱包 (BIP39/44, Argon2id)
 ├── tx/                       # BSV 交易构造 (4 模板)
@@ -1968,7 +1968,7 @@ libbitfs-go/                  # github.com/tongxiaofeng/libbitfs-go
 └── revshare/                 # 收益分成
 ```
 
-> **注**: `bitfs/go.mod` 通过 `replace github.com/tongxiaofeng/libbitfs-go => ../libbitfs-go` 引用共享核心库。
+> **注**: `bitfs/go.mod` 通过 `replace github.com/bitfsorg/libbitfs-go => ../libbitfs-go` 引用共享核心库。
 
 ---
 

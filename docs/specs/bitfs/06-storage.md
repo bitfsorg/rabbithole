@@ -135,7 +135,7 @@ func (r *ContentResolver) Fetch(keyHash []byte) ([]byte, error)
 - `net/http` -- ContentResolver 远程获取
 - `io` -- 响应体限制读取
 - `time` -- HTTP 客户端超时
-- `github.com/tongxiaofeng/libbitfs-go/metanet` -- 压缩方案常量
+- `github.com/bitfsorg/libbitfs-go/metanet` -- 压缩方案常量
 
 ## 数据结构
 

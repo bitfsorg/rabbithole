@@ -4,7 +4,7 @@
 
 `metanet` CLI 是 Metanet Node 运营者的命令行工具。它管理 Metanet Node 的完整生命周期：初始化、守护进程控制、状态监控、存储合约管理、对等节点连接和合并挖矿配置。
 
-该 CLI 是与 `bitfs`（面向用户的文件系统工具）独立的二进制文件。它共享核心 Go 库（`github.com/tongxiaofeng/bitfs`）的 Method 42 加密、Metanet DAG 解析、SPV 和交易构造功能。`metanet` 二进制文件面向希望通过缓存和提供内容来获取收入的 CDN 节点运营者。
+该 CLI 是与 `bitfs`（面向用户的文件系统工具）独立的二进制文件。它共享核心 Go 库（`github.com/bitfsorg/bitfs`）的 Method 42 加密、Metanet DAG 解析、SPV 和交易构造功能。`metanet` 二进制文件面向希望通过缓存和提供内容来获取收入的 CDN 节点运营者。
 
 ## 公开 API
 
@@ -133,7 +133,7 @@ mnt_max_duration = 1008  # ~1 week
 - `internal/payment` -- 支付通道管理
 - `internal/overlay` -- 对等节点发现与路由
 - `internal/config` -- 配置管理
-- `github.com/tongxiaofeng/bitfs` -- 共享库（method42、metanet、spv、tx）
+- `github.com/bitfsorg/bitfs` -- 共享库（method42、metanet、spv、tx）
 - `github.com/bsv-blockchain/go-sdk` -- BSV 操作
 
 ## 数据结构
