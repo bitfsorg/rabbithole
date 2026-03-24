@@ -1,3 +1,7 @@
+// DEPRECATED: This sCrypt HTLC contract has been superseded by the 106-byte
+// plain Bitcoin Script implementation in libbitfs-go/payment/htlc.go.
+// Kept for reference only.
+
 import {
     assert,
     ByteString,
