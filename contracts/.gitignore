@@ -1,7 +1,0 @@
-node_modules/
-dist/
-tsconfig-scryptTS.json
-scrypt.index.json
-artifacts/*.scrypt
-artifacts/*.scrypt.map
-artifacts/*.transformer.json
