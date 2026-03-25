@@ -3,6 +3,8 @@
 .playwright-mcp/
 .claude/
 node_modules/
+go.work
+go.work.sum
 *.out
 .sisyphus/
 .specify/
