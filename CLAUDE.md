@@ -26,8 +26,9 @@ go test ./...                                           # 单元测试
 go test -tags=integration ./integration/ -count=1       # 集成测试 (bitfs/)
 go test -tags e2e ./e2e/                                # E2E 测试 (需 Docker Desktop)
 
-# TypeScript 项目 (libbitfs-ts/, bitfs-extension/)
-bun install && bun test
+# TypeScript 项目
+bun install && bun test                                 # libbitfs-ts/, bitfs-explorer/
+npm install && npm test                                 # bitfs-extension/ (vitest)
 
 # 移动端 (bitfs-app/)
 npm install && npm test
