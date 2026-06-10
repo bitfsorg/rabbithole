@@ -11,7 +11,7 @@
 |---|---|---|
 | 二-B HD 钱包 | 二 HD 钱包 | 直接对应 |
 | 四-B Metanet 交易 | 四 Metanet 交易格式 | 直接对应 |
-| 五-B Koblitz 加密 | 五 数据类型与加密模型 | 直接对应 |
+| ~~五-B Koblitz 加密~~ | ~~五 数据类型与加密模型~~ | 已删除 (2026-03-26 设计重审: ECDH+HKDF 方案已取代) |
 | 六-B Rabin 签名 | 十一-b Rabin 签名验证 | 编号偏移 |
 | 七-B CLTV 时间锁 | 十一-c CLTV 时间购买 | 编号偏移 |
 | 八-B 内容分片 | 十一-d 大文件分片 | 编号偏移 |
@@ -238,22 +238,27 @@ aes_key = HKDF-SHA256(
 ```
 buyer_mask = HKDF-SHA256(
     ikm  = ECDH(D_seller, P_buyer).x,
-    salt = key_hash,
+    salt = key_hash || nonce,                // nonce = invoice_id 字节 (per-invoice)
     info = "bitfs-buyer-mask"
 )
 capsule = aes_key XOR buyer_mask             // 32 bytes
-capsule_hash = SHA256(capsule)               // 应用到 HTLC 锁中
+capsule_hash = SHA256(fileTxID || capsule)    // 绑定文件 TxID, 防止跨文件重用, 应用到 HTLC 锁中
 ```
 
 **Buyer 端解密恢复 aes_key:**
 ```
 buyer_mask = HKDF-SHA256(
     ikm  = ECDH(D_buyer, P_seller).x,        // ECDH 对称性定律
-    salt = key_hash,
+    salt = key_hash || nonce,                // nonce 来自 invoice 的 capsule_nonce 字段
     info = "bitfs-buyer-mask"
 )
 aes_key = capsule XOR buyer_mask             // 异或恢复出加密密钥
 ```
+
+> **Capsule nonce**: per-invoice 购买流程中 nonce = invoice_id 字节, 由 Seller 通过
+> `GET/POST /_bitfs/buy/{txid}` 响应的 `capsule_nonce` 字段下发, 使同一 (buyer, file)
+> 的每次购买产生不同 capsule, 防止链上 capsule 可关联性 (`ComputeCapsuleWithNonce`)。
+> nonce 为空时退化为确定性派生 `salt = key_hash` (`ComputeCapsule`, legacy 行为)。
 
 完整流程:
   1. `key_hash = SHA256(SHA256(plaintext))` (文件双重散列)
@@ -435,7 +440,20 @@ bitfs wallet restore:
 
 ### G. 网络配置
 
-**种子级别网络绑定**: `bitfs init --network <network>` 时选定, 所有 Vault 共享同一网络。多网络需求通过 `BITFS_HOME` 环境变量隔离。
+**种子级别网络绑定**: `bitfs wallet init --network <network>` 时选定, 所有 Vault 共享同一网络。多网络需求通过 `BITFS_DATADIR` 环境变量隔离。
+
+#### 环境变量
+
+| 变量 | 用途 |
+|------|------|
+| `BITFS_DATADIR` | 数据目录覆盖 (默认 `~/.bitfs`) |
+| `BITFS_PASSWORD` | 钱包密码 (优先级: `--password` flag > 环境变量 > 交互输入) |
+| `BITFS_NETWORK` | 网络名 (`--network` flag 为空时回退) |
+| `BITFS_WOC_API_KEY` | WhatsOnChain API key |
+| `BITFS_ARC_API_KEY` | ARC 广播 API key |
+| `BITFS_ARC_URL` | ARC endpoint URL 覆盖 |
+| `BITFS_RPC_URL` / `BITFS_RPC_USER` / `BITFS_RPC_PASS` | BSV 节点 JSON-RPC 连接 |
+| `BITFS_WALLET_KEY` | b* 工具买家私钥 (优先级: `--wallet-key` > 环境变量 > `~/.bitfs/buyer.conf`) |
 
 #### 网络参数结构
 
@@ -504,23 +522,29 @@ func GetNetwork(name string) (*NetworkConfig, error)
 ```
 ~/.bitfs/
   ├── wallet.enc                      # AES-256-GCM(seed, passphrase_key)
-  ├── network.json                    # NetworkConfig (预设名 或 完整自定义配置)
-  ├── vaults.json                     # [{name, account_index, root_txid}]
-  ├── keys/                           # 密钥缓存 (购买的 capsule)
-  ├── spv/                            # SPV 数据
-  │   ├── headers.db                  # header chain
-  │   └── txstore.db                  # 交易存储
+  ├── config                          # 网络/监听/日志配置 (key=value 格式)
+  ├── state.json                      # 钱包状态 (费用链派生索引等)
+  ├── nodes.json                      # 全部 vault 的 Metanet 节点本地状态
+  ├── spv/
+  │   └── spv.db                      # header chain + 交易证明 (bolt)
+  ├── cache/
+  │   └── meta/                       # b* 工具元数据缓存
+  ├── invoices/                       # daemon 发票持久化
+  ├── logs/                           # 日志目录
+  ├── buyer.conf                      # b* 工具买家钱包配置 (可选)
+  ├── daemon.pid                      # daemon 进程 PID
+  ├── shell_history                   # bitfs shell 历史
   └── storage/                        # 内容寻址存储
 ```
 
-#### network.json 格式
+#### 网络配置格式
 
-预设网络 (简写):
-```json
-{"name": "mainnet"}
+预设网络: 通过 `config` 文件的 `network` 键指定 (key=value 格式):
+```
+network = mainnet
 ```
 
-自定义网络 (完整):
+自定义网络: 通过独立 JSON 文件定义, 由 `wallet.LoadCustomNetwork(path)` 加载:
 ```json
 {
   "name": "my-private-net",
@@ -726,7 +750,7 @@ HD 密钥: 与 put 相同的路径派生方式
     next_child_index 不减少 (已删除的 index 不复用, 详见交易规范 §5.4)。
 ```
 
-#### 5. rmdir (删除空目录)
+#### 5. rmdir (删除空目录) — ⚠ 未实现 (设计稿, 当前用 rm -r 删除目录)
 
 ```
 前置条件:
@@ -940,7 +964,7 @@ pushdata[3]: TLV         = tlv.Marshal(BitFSPayload) (变长)
 ```go
 MetaFlag  = []byte{0x6d, 0x65, 0x74, 0x61}  // "meta"
 DustLimit = 1                                  // satoshis, BSV 已移除 dust limit, 最低 1 sat
-DefaultFeeRate = 1                             // sat/KB
+DefaultFeeRate = 100                           // sat/KB (~0.1 sat/byte)
 ```
 
 ### UTXO 链拓扑
@@ -959,94 +983,6 @@ SelfUpdate 后的 UTXO 链:
 
   Node UTXO (Vout=1) ──→ [花费为 Input 0] ──→ Update Tx
                                                  └── Output 1: P_node UTXO (Vout=1) → 刷新
-```
-
----
-## 五-B、Koblitz 加密详细设计
-
-本节补充 Koblitz 曲线加密 (secp256k1 ECC) 与 AES-256-GCM 混合加密的算法细节。与 Bitcoin 使用同一椭圆曲线体系。
-
-### A. 混合加密架构
-
-```
-加密流程:
-  1. 生成对称密钥: S_k = random(32 bytes)
-  2. Koblitz 加密 S_k:
-     → 将 S_k 视为椭圆曲线上的点映射输入
-     → 使用接收方公钥 P_recipient 进行 ECC 加密
-     → encrypted_S_k ≈ 2KB (32 字节 → ~64 个 ECC 点, 每点 33 字节)
-  3. AES-256-GCM 加密内容:
-     → nonce = random(12 bytes)
-     → ciphertext = AES-256-GCM(plaintext, S_k, nonce)
-  4. 输出: encrypted_S_k || nonce(12B) || ciphertext || GCM_tag(16B)
-
-解密流程:
-  1. 解析: encrypted_S_k, nonce, ciphertext
-  2. Koblitz 解密:
-     → 使用接收方私钥 D_recipient 解密 encrypted_S_k → S_k
-  3. AES-256-GCM 解密:
-     → plaintext = AES-GCM.Open(ciphertext, S_k, nonce)
-```
-
-### B. 为什么是 Koblitz + AES 混合
-
-```
-Koblitz (secp256k1) 加密特性:
-  - 逐字符加密: 每字节映射到椭圆曲线上的点
-  - 膨胀率: 1:33 至 1:66 (每字节 → 一个压缩/非压缩 ECC 点)
-  - 适合: 小数据 (密钥, 哈希值, 短消息)
-  - 不适合: 大文件 (100KB 文件 → 3-6MB 密文)
-
-AES-256-GCM 加密特性:
-  - 对称加密: 固定膨胀 (nonce 12B + tag 16B)
-  - 适合: 任意大小数据
-  - 需要: 安全的密钥分发
-
-混合方案:
-  - Koblitz 加密 32 字节对称密钥 → ~2KB 开销 (可接受)
-  - AES-256-GCM 加密 bulk 内容 → 固定 28B 开销 (高效)
-  - 与 Bitcoin 同密码体系 (secp256k1), 复用现有密钥基础设施
-```
-
-### C. Koblitz 点映射算法
-
-```
-字节 → 椭圆曲线点 (Koblitz mapping):
-
-  对于每个字节 b (0-255):
-    1. 构造候选 x = b * k + j (j = 0, 1, 2, ...)
-       其中 k 是足够大的常数确保不同字节映射不冲突
-    2. 检查 x³ + 7 (mod p) 是否为二次剩余 (secp256k1 曲线方程: y² = x³ + 7)
-    3. 若是 → P_b = (x, y) 是曲线上的点
-    4. 若否 → j++, 重试
-
-  加密点 P_b:
-    1. 选择随机 r
-    2. C1 = r × G                    (ephemeral 公钥)
-    3. C2 = P_b + r × P_recipient    (加密后的点)
-    4. 密文 = (C1, C2)
-
-  解密:
-    1. P_b = C2 - D_recipient × C1
-    2. 从 P_b 的 x 坐标恢复字节 b = x / k
-```
-
-### D. 与 Method 42 的关系
-
-```
-Method 42 ECDH 密钥派生 (现有):
-  → S_node = ECDH(D_node, P_node).x → aes_key = HKDF-SHA256(S_node, key_hash, "bitfs-file-encryption")
-  → 用于 owner 自加密和 HTLC 购买
-
-Koblitz 加密 (新增):
-  → 用于第三方直接加密 (不需要 owner 参与)
-  → 用于 key capsule 的加密传输
-  → 用于 Token 系统中的密钥交换
-
-两者共存, 不互斥:
-  - 单文件加密: Method 42 ECDH (D_node + HKDF 确定性派生)
-  - 密钥传输: Koblitz 加密 (发给特定接收方)
-  - 内容加密: 始终 AES-256-GCM (对称加密)
 ```
 
 ---
@@ -1119,6 +1055,8 @@ Script 内验证场景:
 
 ---
 ## 七-B、CLTV 区块高度权限详细设计
+
+> **⚠ 部分实现**: 基础 CLTV 高度检查函数已实现（metanet/cltv.go），但 daemon 行为（X-CLTV-Height headers、403 响应）和三种使用模式（Embargo/Expiry/Subscription）未实现。
 
 本节补充 OP_CHECKLOCKTIMEVERIFY 在 BitFS 中的权限控制应用。
 
@@ -1376,19 +1314,18 @@ Flags:
 完整购买流程 (--buy):
   1. 解析 URI → 连接 daemon endpoint
   2. GET /meta → 获取元数据, 确认 access=PAID
-  3. 检查 key cache (~/.bitfs/cache/keys/{txid}.json)
-     → 命中: 直接下载解密
-     → 未命中: 继续购买流程
+  3. 加载买家钱包密钥 (--wallet-key / BITFS_WALLET_KEY / ~/.bitfs/buyer.conf)
+     // ⚠ 本地密钥缓存未实现, 每次购买重新走完整流程
   4. 生成临时 buyer 密钥对 (ec.NewPrivateKey)
   5. POST /handshake → 建立 session
   6. GET /buy/{txid}?buyer_pubkey → 获取定价 + capsule_hash
-  7. 本地构建 HTLC 脚本 (timeout=144 blocks)
+  7. 本地构建 HTLC 脚本 (timeout=72 blocks, ~12h)
   8. POST /buy/{txid} {buyer_pubkey, htlc_tx} → 获取 capsule
-  9. 验证 SHA256(capsule) == capsule_hash
+  9. 验证 SHA256(fileTxID || capsule) == capsule_hash
   10. RecoverAESKey(capsule, D_buyer, P_seller, key_hash) → aes_key
-  11. 缓存 aes_key → ~/.bitfs/cache/keys/{txid}.json
-  12. GET /data/{hash} → 下载加密数据
-  13. AES-256-GCM 解密 → 写入输出文件
+      // capsule_nonce 存在时使用 nonce 版派生 (salt = key_hash || nonce)
+  11. GET /data/{hash} → 下载加密数据
+  12. AES-256-GCM 解密 → 写入输出文件
 
 输出:
   普通: "Downloaded [and decrypted] filename (size)"
@@ -1433,10 +1370,9 @@ Flags:
 bitfs put <local> <remote>
   上传本地文件到远程路径
   Flags:
-    --encrypt           加密上传 (private 模式, encrypted=true)
-    --keyword "tags"    空格分隔的关键词
-    --description "..."  文件描述
-    --mime "type"       MIME 类型覆盖 (默认: application/octet-stream)
+    --vault <name>      指定目标 Vault
+    --access free|private  访问模式 (默认: free)
+    --json              JSON 格式输出
   交易: 新建 = 2 笔 (CreateChild + SelfUpdate parent)
         更新 = 1 笔 (SelfUpdate file)
 
@@ -1449,7 +1385,7 @@ bitfs rm <path>
   交易: 1 笔 (SelfUpdate parent)
   注: 仅更新父目录 ChildEntry, 不花费目标节点 UTXO
 
-bitfs rmdir <path>
+bitfs rmdir <path>                      (未实现, 使用 bitfs rm -r)
   删除空目录
   前置条件: 目录必须为空 (children 列表为空)
   交易: 2 笔 (SelfUpdate parent + SelfUpdate dir 设 op=DELETE)
@@ -1486,7 +1422,7 @@ bitfs encrypt <path>
   交易: 1 笔 (SelfUpdate FILE, 更新 key_hash + access=PRIVATE)
   操作: ReEncrypt(ciphertext, D_node, P_node, key_hash, file_index, FREE, PRIVATE)
 
-bitfs decrypt <path>
+bitfs decrypt <path>                    (未实现, 仅 shell 内可用)
   私有 → 公开 (重新加密: D_node=BIP32 私钥 PRIVATE → D_node=1 FREE, HKDF 重新派生 aes_key)
   交易: 1 笔 (SelfUpdate FILE, 更新 key_hash + access=FREE)
   操作: ReEncrypt(ciphertext, D_node, P_node, key_hash, file_index, PRIVATE, FREE)
@@ -1499,18 +1435,19 @@ bitfs sell <path> --price <sat/KB>
   标价出售 (更新 Metanet 元数据)
   Flags:
     --price N           单价 satoshis/KB (必填)
-    --recursive         递归标价整个目录
+    --vault <name>      指定 Vault
+  注: CLI 无 --recursive; 递归标价仅 shell 内 sell 命令支持 (sell <path> <price> --recursive)
   交易: 1 笔 (SelfUpdate, 设置 price_per_kb + access=PAID)
 
-bitfs sales [path]
+bitfs sales [path]                      (未实现, 仅 daemon API 端点)
   查看销售历史
 ```
 
 #### 发布
 
 ```
-bitfs publish <domain> [path]
-  绑定域名到指定路径 (默认 /)
+bitfs publish <domain>
+  绑定域名到当前 Vault 根 (不接受 path 参数, 整个 Vault 绑定)
   操作:
     1. 引导用户配置 DNS TXT (_bitfs.{domain}) 和 SRV (_bitfs._tcp) 记录
     2. 更新 Metanet payload 中的 domain 字段
@@ -1536,12 +1473,15 @@ bitfs wallet init
     5. AES-256-GCM 加密 seed, 存储到 wallet.enc
   输出: 助记词 (用户必须备份)
 
-bitfs wallet restore
+bitfs wallet restore                    (未实现)
   用助记词恢复 HD 密钥
   注: 仅恢复密钥树, tx 数据需从备份恢复
 
-bitfs wallet info
-  显示余额、UTXO 数量、下一个收款地址
+bitfs wallet show
+  显示钱包公钥、网络等信息
+
+bitfs wallet balance
+  显示 UTXO 余额 (--refresh 从网络同步)
 
 bitfs wallet fund
   显示充值地址 (m/44'/236'/0'/0/{next_receive_index})
@@ -1556,10 +1496,10 @@ bitfs vault create <name>
 bitfs vault list
   列出所有 Vault
 
-bitfs vault use <name>
+bitfs vault use <name>                  (未实现)
   切换当前 Vault
 
-bitfs vault info [name]
+bitfs vault info [name]                 (未实现)
   显示 Vault 详情
 
 bitfs vault rename <old> <new>
@@ -1572,26 +1512,26 @@ bitfs vault delete <name>
 #### Daemon
 
 ```
-bitfs daemon start [-d]
-  启动 HTTP daemon (-d 后台运行)
+bitfs daemon start
+  启动 HTTP daemon (前台运行, 无后台 flag; --listen/--network/--rpc-url 等选项)
 
 bitfs daemon stop
   停止 daemon
 
-bitfs daemon status
+bitfs daemon status                     (未实现, 使用顶层 bitfs status)
   显示 daemon 状态
 
-bitfs daemon config
+bitfs daemon config                     (未实现)
   显示当前 daemon 配置
 ```
 
 #### 其他
 
 ```
-bitfs init
+bitfs init                              (未实现, 使用 bitfs wallet init)
   初始化向导: 创建钱包 → 备份助记词 → 创建首个 Vault → 显示充值地址
 
-bitfs fsck
+bitfs fsck                              (未实现)
   文件系统一致性检查
 
 bitfs shell
@@ -1613,45 +1553,36 @@ bitfs /<当前远程路径>
 - 命令名补全: 输入部分命令名后 Tab 补全
 - 路径补全: 远程路径和本地路径均支持 Tab 补全
 
-#### 完整命令参数表
+#### 完整命令参数表 (当前实现 22 个命令)
 
 | 分类 | 命令 | 参数 | 说明 |
 |------|------|------|------|
 | **远程导航** | ls [path] | 可选路径 | 列目录 (默认当前目录) |
 | | cd \<path\> | 必填路径 | 切换远程目录 |
 | | pwd | 无 | 显示远程当前路径 |
-| | tree [path] [-d N] | 可选路径, -d 深度限制 | 树形显示 |
-| | stat \<path\> | 必填路径 | 节点详细信息 |
 | **本地导航** | lcd \<path\> | 必填路径 | 切换本地目录 |
-| | lpwd | 无 | 显示本地当前路径 |
-| | lls [path] | 可选路径 | 列本地文件 |
 | **传输** | get \<remote\> [local] | 远程路径, 可选本地路径 | 下载 |
-| | mget \<pattern\> | glob 模式 | 批量下载 |
-| | put \<local\> [remote] | 本地路径, 可选远程路径 | 上传 |
-| | mput \<pattern\> | glob 模式 | 批量上传 |
-| | put --encrypt \<local\> [remote] | 同 put + 加密 | 加密上传 |
-| **远程操作** | cat \<file\> | 必填路径 | 输出内容 (自动解密) |
+| | mget \<remote-dir\> [local] | 远程目录, 可选本地目录 | 递归下载目录 |
+| | put \<local\> \<remote\> [free\|private] | 本地路径 + 远程路径 + 可选访问模式 | 上传 |
+| | mput \<local-dir\> [remote] | 本地目录, 可选远程目录 | 递归上传目录 |
+| **远程操作** | cat \<path\> [--force] | 必填路径 | 输出内容 (自动解密, 二进制需 --force) |
 | | cp \<src\> \<dst\> | 源和目标路径 | 复制 |
 | | mv \<src\> \<dst\> | 源和目标路径 | 移动/重命名 |
-| | rm \<path\> | 必填路径 | 删除文件 |
+| | rm [-r] \<path\> | 必填路径, -r 递归 | 删除 |
 | | mkdir \<path\> | 必填路径 | 创建目录 |
-| | rmdir \<path\> | 必填路径 | 删除空目录 |
-| | link -s \<target\> \<name\> | 目标和链接名 | 软链接 |
+| | link \<target\> \<link-path\> [-s] | 目标和链接路径, -s/--soft 软链接 | 链接 |
 | **加密** | encrypt \<path\> | 必填路径 | 公开→私有 |
 | | decrypt \<path\> | 必填路径 | 私有→公开 |
-| **交易** | sell \<path\> --price N | 路径 + 价格 | 标价出售 |
+| **交易** | sell \<path\> \<sat/KB\> [--recursive] | 路径 + 价格 | 标价出售 |
 | | sales [path] | 可选路径 | 销售历史 |
-| **钱包** | balance | 无 | 查看余额 |
-| | fund | 无 | 显示充值地址 |
-| **发布** | publish \<domain\> [path] | 域名 + 可选路径 | 绑定域名 |
+| **发布** | publish \<domain\> | 域名 | 绑定域名 |
 | | unpublish \<domain\> | 域名 | 解除绑定 |
 | | publish | 无 | 查看绑定关系 |
-| **Vault** | vault list | 无 | 列出 Vault |
-| | vault use \<name\> | Vault 名称 | 切换 Vault |
-| **会话** | ! \<cmd\> | Shell 命令 | 执行本地命令 |
-| | help | 无 | 帮助 |
-| | history | 无 | 命令历史 |
-| | exit / quit / bye | 无 | 退出 |
+| **会话** | help | 无 | 帮助 |
+| | exit / quit | 无 | 退出 |
+
+> ⚠ 早期设计稿中的 `tree`、`stat`、`lpwd`、`lls`、`rmdir`、`balance`、`fund`、
+> `vault list`、`vault use`、`! <cmd>`、`history`、`put --encrypt`、`bye` **未实现**。
 
 ---
 ## 十三-B、节点间通信协议详细设计
@@ -1671,15 +1602,19 @@ GET  /_bitfs/versions/{pnode}/{path}   版本历史
 GET  /_bitfs/buy/{txid}               获取购买信息 (定价、capsule_hash)
 POST /_bitfs/buy/{txid}               提交 HTLC, 获取 capsule
 POST /_bitfs/pay/{invoice_id}          提交下载计费带宽费支付
-GET  /_bitfs/sales                     销售记录
+GET  /_bitfs/sales                     销售记录 (admin)
+POST /_bitfs/admin/reload              重载钱包状态 (admin)
 GET  /_bitfs/spv/proof/{txid}          SPV 证明
-GET  /_bitfs/dashboard/status          仪表盘状态
-GET  /_bitfs/dashboard/storage         存储统计
-GET  /_bitfs/dashboard/wallet          钱包信息
-GET  /_bitfs/dashboard/network         网络状态
-GET  /_bitfs/dashboard/logs            日志
+GET  /_bitfs/dashboard/status          仪表盘状态 (admin)
+GET  /_bitfs/dashboard/storage         存储统计 (admin)
+GET  /_bitfs/dashboard/wallet          钱包信息 (admin)
+GET  /_bitfs/dashboard/network         网络状态 (admin)
+GET  /_bitfs/dashboard/logs            日志 (admin)
+GET  /_dashboard/                      仪表盘 SPA 静态文件 (admin, 嵌入 React SPA)
 GET  /.well-known/bsvalias             Paymail 发现
 GET  /api/v1/pki/{handle}              Paymail PKI
+GET  /api/v1/public-profile/{handle}   Paymail 公开档案
+GET  /api/v1/verify/{handle}/{pubkey}  Paymail 公钥验证
 GET  /{path...}                        内容路由 (Content Negotiation)
 ```
 
@@ -1689,12 +1624,7 @@ GET  /{path...}                        内容路由 (Content Negotiation)
 Request:  无参数
 Response: 200 OK
 {
-  "status": "ok",
-  "version": "0.1.0",
-  "p_node": "<hex P_node>",
-  "vault": "<vault_name>",
-  "domain": "<domain>",
-  "block_height": 0
+  "status": "ok"
 }
 ```
 
@@ -1778,22 +1708,22 @@ Method 42 ECDH 双向身份验证。详见下方握手协议。
 Request:  POST /_bitfs/handshake
 Body:
 {
-  "pubkey": [33 bytes, base64/hex],     // Buyer 压缩公钥
-  "nonce": [32 bytes, base64/hex],      // 随机 nonce
+  "buyer_pub": [33 bytes, base64/hex],  // Buyer 压缩公钥
+  "nonce_b": [32 bytes, base64/hex],    // Buyer 随机 nonce
   "timestamp": 1708000000               // Unix 时间戳
 }
 
 Success:  200 OK
 {
-  "pubkey": [33 bytes],                 // Seller 压缩公钥 (= P_node)
-  "nonce": [32 bytes],                  // Seller 随机 nonce
+  "seller_pub": [33 bytes],             // Seller 压缩公钥 (= P_node)
+  "nonce_s": [32 bytes],                // Seller 随机 nonce
   "timestamp": 1708000001,
-  "verify": [32 bytes],                 // HMAC-SHA256(session_key, "verify")
-  "session_id": "<hex>"                 // 会话 ID (30 分钟有效)
+  "session_id": "<hex>",                // 会话 ID (24 小时有效)
+  "expires_at": 1708086401              // 会话过期时间 (Unix 时间戳)
 }
 
 Errors:
-  400 Bad Request          -- 请求格式错误 / pubkey/nonce 长度错误
+  400 Bad Request          -- 请求格式错误 / buyer_pub/nonce_b 长度错误
   503 Service Unavailable  -- 无私钥配置
 ```
 
@@ -1806,12 +1736,15 @@ Request:  GET /_bitfs/buy/{64位hex txid}?buyer_pubkey=<66位hex>
 
 Success:  200 OK
 {
-  "txid": "<hex>",
+  "invoice_id": "<hex>",
+  "total_price": 500,                   // ceil(price_per_kb × file_size / 1024)
+  "capsule_hash": "<hex>",             // 仅当 buyer_pubkey 参数提供时
+  "capsule_nonce": "<hex>",            // 仅当 capsule 已生成时; per-invoice nonce (= invoice_id 字节), buyer_mask 派生需要
   "price_per_kb": 50,
   "file_size": 10240,
-  "total_price": 500,                   // ceil(price_per_kb × file_size / 1024)
-  "access": "PAID",
-  "capsule_hash": "<hex>"               // 仅当 buyer_pubkey 参数提供时
+  "payment_addr": "<base58>",
+  "seller_pubkey": "<hex>",
+  "paid": false
 }
 
 Errors:
@@ -1835,10 +1768,10 @@ Body:
 
 Success:  200 OK
 {
-  "capsule": [32 bytes],                // aes_key XOR buyer_mask
-  "capsule_hash": "<hex>",             // SHA256(capsule)
-  "file_hash": "<hex>",                // key_hash = SHA256(SHA256(plaintext))
-  "buyer_pubkey": "<hex>"
+  "invoice_id": "<hex>",               // 发票 ID
+  "capsule": [32 bytes],               // aes_key XOR buyer_mask
+  "capsule_nonce": "<hex>",            // per-invoice nonce (= invoice_id 字节), buyer_mask 派生需要
+  "paid": true
 }
 
 验证逻辑:
@@ -1880,51 +1813,40 @@ Errors:
 
 ### B. Method 42 握手协议
 
-三阶段流程, 基于 ECDH 实现双向身份验证和会话密钥协商。
+单次请求/响应流程, 基于 ECDH 实现身份验证和会话密钥协商。
 
-#### 阶段 1: Initiate (Buyer → Seller)
+#### 流程: Buyer → Seller (单次 Request/Response)
 
 ```
 Buyer:
   1. nonce_b = random(32 bytes)
   2. 发送 HandshakeRequest:
-     { pubkey: P_buyer (33B), nonce: nonce_b (32B), timestamp: now() }
-```
+     { buyer_pub: P_buyer (33B), nonce_b: nonce_b (32B), timestamp: now() }
 
-#### 阶段 2: Respond (Seller → Buyer)
-
-```
 Seller:
-  1. 验证: len(pubkey)==33, len(nonce)==32
-  2. 解析 P_buyer = ParsePubKey(req.pubkey)
+  1. 验证: len(buyer_pub)==33, len(nonce_b)==32
+  2. 解析 P_buyer = ParsePubKey(req.buyer_pub)
   3. nonce_s = random(32 bytes)
   4. 计算 session_key:
      shared_point = D_seller × P_buyer   (ECDH)
      x_bytes = shared_point.X 转 32 字节大端
      session_key = SHA256(x_bytes || nonce_b || nonce_s)
-  5. verify = HMAC-SHA256(session_key, "verify")
-  6. 存储 session (30 分钟有效期)
-  7. 返回 HandshakeResponse:
-     { pubkey: P_seller (33B), nonce: nonce_s (32B), timestamp: now(), verify: verify (32B) }
-```
+  5. 存储 session (24 小时有效期)
+  6. 返回 HandshakeResponse:
+     { seller_pub: P_seller (33B), nonce_s: nonce_s (32B), timestamp: now(),
+       session_id: <hex>, expires_at: <unix timestamp> }
 
-#### 阶段 3: Complete (Buyer 验证)
-
-```
 Buyer:
-  1. 解析 P_seller = ParsePubKey(resp.pubkey)
+  1. 解析 P_seller = ParsePubKey(resp.seller_pub)
   2. 计算 session_key:
      shared_point = D_buyer × P_seller   (ECDH)
      x_bytes = shared_point.X 转 32 字节大端
      session_key = SHA256(x_bytes || nonce_b || nonce_s)
-  3. expected_verify = HMAC-SHA256(session_key, "verify")
-  4. 验证: hmac.Equal(resp.verify, expected_verify)
-  5. 验证通过 → 会话建立
+  3. 会话建立, 使用 session_id 进行后续请求
 
 身份保证:
   - Seller 的 P_seller 必须与 DNSLink _bitfs TXT 记录一致
   - ECDH 保证: 无 D_seller 无法计算正确的 shared_point
-  - HMAC verify 保证: 双方确认拥有相同的 session_key
 ```
 
 #### Session Key 派生公式
@@ -2014,7 +1936,6 @@ Buyer                                Seller Daemon
   |                                      |
   | [验证 SHA256(capsule)==capsule_hash] |
   | [恢复 aes_key = capsule XOR mask]   |
-  | [缓存 key 到 ~/.bitfs/cache/keys/]  |
   |                                      |
   |──── GET /_bitfs/data/{hash} ──────→ |
   |←─── <加密数据> ───────────────────── |   ← 获取加密内容
@@ -2039,8 +1960,10 @@ Buyer                                Seller Daemon
      // BIP32 密钥直接参与 ECDH, 保留代数关系
   2. aes_key = HKDF-SHA256(ikm=S_node, salt=key_hash, info="bitfs-file-encryption")
      // 即文件的 AES-256-GCM 对称密钥
-  3. buyer_mask = HKDF-SHA256(ikm=ECDH(D_node, P_buyer).x, salt=key_hash, info="bitfs-buyer-mask")
+  3. buyer_mask = HKDF-SHA256(ikm=ECDH(D_node, P_buyer).x, salt=key_hash || nonce, info="bitfs-buyer-mask")
      // 每个买家唯一的掩码 (HKDF 确保密钥隔离)
+     // nonce = invoice_id 字节 (per-invoice 流程), 使同一买家重复购买产生不同 capsule;
+     // nonce 为空时退化为 legacy 确定性派生 (salt = key_hash)
   4. capsule = aes_key XOR buyer_mask (32 bytes)
   5. capsule_hash = SHA256(fileTxID || capsule)
      // 将 capsule hash 绑定到文件的 TxID, 防止跨文件 capsule 重用
@@ -2064,8 +1987,9 @@ Buyer                                Seller Daemon
   key_hash: 文件内容哈希 (从 KeyCapsule.FileHash 获取)
 
 计算:
-  1. buyer_mask = HKDF-SHA256(ikm=ECDH(D_buyer, P_node).x, salt=key_hash, info="bitfs-buyer-mask")
+  1. buyer_mask = HKDF-SHA256(ikm=ECDH(D_buyer, P_node).x, salt=key_hash || nonce, info="bitfs-buyer-mask")
      // D_buyer × P_node = D_node × P_buyer (ECDH 对称性)
+     // nonce 从 invoice 响应的 capsule_nonce 字段获取 (per-invoice 流程); 无 nonce 时省略
   2. aes_key = capsule XOR buyer_mask
 
 ECDH 对称性保证:
@@ -2108,7 +2032,7 @@ VerifyCapsuleHash(fileTxID, capsule, expected_hash):
   return actual == expected_hash
 ```
 
-#### Key Cache (Buyer 本地)
+#### Key Cache (Buyer 本地) — ⚠ 未实现 (设计稿)
 
 ```
 存储位置: ~/.bitfs/cache/keys/{txid_hex}.json
@@ -2127,6 +2051,8 @@ VerifyCapsuleHash(fileTxID, capsule, expected_hash):
   3. 未命中 → 执行完整购买流程
   4. --no-cache 标志跳过缓存
 ```
+
+> 当前实现不缓存购买的密钥: 每次访问付费内容需重新执行 `--buy --wallet-key` 购买流程。
 
 ### E. Content Negotiation
 
@@ -2159,6 +2085,8 @@ NegotiateFormat(accept):
 
 ---
 ## 十一-B、Token 系统详细设计
+
+> **⚠ 未实现**: Hash Chain Token 预购系统未实现。当前买卖使用 HTLC 原子交换（见十三-B）。
 
 本节补充 Hash Chain 批量预购令牌系统的算法细节。
 
@@ -2369,6 +2297,8 @@ bitfs git-repack /projects/myapp   # 合并所有 packfile 为一个
 ---
 
 ## 十四-B、收益权表与 ISO 详细设计
+
+> **⚠ 部分实现**: 链上 Covenant 脚本（Registry UTXO、Share UTXO、ISO Pool）未实现。仅有离线收益分配计算（libbitfs-go/revshare/）。
 
 本节补充收益权 UTXO 化、Registry Covenant、ISO 发行机制的算法细节。
 
@@ -2631,6 +2561,8 @@ ISO Pool 安全:
 ---
 
 ## 十五-B、目录树购买与 BIP32 访问控制详细设计
+
+> **⚠ 未实现**: BIP32 目录树购买尚未实现。BIP32 硬化/非硬化派生参数已支持（wallet/hd.go），但目录级 ECDH 传递性解密功能未实现。
 
 本节补充基于 BIP32 非硬化派生的目录树级购买机制和访问控制算法。
 
@@ -3094,6 +3026,8 @@ Paymail 与 DNSLink 冲突:
 
 ## 二十二-B、版本日志、共享列表与 ACL 实现说明
 
+> **⚠ 未实现 (Phase 4)**: 群签名 (BLS12-381)、群加密、ACL 系统均未实现。ACLRef 字段仅在 TLV 解析器中存在。
+
 本节补充系统设计第十二章 (版本控制) 和第二十二章 (权限管理) 中 Version Log、Share List、ACL 三项功能的实现细节。
 
 ### A. 版本日志 (Version Log)
@@ -3222,7 +3156,7 @@ BLS 密钥派生 (从 BIP39 seed):
 | Tag (hex) | Tag (dec) | 常量名 | 类型 | 说明 |
 |-----------|-----------|--------|------|------|
 | `0x01` | 1 | `tagVersion` | uint32 | 协议版本 |
-| `0x02` | 2 | `tagType` | uint32 | 节点类型: File(0)/Dir(1)/Link(2) |
+| `0x02` | 2 | `tagType` | uint32 | 节点类型: File(0)/Dir(1)/Link(2)/Anchor(3) |
 | `0x03` | 3 | `tagOp` | uint32 | 操作: Create(0)/Update(1)/Delete(2) |
 | `0x04` | 4 | `tagMimeType` | string | MIME 类型 |
 | `0x05` | 5 | `tagFileSize` | uint64 | 文件大小 (明文，bytes) |
@@ -3242,12 +3176,32 @@ BLS 密钥派生 (从 BIP39 seed):
 | `0x13` | 19 | `tagEncrypted` | uint32 | 是否加密: 0=否, 1=是 |
 | `0x14` | 20 | `tagOnChain` | uint32 | 内容是否在链上: 0=否, 1=是 |
 | `0x15` | 21 | `tagContentTxID` | bytes | DataTx 的 TxID (可重复) |
-| `0x16` | 22 | `tagCompression` | uint32 | 压缩算法: None(0)/Gzip(1) |
+| `0x16` | 22 | `tagCompression` | uint32 | 压缩算法: None(0)/LZW(1)/Gzip(2)/ZSTD(3) |
 | `0x17` | 23 | `tagCltvHeight` | uint32 | CLTV 时间锁区块高度 |
 | `0x18` | 24 | `tagRevenueShare` | uint32 | 收入分成比例 (0-10000 = 0-100%) |
 | `0x19` | 25 | `tagNetworkName` | string | 网络名称 |
 | `0x1A` | 26 | `tagMerkleRoot` | bytes | 目录 Merkle 根，32B |
 | `0x1B` | 27 | `tagEncPayload` | bytes | 加密 payload (PRIVATE 模式) |
+| `0x1C`-`0x1D` | 28-29 | — | — | 保留 |
+| `0x1E` | 30 | `tagMetadata` | sub-TLV | map<string,string> 扩展元数据 |
+| `0x1F` | 31 | `tagVersionLog` | bytes | 版本日志节点 P_node，33B |
+| `0x20` | 32 | `tagTreeRootPNode` | bytes | (Anchor) 根目录 P_node，33B |
+| `0x21` | 33 | `tagTreeRootTxID` | bytes | (Anchor) 根目录最新 TxID，32B |
+| `0x22` | 34 | `tagParentAnchorTxID` | bytes | (Anchor) 父 Anchor TxID，32B (可重复, merge commit) |
+| `0x23` | 35 | `tagAuthor` | string | (Anchor) git commit author |
+| `0x24` | 36 | `tagCommitMessage` | string | (Anchor) git commit message |
+| `0x25` | 37 | `tagGitCommitSHA` | bytes | (Anchor) git commit SHA，20B |
+| `0x26` | 38 | `tagFileMode` | uint32 | (Anchor) git file mode |
+| `0x27` | 39 | `tagShareList` | bytes | 收益权表节点 P_node，33B |
+| `0x28` | 40 | `tagChunkIndex` | uint32 | 分片索引 |
+| `0x29` | 41 | `tagTotalChunks` | uint32 | 分片总数 |
+| `0x2A` | 42 | `tagRecombinationHash` | bytes | 分片重组哈希，32B |
+| `0x2B` | 43 | `tagRabinSignature` | bytes | Rabin 签名 (变长) |
+| `0x2C` | 44 | `tagRabinPubKey` | bytes | Rabin 公钥 (变长) |
+| `0x2D` | 45 | `tagRegistryTxID` | bytes | Registry TxID，32B |
+| `0x2E` | 46 | `tagRegistryVout` | uint32 | Registry 输出索引 |
+| `0x2F` | 47 | `tagISOConfig` | sub-TLV | ISO 配置 (37B) |
+| `0x30` | 48 | `tagACLRef` | bytes | ACL 引用 (变长) |
 
 > (本列表同 `5-TransactionSpec.zh.md` 的核心规范映射对齐，具体参见 libbitfs-go 规范实现)。
 

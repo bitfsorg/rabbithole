@@ -28,7 +28,7 @@ Bitcoin 交易结构与合约脚本是系统设计主线：
 
 ### 网络配置
 
-**网络绑定到种子级别**: `bitfs init --network <network>` 时选定网络, 所有 Vault 共享。费用密钥链 (account 0) 与所有 Vault 在同一网络上。
+**网络绑定到种子级别**: `bitfs init --network <network>` (⚠ `bitfs init` 未实现, 当前使用 `bitfs wallet init --network <network>`) 时选定网络, 所有 Vault 共享。费用密钥链 (account 0) 与所有 Vault 在同一网络上。
 
 **预设网络**:
 
@@ -36,8 +36,7 @@ Bitcoin 交易结构与合约脚本是系统设计主线：
 |------|------|---------|---------|---------|
 | `mainnet` | 生产环境 | `0x00` (1...) | 8333 | 8332 |
 | `testnet` | BSV 测试网 (STN) | `0x6f` (m/n...) | 18333 | 18332 |
-| `teratestnet` | Teranode 测试网 (实验性) | `0x6f` | 待定 | 待定 |
-| `regtest` | 本地开发 | `0x6f` | 18444 | 18332 |
+| `regtest` | 本地开发 | `0x6f` | 18444 | 18443 |
 
 **自定义网络**: 通过 JSON 配置文件定义, 支持企业私链和新测试网:
 
@@ -53,32 +52,36 @@ Bitcoin 交易结构与合约脚本是系统设计主线：
 }
 ```
 
-**多网络使用**: 通过 `BITFS_HOME` 环境变量隔离:
+**多网络使用**: 通过 `BITFS_DATADIR` 环境变量隔离:
 
 ```bash
-BITFS_HOME=~/.bitfs-testnet bitfs init --network testnet
+BITFS_DATADIR=~/.bitfs-testnet bitfs wallet init --network testnet   # (bitfs init 未实现)
 ```
+
+**环境变量**: `BITFS_DATADIR` (数据目录)、`BITFS_PASSWORD` (钱包密码)、`BITFS_NETWORK` (网络名)、
+`BITFS_WOC_API_KEY` / `BITFS_ARC_API_KEY` / `BITFS_ARC_URL` (链上服务)、
+`BITFS_RPC_URL` / `BITFS_RPC_USER` / `BITFS_RPC_PASS` (节点 RPC)、
+`BITFS_WALLET_KEY` (b* 工具买家私钥)。完整说明见 [详细设计 §网络配置](3-DetailedDesign.zh.md)。
 
 **本地存储结构**:
 
 ```
-~/.bitfs/                          # BITFS_HOME (可通过环境变量覆盖)
+~/.bitfs/                          # BITFS_DATADIR (可通过环境变量覆盖)
 ├── wallet.enc                     # Argon2id 加密的 HD seed (salt || nonce || ciphertext)
 ├── config                         # 网络配置、默认 vault 等 (key=value 格式)
-├── vaults/
-│   └── {vault_id}/                # 每个 vault 独立目录
-│       ├── meta.json              # vault 元数据
-│       └── txstore/               # 本 vault 的交易 + Merkle proof
-├── cache/
-│   ├── keys/                      # 已购买文件的 AES 密钥缓存 (加密存储)
-│   └── meta/                      # 元数据缓存
+├── state.json                     # 钱包状态 (费用链派生索引等)
+├── nodes.json                     # 全部 vault 的 Metanet 节点本地状态
 ├── spv/
-│   ├── headers.db                 # 区块头数据库
-│   └── peers.json                 # P2P 节点列表
+│   └── spv.db                     # 区块头 + 交易证明数据库 (bolt)
+├── cache/
+│   └── meta/                      # b* 工具的元数据缓存
+├── invoices/                      # daemon 发票持久化 ({invoice_id}.json)
+├── logs/                          # 日志目录
+├── buyer.conf                     # b* 工具的买家钱包配置 (可选)
+├── daemon.pid                     # daemon 进程 PID 文件
+├── shell_history                  # bitfs shell 历史
 └── storage/                       # 内容寻址存储 (本地文件内容)
 ```
-
-> **密钥缓存加密**: `cache/keys/` 中的密钥缓存文件使用 wallet derived_key 加密, 格式: `{nonce(12B) || AES-GCM(derived_key, nonce, key_data)}`。禁止以明文 JSON 存储 AES 对称密钥。
 
 ### HD 钱包结构
 
@@ -114,12 +117,11 @@ HD 树状派生镜像文件系统层次: 根目录是 /0/0, 根的第一个子�
 ### Vault 命令
 
 ```bash
-bitfs vault create <name>      # 创建新 Vault (创建 Metanet 根节点交易, 链上存储 Vault 元信息)
+bitfs vault create <name>      # 创建新 Vault (创建 Metanet 根节点交易)
 bitfs vault list               # 列出所有 Vault
-bitfs vault use <name>         # 切换当前 Vault
-bitfs vault info [name]        # 显示 Vault 详情
-bitfs vault rename <old> <new> # 重命名 (更新链上元信息)
+bitfs vault rename <old> <new> # 重命名
 bitfs vault delete <name>      # 删除 Vault (标记删除)
+bitfs vault export <name>      # 导出 Vault 密钥 (支持 wif/hex/seed-path 格式)
 ```
 
 Vault 元信息存储在根节点的 Metanet 交易中 (vault 名称、域名绑定等)。
@@ -127,10 +129,10 @@ Vault 元信息存储在根节点的 Metanet 交易中 (vault 名称、域名绑
 ### 钱包命令
 
 ```bash
-bitfs wallet init              # 创建新 HD 钱包 (BIP39 助记词 + 可选 passphrase)
-bitfs wallet restore           # 用助记词恢复 HD 密钥 (tx 数据需从备份恢复)
-bitfs wallet info              # 余额、地址、网络
-bitfs wallet fund              # 显示充值地址
+bitfs wallet init              # 创建新 HD 钱包 (BIP39 助记词 + Argon2id 加密)
+bitfs wallet show              # 显示钱包地址、网络等信息
+bitfs wallet balance           # 显示余额
+bitfs wallet fund              # 显示充值地址 (含 QR 码)
 ```
 
 **wallet.enc 格式**: 使用 Argon2id 从用户密码派生加密密钥, AES-256-GCM 加密 HD seed:
@@ -144,11 +146,11 @@ salt(16B) || nonce(12B) || AES-256-GCM(Argon2id(password, salt), nonce, seed || 
 - `checksum`: seed 的 SHA256 前 4 字节, 用于验证解密正确性
 - Argon2id 参数: `m=64MB, t=3, p=4` (可调整)
 
-### 初始化向导 (bitfs init)
+### 初始化向导 (bitfs init) — ⚠ 未实现 (当前使用 bitfs wallet init)
 
 ```bash
 bitfs init [--network <network>]
-# 1. 选择网络 [mainnet / testnet / teratestnet / regtest / custom]
+# 1. 选择网络 [mainnet / testnet / regtest]
 # 2. 生成 HD 钱包 (BIP39 助记词 + 可选 passphrase)
 # 3. 提示备份助记词
 # 4. 创建第一个 Vault
@@ -233,7 +235,7 @@ LINK  - 链接节点 (仅用于软链接, 持有 link_target + link_type)
 严格遵循 The Metanet Technical Summary:
 - **Node** = 一笔包含 OP_RETURN 的交易, 带 `<Metanet Flag> <P_node> <TxID_parent>`
 - **Edge** = 子交易的 Input 中包含 `Sig P_parent` (父节点私钥签名, 花费锁定到 P_parent 的 UTXO)
-- **Node ID** = `H(P_node || TxID_node || Vout)` (全局唯一，多输出批量交易中同一 TxID 的不同节点以 Vout 区分)
+- **Node ID** = `(P_node, TxID_node, Vout)` 三元组 (全局唯一，多输出批量交易中同一 TxID 的不同节点以 Vout 区分)
 - **版本控制** = 同一 P_node 的多个 TxID, 区块高度/TTOR 最高者为当前版本
 - **权限控制** = 只有 P_node 的私钥持有者才能创建子节点 (BSV 网络验证签名)
 
@@ -411,49 +413,46 @@ K+1         1B        Hardened flag (bool, 0|1)
 | **公开免费** | 有 | 公开 | 明文 | 加密(D_node=1) | 任何人: aes_key = KDF(ECDH(1, P_node).x, key_hash) = KDF(P_node.x, key_hash) |
 | **公开付费** | 有 | 公开 | 明文(含价格) | 加密 | 购买后通过 Token/HTLC 获取 S_k |
 
-### 加密体系 (Koblitz + AES-256-GCM 混合, 与 Bitcoin 同密码体系)
+### 加密体系 (ECDH + HKDF + AES-256-GCM, 与 Bitcoin 同密码体系)
 
-所有文件都加密存储。采用 Koblitz 椭圆曲线加密 (secp256k1 ECC) 保护对称密钥, AES-256-GCM 加密批量内容:
+所有文件都加密存储。采用 ECDH (secp256k1) 协商密钥, HKDF 派生 AES 密钥, AES-256-GCM 加密内容:
 
 ```
-密钥加密 (Koblitz, secp256k1 ECC):
-  对对称密钥 S_k (32 bytes) 逐字节加密:
-  1. 映射到曲线点: P_m = m × G (m = 字节值)
-  2. 随机临时密钥 k: 密文 = (k×G, P_m + k×P_recipient)
-  3. 解密: P_m = (P_m + k×P_recipient) - D_recipient × (k×G), 恢复 m
-  适用: 加密 32 字节的 S_k → 约 2KB 密文 (可接受)
+密钥协商 (ECDH, secp256k1):
+  shared_secret = ECDH(D_node, P_recipient) = D_node × P_recipient
+  aes_key = HKDF-SHA256(ikm=shared_secret.x, salt=key_hash, info="bitfs-file-encryption")
 
 内容加密 (AES-256-GCM):
-  1. 生成随机对称密钥 S_k (32 bytes)
-  2. nonce = random(12 bytes)
-  3. encrypted = nonce || AES-256-GCM(content, S_k, nonce) || tag
-  适用: 批量内容加密 (高效)
+  nonce = random(12 bytes)
+  encrypted = nonce || AES-256-GCM(content, aes_key, nonce, aad=key_hash) || tag
+  注: key_hash 作为 AAD (Additional Authenticated Data) 绑定密文与内容承诺
 
 完整加密流程:
   1. 双哈希: key_hash = SHA256(SHA256(plaintext))
      注: plaintext 为文件原始内容 (加密前), 非序列化后的 TLV payload。
      三种模式 (FREE/PAID/PRIVATE) 均以相同方式计算 key_hash。
-  2. ECDH 直接使用 D_node: point = ECDH(D_node, P_recipient)
-  3. 对称密钥: aes_key = KDF(point, key_hash)
-     KDF = HKDF-SHA256(ikm=point.x, salt=key_hash, info="bitfs-file-encryption")
-  4. Koblitz 加密 aes_key: koblitz_envelope = Koblitz_Encrypt(aes_key, P_recipient)
-  5. AES 加密内容: encrypted_content = nonce || AES-256-GCM(content, aes_key) || tag
-  6. 存储:
+  2. ECDH: shared_secret = D_node × P_recipient
+  3. 对称密钥: aes_key = HKDF-SHA256(shared_secret.x, key_hash, "bitfs-file-encryption")
+  4. AES 加密: encrypted_content = nonce || AES-256-GCM(content, aes_key, nonce, aad=key_hash) || tag
+  5. 存储:
      - Metanet 交易: key_hash (双哈希) 在 TLV 中
      - 链下: daemon 存储 encrypted_content
-     - 链上 (可选): 发布数据交易, Output = koblitz_envelope || encrypted_content
+     - 链上 (可选): 发布数据交易, OP_DROP 模式存储加密内容
 
 解密流程 (Owner):
   1. 从 Metanet 交易获取 key_hash
-  2. ECDH: point = ECDH(D_node, P_node) = D_node × P_node
-  3. aes_key = KDF(point, key_hash)
-  4. AES-256-GCM 解密内容
+  2. ECDH: shared_secret = D_node × P_node
+  3. aes_key = HKDF-SHA256(shared_secret.x, key_hash, "bitfs-file-encryption")
+  4. AES-256-GCM 解密内容 (aad=key_hash)
   5. 验证: SHA256(SHA256(decrypted)) == key_hash
 
-解密流程 (买家):
-  1. 通过 Token/HTLC 获取 capsule (ECDH shared secret)
-  2. aes_key = KDF(capsule, key_hash)
-  3. AES-256-GCM 解密内容
+解密流程 (买家, HTLC):
+  1. 通过 HTLC 获取 capsule
+     capsule = aes_key XOR buyer_mask
+     buyer_mask = HKDF-SHA256(ECDH(D_node, P_buyer).x, key_hash || nonce, "bitfs-buyer-mask")
+     // nonce = invoice_id 字节 (per-invoice), 由 invoice 响应的 capsule_nonce 字段下发
+  2. aes_key = capsule XOR buyer_mask (买家用自己的 D_buyer 计算 buyer_mask)
+  3. AES-256-GCM 解密内容 (aad=key_hash)
   4. 验证: SHA256(SHA256(decrypted)) == key_hash
 ```
 
@@ -530,7 +529,7 @@ P_node 指向目录时, 访问 `bitfs://example.com/` 默认返回目录下的 `
 `publish` 不限于根目录，任何 Metanet 节点 (目录或文件) 都可以绑定域名:
 
 ```bash
-bitfs publish <domain> [path]        # 绑定域名到指定目录 (默认 /)
+bitfs publish <domain>               # 绑定域名到当前 Vault 根 (不接受 path 参数)
 bitfs unpublish <domain>             # 解除绑定
 bitfs publish                        # 查看所有绑定关系
 ```
@@ -655,9 +654,9 @@ _bsvalias._tcp.example.com  SRV  10 60 443 cdn1.example.com
 
 #### Go 库
 
-使用 `github.com/bsv-blockchain/go-paymail` (BSV 官方 Go 实现):
-- 完整 client + server 支持
-- 支持 mainnet/testnet/STN
+自定义实现 (libbitfs-go/paymail/)，支持 DNS 发现、BRFC 能力协商、PKI 端点解析:
+- DNS SRV/TXT 记录发现 + DNSSEC 验证
+- BRFC 能力协商 (BitFS Browse/Buy/Sell)
 - BRFC 管理、SRV 解析、PKI、P2P 支付
 - 与 BitFS 现有 Go 技术栈匹配
 
@@ -691,11 +690,8 @@ Visitor 从任何来源获取数据后, 必须完成以下校验链才能信任�
 
 本地目录结构参见第二节「本地存储结构」(~/.bitfs/ 统一定义)。SPV 相关数据存放于:
 
-- `~/.bitfs/spv/headers.db` — 区块头数据库 (SPV 轻节点)
-- `~/.bitfs/spv/peers.json` — P2P 节点列表
-- `~/.bitfs/vaults/{vault_id}/txstore/` — 各 vault 的交易 + Merkle proof
-- `~/.bitfs/cache/meta/` — Metanet 元数据缓存
-- `~/.bitfs/cache/keys/` — 已购买文件的 AES 密钥缓存 (加密存储)
+- `~/.bitfs/spv/spv.db` — 区块头 + 交易证明数据库 (bolt, SPV 轻节点)
+- `~/.bitfs/cache/meta/` — Metanet 元数据缓存 (b* 工具)
 
 ### 恢复
 
@@ -741,9 +737,9 @@ $ bstat --versions bitfs://example.com/docs/report.pdf
 ### bcat -- 输出文件内容到 stdout (类 Unix cat)
 ```bash
 $ bcat bitfs://example.com/docs/readme.txt
-# 自动解密 (免费数据用 Db=1 技巧, 付费数据用缓存的 key)
+# 自动解密 (免费数据用 Db=1 技巧; 付费数据需 --buy 购买)
 
-$ bcat --buy bitfs://example.com/premium/data.csv
+$ bcat --buy --wallet-key <hex> bitfs://example.com/premium/data.csv
 # 自动购买 + 解密 + 输出 (purl 风格)
 ```
 
@@ -751,7 +747,7 @@ $ bcat --buy bitfs://example.com/premium/data.csv
 ```bash
 $ bget bitfs://example.com/docs/report.pdf
 $ bget -o myreport.pdf bitfs://example.com/docs/report.pdf
-$ bget --version 1 bitfs://example.com/docs/report.pdf  # 下载特定版本
+$ bget --version 1 bitfs://example.com/docs/report.pdf  # 下载特定版本 (1=最新版, 2=上一版, ...)
 $ bget bitfs://alice@example.com/docs/report.pdf  # Paymail 寻址
 
 # 付费文件
@@ -759,10 +755,10 @@ $ bget bitfs://example.com/premium/data.csv
 Price: 500 sat (50 sat/KB × 10 KB)
 Use --buy to purchase and download.
 
-$ bget --buy bitfs://example.com/premium/data.csv
+$ bget --buy --wallet-key <hex> bitfs://example.com/premium/data.csv
 Price: 500 sat (50 sat/KB × 10 KB)  Purchasing...
-Key saved. Downloading... Done.
-# 后续 bget/bcat 自动使用缓存的密钥
+Downloading... Done.
+# ⚠ 密钥缓存未实现: 每次购买需带 --buy --wallet-key (或 BITFS_WALLET_KEY / ~/.bitfs/buyer.conf)
 ```
 
 ### btree -- 递归目录树 (类 Unix tree)
@@ -781,9 +777,19 @@ example.com/
 ### 所有 b* 工具通用选项
 ```
 --json          JSON 输出 (Agent 友好)
+--host URL      Daemon URL 覆盖
 --no-cache      禁用本地缓存
---timeout N     请求超时 (秒)
+--timeout D     请求超时 (如 10s, 1m)
 --offline       强制只用缓存
+```
+
+bcat/bget 额外支持购买与验证选项:
+```
+--buy           购买付费内容
+--verify        下载前 SPV 验证 Metanet 交易
+--wallet-key K  买家私钥: hex、@文件路径, 或 BITFS_WALLET_KEY 环境变量
+--utxo S        手动指定买家 UTXO (txid:vout:amount)
+--fee-rate N    HTLC 费率覆盖 (sat/KB, 可选)
 ```
 
 ---
@@ -792,15 +798,15 @@ example.com/
 
 ### 文件操作
 ```bash
-bitfs put <local> <remote>     # 上传 (默认 D_node=1 加密 = 公开免费)
-bitfs put --encrypt <l> <r>    # 上传并加密 (私有, encrypted=true)
-bitfs put --keyword "tag1 tag2" --description "描述" <l> <r>  # 附加元信息
+bitfs put <local> <remote>     # 上传 (默认 access=free, D_node=1 加密)
+bitfs put --access private <l> <r>   # 上传并私有加密 (encrypted=true)
+bitfs put - <remote>           # 从 stdin 读取内容上传 (管道支持)
+bitfs put --vault <name> <l> <r>     # 指定 Vault 上传
 bitfs mkdir <path>             # 创建目录
 bitfs mv <src> <dst>           # 移动 (同目录=改名; 跨目录=移动 ChildEntry, P_node 不变)
 bitfs cp <src> <dst>           # 复制 (独立新节点, 重新加密, 新 key_hash)
 bitfs rm <path>                # 删除: SelfUpdate 父目录移除 ChildEntry
 bitfs rm -r <path>             # 递归删除目录 (先递归删除所有子节点)
-bitfs rmdir <path>             # 删除空目录
 bitfs link -s <target> <name>  # 软链接 (本 Vault, 创建 LINK 节点)
 bitfs link -s example.com/path <name>  # 远程软链接 (跨用户)
 ```
@@ -808,31 +814,40 @@ bitfs link -s example.com/path <name>  # 远程软链接 (跨用户)
 ### 加密管理
 ```bash
 bitfs encrypt <path>           # 公开 → 私有 (re-encrypt, encrypted=true, 新 key_hash)
-bitfs decrypt <path>           # 私有 → 公开 (用 D_node=1 重新加密, encrypted=false, 新 key_hash)
 ```
 
 ### 交易 (Sell/Buy)
 ```bash
 bitfs sell <path> --price <sat/KB>              # 标价出售 (更新 Metanet 元数据)
-bitfs sell <path> --price <sat/KB> --recursive  # 递归标价整个目录
-bitfs sales [path]                               # 查看销售历史
 ```
 
 sell 设置 price_per_kb 字段。总价由客户端计算: `ceil(price_per_kb × file_size / 1024)`。
 
 ### 发布
 ```bash
-bitfs publish <domain> [path]  # 绑定域名 (引导配置 DNS TXT + 更新 Metanet domain 字段)
+bitfs publish <domain>         # 绑定域名 (引导配置 DNS TXT + 更新 Metanet domain 字段)
 bitfs unpublish <domain>       # 解除绑定
 bitfs publish                  # 查看所有绑定关系
 ```
 
 ### Daemon
 ```bash
-bitfs daemon start [-d]        # 启动 (-d 后台)
+bitfs daemon start             # 启动 (前台运行, 无后台 flag)
 bitfs daemon stop              # 停止
-bitfs daemon status            # 状态
-bitfs daemon config            # 显示当前配置
+```
+
+### 其他命令
+```bash
+bitfs ls [path]               # 列出目录内容 (支持 --long, --json, --keyword)
+bitfs cat <path>              # 查看文件内容 (支持 --json)
+bitfs get <path> [-o output]  # 下载文件到本地
+bitfs mget <path> [-o dir]    # 批量下载
+bitfs mput <local> <remote>   # 批量上传
+bitfs verify <txid>           # SPV 验证交易
+bitfs status                  # 显示钱包/vault/daemon 状态概览
+bitfs paymail bind <alias>    # 绑定 Paymail 别名
+bitfs paymail unbind <alias>  # 解绑 Paymail 别名
+bitfs paymail list            # 列出所有 Paymail 绑定
 ```
 
 ---
@@ -854,62 +869,53 @@ bitfs /docs>
 
 ### Shell 命令 (FTP 风格)
 
+当前实现共 22 个命令:
+
 ```
 === Remote Navigation (链上) ===
 ls [path]                     列出目录内容
 cd <path>                     切换远程目录
 pwd                           显示远程当前路径
-tree [path] [-d N]            树形显示
-stat <path>                   节点详细信息
 
 === Local Navigation (本地) ===
 lcd <path>                    切换本地目录
-lpwd                          显示本地当前路径
-lls [path]                    列出本地文件
 
 === Transfer ===
 get <remote> [local]          下载远程文件到本地
-mget <pattern>                批量下载
-put <local> [remote]          上传本地文件到远程
-mput <pattern>                批量上传
-put --encrypt <local> [remote] 加密上传
+mget <remote-dir> [local]     递归下载目录
+put <local> <remote> [free|private]  上传本地文件到远程
+mput <local-dir> [remote]     递归上传目录
 
 === Remote File Operations ===
-cat <file>                    输出远程文件内容 (自动解密)
+cat <path> [--force]          输出远程文件内容 (自动解密, 二进制需 --force)
 cp <src> <dst>                复制
 mv <src> <dst>                移动/重命名
-rm <path>                     删除
+rm [-r] <path>                删除 (-r 递归删除目录)
 mkdir <path>                  创建目录
-rmdir <path>                  删除空目录
-link -s <target> <name>       软链接
+link <target> <link-path> [-s]  链接 (-s/--soft 软链接)
 
 === Encryption ===
 encrypt <path>                公开 → 私有
 decrypt <path>                私有 → 公开
 
 === Trading ===
-sell <path> --price <sat/KB>  标价出售 [--recursive]
+sell <path> <sat/KB> [--recursive]  标价出售
 sales [path]                  查看销售历史
 
-=== Wallet ===
-balance                       查看余额
-fund                          显示充值地址
-
 === Publishing ===
-publish <domain> [path]       绑定域名
+publish <domain>              绑定域名
 unpublish <domain>            解除绑定
 publish                       查看绑定关系
 
-=== Vault ===
-vault list                    列出 Vault
-vault use <name>              切换 Vault
-
 === Session ===
-! <cmd>                       执行本地 shell 命令
 help                          帮助
-history                       命令历史
-exit / quit / bye             退出
+exit / quit                   退出
 ```
+
+> ⚠ 以下命令为早期设计稿, **未实现**: `tree`、`stat`、`lpwd`、`lls`、`rmdir`、
+> `balance`、`fund`、`vault list`、`vault use`、`! <cmd>`、`history`、
+> `put --encrypt`、`bye`。对应能力可用顶层 CLI (`bitfs wallet balance` 等) 或
+> b* 工具 (`btree`/`bstat`) 替代。
 
 ---
 
@@ -919,7 +925,7 @@ exit / quit / bye             退出
 
 - **Seller 完全无状态**: 不维护买家数据库, 不记录谁买过什么, 每次请求独立处理
 - **重复购买 = 重复收费**: Seller 不做去重
-- **Buyer 负责缓存**: 购买后 key_capsule 在链上 (HTLC 揭示), 本地缓存到 ~/.bitfs/cache/keys/
+- **Buyer 负责缓存**: 购买后 key_capsule 在链上 (HTLC 揭示)。⚠ 本地密钥缓存 (~/.bitfs/cache/keys/) 未实现, 当前每次购买需重新走 `--buy` 流程
 - **后续访问不经过 Seller**: Buyer 直接从 Seller daemon 拉加密数据 + 本地解密
 - **当前实现边界**: BitFS 文件购买以链上 HTLC/Token 为主, BSV 链上手续费足够覆盖单次购买场景
 - **协议预留边界**: 流媒体/大文件微支付的支付通道由 Metanet Overlay 文档定义, 不在 BitFS 协议层强制
@@ -972,18 +978,17 @@ Buyer 和 Seller 建立连接时，使用 Method 42 ECDH 进行双向身份验�
    → capsule 作为 preimage 出现在链上
 
 9. Buyer 从链上获取 capsule → 派生解密密钥 → 解密文件
-   → 缓存 key 到 ~/.bitfs/cache/keys/
 
 后续访问:
-  Buyer 直接 bget → 从 Seller daemon 获取加密数据 → 本地解密 (已有 key, 不再付费)
+  ⚠ 密钥缓存未实现: 当前每次访问付费内容需重新执行 bget --buy --wallet-key 完成购买
 ```
 
 > **原子性间隙**: Buyer 广播 HTLC 后、Seller 返回 capsule 前存在竞态窗口。
-> 若 Seller 崩溃, Buyer 需等待 HTLC 超时 (默认 144 块, 约 24 小时) 后退款。
+> 若 Seller 崩溃, Buyer 需等待 HTLC 超时 (默认 72 块, 约 12 小时) 后退款。
 > **缓解**: Seller daemon 应监听 mempool, 确认 HTLC 交易存在后自动揭示 capsule,
 > 无需依赖 Buyer 的显式通知。htlc_tx 是 HTLC 握手协议中交换的参数 (非 TLV 持久化字段), Seller 必须验证链上交易后再返回 capsule。
 
-### Token 批量购买系统 (Hash Chain)
+### Token 批量购买系统 (Hash Chain) — ⚠ 未实现 (设计稿)
 
 基于专利 US 2021/0399898 A1 [0189]-[0202] 的 Hash Chain 设计。适用于批量购买多个文件的访问权。
 
@@ -1044,7 +1049,7 @@ Alice (卖家) 准备:
 - **Token**: 批量预购 (高效, 适合订阅/批量场景)
 - 两者共存, Token 是 HTLC 的泛化
 
-### 目录树购买 (BIP32 xpub 解锁)
+### 目录树购买 (BIP32 xpub 解锁) — ⚠ 未实现 (设计稿)
 
 基于 BIP32 非硬化派生的 ECDH 传递性, 一笔 HTLC 解锁整棵目录树。
 
@@ -1481,7 +1486,7 @@ ISO Close Tx:
 | Method 42 | 解密密钥分发不变, 收益分配是独立层 |
 | Rabin | 可用于签名 Registry 状态变更 |
 
-### CLI 命令
+### CLI 命令 — ⚠ 未实现 (设计稿, iso/share 共 8 个命令均未实现)
 
 ```bash
 # ISO 发行
@@ -1709,13 +1714,13 @@ Daemon 作为 **LFCP (Local Full-Copy Peer)**, 是 Owner 节点数据的本地�
 > **Daemon 重启行为**: Daemon 状态持久化于 `~/.bitfs/daemon.db`, 重启后自动恢复:
 > - **未完成的交易组**: 扫描 `pending_tx_group` 表, 自动续发中断的多笔交易操作 (见详细设计四-B)。
 > - **活跃 session**: Method 42 握手 session 存储在 daemon.db 中, 重启后仍有效 (受 TTL 约束)。
-> - **下载计费状态**: 发票状态默认持久化到 `BITFS_HOME/invoices`，重启后自动恢复已支付状态，保持结算一致性。
+> - **下载计费状态**: 发票状态默认持久化到 `BITFS_DATADIR/invoices`，重启后自动恢复已支付状态，保持结算一致性。
 > - **进行中的请求**: 重启时所有进行中的 HTTP 请求会被中断 (客户端收到连接断开)。客户端应自行重试, 所有 API 端点均为幂等操作。
 
 ### HTTP API
 
 ```
-监听地址: :8080 (默认, 生产环境建议反向代理 + TLS)
+监听地址: 127.0.0.1:8080 (默认仅本机, 生产环境建议反向代理 + TLS)
 
 --- 系统端点 ---
 GET  /_bitfs/health                       健康检查
@@ -1737,12 +1742,14 @@ POST /_bitfs/pay/{invoice_id}              提交 BSV 交易 (下载计费 CDN �
 
 --- 管理端点 (需 admin_token 认证) ---
 GET  /_bitfs/sales                         销售记录
+POST /_bitfs/admin/reload                  重载钱包状态 (paymail bind/unbind 后)
 GET  /_bitfs/spv/proof/{txid}              SPV Merkle 证明
 GET  /_bitfs/dashboard/status              仪表盘状态
 GET  /_bitfs/dashboard/storage             存储统计
 GET  /_bitfs/dashboard/wallet              钱包信息
 GET  /_bitfs/dashboard/network             网络状态
 GET  /_bitfs/dashboard/logs                日志
+GET  /_dashboard/                          仪表盘 SPA 静态文件 (嵌入 React SPA)
 
 --- Paymail (bsvalias) ---
 GET  /.well-known/bsvalias                 Paymail capabilities 发现
@@ -1894,7 +1901,7 @@ Client (Agent) → POST /_bitfs/pay/{invoice_id} { "raw_tx": "<hex>", "merkle_pr
 # BitFS Configuration
 
 datadir = ~/.bitfs
-listen = 0.0.0.0:8080
+listen = 127.0.0.1:8080
 network = mainnet
 loglevel = info
 logfile =
@@ -1904,8 +1911,8 @@ logfile =
 
 | 键 | 默认值 | 说明 |
 |---|--------|------|
-| `datadir` | `~/.bitfs` | 数据根目录 (含 storage/, vaults/, spv/ 等) |
-| `listen` | `:8080` | Daemon HTTP 监听地址 |
+| `datadir` | `~/.bitfs` | 数据根目录 (含 storage/, spv/, cache/ 等) |
+| `listen` | `127.0.0.1:8080` | Daemon HTTP 监听地址 (默认仅本机) |
 | `network` | `mainnet` | BSV 网络: mainnet / testnet |
 | `loglevel` | `info` | 日志级别: debug / info / warn / error |
 | `logfile` | (空=stdout) | 日志文件路径 |
@@ -1943,11 +1950,13 @@ bitfs/
 │   ├── btree/main.go
 │   └── bitfs/main.go         # 主命令 (子命令 + shell)
 ├── internal/
-│   ├── buyer/                # 购买状态机
+│   ├── banner/               # CLI banner 输出
+│   ├── buy/                  # 购买状态机
 │   ├── client/               # b-tools HTTP 客户端
 │   ├── daemon/               # Daemon HTTP 服务
-│   └── engine/               # 统一业务逻辑层
-├── integration/              # 集成测试 (276 cases)
+│   ├── engine/               # libbitfs-go/engine 的薄别名层 (paymail/export)
+│   └── publish/              # 域名发布逻辑
+├── integration/              # 集成测试 (307 cases)
 ├── e2e/                      # Docker regtest 端到端测试
 ├── dashboard/                # React SPA (嵌入 daemon)
 ├── go.mod
@@ -1965,10 +1974,14 @@ libbitfs-go/                  # github.com/bitfsorg/libbitfs-go
 ├── payment/                  # 下载计费支付协议
 ├── network/                  # 区块链服务抽象
 ├── config/                   # 配置文件解析
-└── revshare/                 # 收益分成
+├── revshare/                 # 收益分成
+├── vault/                    # Vault 状态管理、文件操作
+└── engine/                   # 进程级文件锁、钱包状态变更
 ```
 
-> **注**: `bitfs/go.mod` 通过 `replace github.com/bitfsorg/libbitfs-go => ../libbitfs-go` 引用共享核心库。
+> **注**: `bitfs/go.mod` 通过 `require github.com/bitfsorg/libbitfs-go v0.0.2` 引用共享核心库; 本地开发用仓库根的 `go.work`（已 gitignore）联编。
+>
+> **统一业务逻辑层**: CLI 子命令、shell REPL、daemon 适配器共用的业务层是 `libbitfs-go/vault` 包（bitfs 内约 40 处 import）; `bitfs/internal/engine` 仅是 `libbitfs-go/engine` 的薄别名（paymail/export 两处使用）。
 
 ---
 
@@ -1977,9 +1990,9 @@ libbitfs-go/                  # github.com/bitfsorg/libbitfs-go
 ### Exit Codes
 
 ```
-0 = 成功    1 = 一般错误      2 = 参数错误
-3 = 网络错误  4 = 数据验证错误    5 = 认证错误
-6 = 未找到    7 = 支付错误
+0 = 成功         1 = 一般错误       2 = 用法错误 (参数)
+3 = 钱包错误      4 = 网络错误       5 = 权限错误
+6 = 未找到        7 = 冲突
 ```
 
 ### 策略
@@ -2095,7 +2108,10 @@ share/unshare/chown 全部推迟到群签名 (Group Signature) 技术成熟后�
 
 ---
 
-## 二十、会话管理（Lock / Unlock）
+## 二十、会话管理（Lock / Unlock）— ⚠ 未实现 (设计稿)
+
+> 本节为设计稿, `bitfs unlock` / `bitfs lock` 及会话缓存机制均未实现。
+> 当前通过 `--password` flag 或 `BITFS_PASSWORD` 环境变量提供密码。
 
 ### 问题
 

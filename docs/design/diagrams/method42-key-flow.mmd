@@ -23,10 +23,10 @@ graph TD
         direction TD
         DNO[D_node owner] --> ECDH2[ECDH\nD_node * P_buyer]
         PB1[P_buyer] --> ECDH2
-        ECDH2 --> BM1[buyer_mask = HKDF\nikm=ECDH.x salt=key_hash\ninfo=bitfs-buyer-mask]
+        ECDH2 --> BM1[buyer_mask = HKDF\nikm=ECDH.x salt=key_hash+nonce\ninfo=bitfs-buyer-mask\nnonce = invoice_id]
         AK2[aes_key] --> XOR1[capsule\n= aes_key XOR buyer_mask]
         BM1 --> XOR1
-        XOR1 --> HTLC[HTLC Atomic Swap\ncapsule_hash = SHA256 capsule]
+        XOR1 --> HTLC[HTLC Atomic Swap\ncapsule_hash = SHA256 fileTxID+capsule]
         HTLC --> CAPSULE[Buyer receives capsule]
     end
 
@@ -34,7 +34,7 @@ graph TD
         direction TD
         DB[D_buyer] --> ECDH3[ECDH\nD_buyer * P_node]
         PN2[P_node] --> ECDH3
-        ECDH3 --> BM2[buyer_mask = HKDF\nikm=ECDH.x salt=key_hash\ninfo=bitfs-buyer-mask]
+        ECDH3 --> BM2[buyer_mask = HKDF\nikm=ECDH.x salt=key_hash+nonce\ninfo=bitfs-buyer-mask\nnonce from capsule_nonce]
         CAPSULE2[capsule from HTLC] --> XOR2[aes_key\n= capsule XOR buyer_mask]
         BM2 --> XOR2
         XOR2 --> DEC[AES-256-GCM Decrypt]

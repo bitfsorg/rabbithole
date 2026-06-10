@@ -12,20 +12,20 @@
 <table style="width:100%; border-collapse:collapse; margin:0.8em 0; font-size:10pt; border:2px solid #333;">
 <tr><th colspan="4" style="text-align:center; background:#e8e8e8; padding:0.6em; border:1px solid #999; font-size:11pt;">用户 / Agent</th></tr>
 <tr>
-<td colspan="2" style="width:35%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>b* 工具 (只读)</strong><br>bls, bcat, bget, bstat, btree</td>
-<td colspan="2" style="width:65%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>bitfs 命令 (读写)</strong><br>put, mkdir, rm, mv, cp, link, sell, encrypt, decrypt<br>vault, wallet, publish, daemon, shell</td>
+<td colspan="2" style="width:35%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>b* 工具 (只读)</strong><br>bls, bcat, bget, bmget, bstat, btree</td>
+<td colspan="2" style="width:65%; border:1px solid #999; padding:0.5em; vertical-align:top; background:#fafafa;"><strong>bitfs 命令 (读写)</strong><br>ls, cat, get, put, mget, mput, mkdir, rm, mv, cp, link<br>sell, encrypt, wallet, vault, paymail<br>publish, unpublish, daemon, shell, verify, status</td>
 </tr>
 <tr><th colspan="4" style="text-align:center; background:#e8e8e8; padding:0.5em; border:1px solid #999;">共享核心库 (libbitfs-go)</th></tr>
 <tr>
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Metanet 解析器</strong><br><span style="font-size:9pt; color:#555;">inode/dirent/链接</span></td>
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Storage</strong><br><span style="font-size:9pt; color:#555;">内容存储 (链下/链上)</span></td>
 <td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>DNSLink / Paymail</strong><br><span style="font-size:9pt; color:#555;">身份解析</span></td>
-<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>下载计费 / Token</strong><br><span style="font-size:9pt; color:#555;">支付/预购</span></td>
+<td style="width:25%; border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>HTTP 402 / HTLC</strong><br><span style="font-size:9pt; color:#555;">支付协议</span></td>
 </tr>
 <tr>
-<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Method 42</strong><br><span style="font-size:9pt; color:#555;">Koblitz 加密引擎</span></td>
+<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Method 42</strong><br><span style="font-size:9pt; color:#555;">ECDH 加密引擎</span></td>
 <td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>SPV</strong><br><span style="font-size:9pt; color:#555;">轻节点</span></td>
-<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Rabin</strong><br><span style="font-size:9pt; color:#555;">签名 (计划中)</span></td>
+<td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>Rabin</strong><br><span style="font-size:9pt; color:#555;">签名</span></td>
 <td style="border:1px solid #999; padding:0.4em; vertical-align:top; text-align:center;"><strong>RevShare / ISO</strong><br><span style="font-size:9pt; color:#555;">收益权证券化</span></td>
 </tr>
 <tr>
@@ -42,7 +42,7 @@
 1. **双模式**: b* 工具 (只读/无状态/Visitor) + bitfs 命令 (读写/需钱包/Owner)
 2. **Unix 哲学**: 每个工具做一件事，可管道组合
 3. **默认无状态**: b* 工具默认无状态，支持可选的 `~/.bitfs/` 缓存。
-4. **统一加密**: Koblitz (secp256k1) 与 HKDF 派生密钥 + AES-256-GCM 加密内容, 与 Bitcoin 同密码体系。密码派生种子使用抗特征攻击的 Argon2id。
+4. **统一加密**: ECDH (secp256k1) 与 HKDF 派生密钥 + AES-256-GCM 加密内容, 与 Bitcoin 同密码体系。密码派生种子使用抗特征攻击的 Argon2id。
 5. **解耦存储**: 元数据(目录/权限)强制链上 (TLV 编码), 内容(文件实体)默认链下, 可选链上 (OP_DROP)。
 6. **一切皆节点**: 目录、文件、软链接都是 Metanet 节点 (有独立公钥), 无本质区别。不支持多父节点的 Hard Link。
 7. **确定性派生**: 遵循 BIP44/BIP32 层次确定性派生, 从单一助记词完美镜像推导文件系统的公私钥树。key_hash 移到 KDF 阶段, 保留 BIP32 代数关系
@@ -57,6 +57,9 @@
 16. **跨产品边界清晰**: BitFS 只定义文件系统协议与支付接口；CDN 运营、激励与共识规则由 Metanet 文档定义
 17. **链上权限记录**: 授予文件读取权限在链上记录 (Metanet 交易的 access 字段); 唯一例外是 AccessFree 模式 — 使用标量 1 作为加密私钥, 任何人可还原解密密钥, 无需链上授权记录
 18. **数据目录约定**: BSV 钱包存储于 `~/.bitfs/` (可由环境变量/配置文件/命令行覆盖)
+19. **结构化输出**: 所有 CLI 命令支持 --json flag, 输出机器可解析的 JSON, 这是 Agent-friendly 的核心接口
+20. **管道支持**: bitfs put 支持 stdin (put - /path), 可无缝集成 Unix 管道和脚本
+21. **环境变量**: 支持 BITFS_PASSWORD/BITFS_NETWORK/BITFS_DATADIR 环境变量, 方便 CI/CD 和自动化
 
 > **两产品定位**: BitFS (bitfs.org) = 去中心化加密文件系统协议 (`bitfs` CLI); Metanet (metanet.org) = 去中心化 CDN 网络 (`metanet` CLI)。两者关系类似 IPFS + Filecoin, 共享核心 Go 库但为独立二进制。
 
@@ -78,11 +81,11 @@
 | 2 | 命令粒度 | b* 独立只读工具 + bitfs 读写命令 | Unix 哲学 |
 | 3 | 数据验证 | SPV (本地 tx + Merkle proof, 不查链) | 点对点, 不依赖索引服务 |
 | 4 | 编码格式 | TLV (Tag-Length-Value) | 较 Protobuf 更紧凑，节省链上 OP_RETURN 空间 |
-| 5 | 内容加密 | Koblitz (ECDH) + HKDF + AES-GCM | 结合非对称密钥协商与对称加密性能 |
+| 5 | 内容加密 | ECDH + HKDF + AES-GCM | 结合非对称密钥协商与对称加密性能 |
 | 6 | 文件系统模型 | Unix (inode=P_node, dirent=ChildEntry, 软链接) | 成熟模型, 语义清晰 |
 | 7 | 多目录树 | Vault (BIP32 account 层级分离), 费用链 account 0 | 同一种子多棵独立树 |
 | 8 | UTXO 管理 | 自持续链 (Output 2 必须刷新 P_parent), 无需预充值 | 简单, 自举 |
-| 9 | 买卖机制 | HTLC 原子交换 + Token 批量预购 | HTLC 单次购买, Token 批量高效 |
+| 9 | 买卖机制 | HTLC 原子交换 | 链上原子交换, 简单可靠 |
 | 10 | 支付通道 | BitFS 协议层不强制支付通道，默认链上 HTLC 足够 | 保持购买流程简单，通道能力留作上层扩展 |
 | 11 | 加密密钥派生 | aes_key = KDF(ECDH(D_node, P_node), key_hash), D_node 保留 BIP32 代数关系 | Method 42 ECDH, 无需存储, 支持目录树级派生 (已由 #66 修订) |
 | 12 | key_hash 双重用途 | key_hash = SHA256(SHA256(plaintext)) 兼做密钥派生和内容承诺, 移除 encrypted_hash | 双重哈希不暴露原始数据, 链上仅存一个哈希 |
@@ -92,9 +95,9 @@
 | 16 | 链接类型 | SOFT(P_node)/SOFT_REMOTE(domain/path), 不支持硬链接 (设计决策 #8) | 严格树结构 |
 | 17 | Index 管理 | monotonic auto-increment (next_child_index) | 简单优雅 |
 | 18 | cp/mv/link | 三个独立操作 (真复制/真移动/创建链接) | Unix 语义 |
-| 19 | Shell 风格 | FTP (lcd/lpwd/get/mget/put/mput/!) | 链上文件系统的自然交互方式 |
+| 19 | Shell 风格 | FTP 风格 (ls/cd/lcd/cat/get/put/mkdir/rm/mv/cp/sell/encrypt/publish) | 链上文件系统的自然交互方式 |
 | 20 | buy 命令 | 集成到 bget --buy (purl 风格) | 减少命令数, 流程更自然 |
-| 21 | Daemon 端口 | 标准 HTTP 80/443 | 标准, 生产环境反向代理 |
+| 21 | Daemon 端口 | 默认 localhost:8080 | 开发友好, 生产环境反向代理 |
 | 22 | 共享/权限 | POSIX ACL + 群签名/群加密 | r=群加密(密码学强制), w=群签名(应用层), ACL 独立节点, 创建时复制继承 |
 | 23 | 版本控制 | Metanet 内置 + git remote helper | 复用 git 生态 |
 | 24 | BSV 库 | `github.com/bsv-blockchain/go-sdk` (tx/ec/wallet/spv/script/overlay/auth) | BSV Association 官方, 功能全面 |
@@ -107,7 +110,7 @@
 | 31 | Endpoint | `_bitfs._tcp` SRV 记录, 内置 priority/weight/port, 支持 CDN 负载均衡 | 网络信息不属于文件元数据, SRV 天然支持服务发现 |
 | 32 | Buyer-Seller 握手 | Method 42 ECDH 双向身份验证 | 密码学保证, 防中间人 |
 | 33 | Agent 支持 | WebMCP (浏览器) + Content Negotiation (CLI), text/markdown 自描述 | Agent-first 设计核心 |
-| 34 | 会话管理 | 混合模式: daemon 在线用 Unix socket (内存), 离线用 session 文件 | 安全优先, 兼顾便捷 |
+| 34 | 会话管理 | 内存模式: daemon 使用 in-memory session map (24h TTL) | 简单可靠, daemon 重启清空 |
 | 35 | 权限签名方案 | 群签名 (Group Signature)，非门限签名 | 任意成员独立签名, 加删成员 GPK 不变, 子群支持 |
 | 36 | 权限加密方案 | 群加密 (Group Encryption) | 群签名的对偶, 统一 GPK, 无需 capsule/K_root |
 | 37 | ACL 继承 | 创建时复制 (Unix default ACL 方式) | 每节点自包含, 避免 DAG 遍历, copy-on-write 优化 |
@@ -126,19 +129,19 @@
 | 50 | Git 多人写入 | ACL + 群签名 (应用层验证) | 复用现有 ACL 设计 |
 | 51 | Git push 原子性 | 先 packfile 后 refs | 标准做法, 失败无副作用 |
 | 52 | Git repack | 后续优化, 一期不实现 | 多 packfile 不影响正确性 |
-| 53 | 加密算法 | Koblitz (secp256k1) + AES-256-GCM 混合 | Koblitz 加密密钥 (与 Bitcoin 同体系), AES 加密内容 (高效) |
+| 53 | 加密算法 | ECDH (secp256k1) + AES-256-GCM 混合 | ECDH 协商密钥 (与 Bitcoin 同体系), AES 加密内容 (高效) |
 | 54 | 双重哈希 | key_hash = SHA256(SHA256(plaintext)) | 不暴露原始数据哈希, 兼做密钥派生和内容承诺 |
 | 55 | P_node 管理 | Owner 不直接持有可能被网络公开的 D_node | NodeUTXO 签名所需, 不可丢弃 |
 | 56 | ACL / 多人协作 | 不直接共享 D_node, 使用付费模式的 HTLC / ACL 共享 Capsule | D_node 等同于文件最终所有权, 可转售但不可多人共享 |
 | 57 | KeyHash 作用 | SHA256(SHA256(plaintext)), 同时做 KDF 盐和完整性校验 | 一石二鸟, Method 42 的扩展点 |
-| 58 | 数据压缩 | LZW/GZIP/ZSTD (属性标记) | 链上空间优化 |
+| 58 | 数据压缩 | LZW/GZIP (属性标记, ZSTD 未实现) | 链上空间优化 |
 | 59 | 内容分片 | 多交易分片 + 重组元数据 | 链上大文件存储 |
 | 60 | 元数据/内容分离 | Metanet 交易只存元数据, 内容独立 | 解耦, 两种存储模式结构一致 |
 | 61 | 收益权表示 | 双层: Share UTXO (所有权证明) + Registry UTXO (分账索引), Covenant 互锁 | UTXO 天然可转让, Registry 保证分账效率, 互锁保证一致性 |
 | 62 | 份额总量 | 创作者自定义 (类似公司决定发行股数), Covenant 守恒验证 | 灵活, 不同内容不同粒度 |
 | 63 | ISO (Initial Share Offering) | ISO Pool Covenant 自动售卖机, 原子交换购买份额 | 去信任, 链上自动化, 内容资产的 IPO |
 | 64 | 网络绑定级别 | 种子级别, 所有 Vault 共享同一网络 | 费用密钥链统一, 安全隔离, 恢复简单 |
-| 65 | 网络支持 | 预设 (mainnet/testnet/teratestnet/regtest) + 自定义网络配置 | 预设覆盖常用场景, 自定义支持企业私链/新测试网 |
+| 65 | 网络支持 | 预设 (mainnet/testnet/regtest) | 预设覆盖常用场景 |
 | 66 | 加密 ECDH 基础密钥 | D_node (BIP32 密钥) 而非 Df(0), key_hash 移到 KDF 阶段 | 保留 BIP32 代数关系, 支持目录树级 capsule 派生 |
 | 67 | 目录树购买 | 卖方提供 xpub + 一个 capsule, 买方用 BIP32 派生所有子密钥 | 一笔 HTLC 解锁整棵目录树, 用户体验最优 |
 | 68 | 硬化/非硬化访问控制 | 非硬化子节点=目录购买包含, 硬化子节点=需单独购买 | BIP32 密码学特性天然成为访问控制机制 |
@@ -150,4 +153,4 @@
 | 74 | 节点操作原子性 | 多交易操作(如put/cp)同批次广播, 失败则幂等重试 | BSV 无原生跨交易原子性, 依赖客户端重试机制 |
 | 75 | HTLC 交易证明 | htlc_tx 字段必填, Seller 须验证链上交易存在 | 防止 Seller 未验证白送 capsule |
 | 76 | PRIVATE 信封加密 | 使用隔离的 metadata_key (HKDF) 及随机盐 (EncPayload 前缀) | 不在链上暴露明文 key_hash 或子目录名称 |
-| 77 | Link 类型 | 仅保留 Soft 和 SoftRemote, 移除 HardLink 和 Anchor | Metanet DAG 为严格树模型，节点需挂载统一 |
+| 77 | Link 类型 | 仅保留 Soft 和 SoftRemote, 移除 HardLink 和 Anchor (指 LinkType 枚举; NodeType=3 的 Anchor 节点保留, 供 git-remote-bitfs 使用) | Metanet DAG 为严格树模型，节点需挂载统一 |

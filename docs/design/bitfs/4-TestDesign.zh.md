@@ -22,39 +22,39 @@
 
 | # | 类别 | 设计参照 | 代码文件 | 现有 | 目标 |
 |---|------|---------|---------|------|------|
-| T1 | TLV Schema | 四 | `libbitfs-go/metanet/metanet_test.go` | 61 | 72 |
-| T2 | HD Wallet | 二-B | `libbitfs-go/wallet/wallet_test.go` | 33 | 44 |
-| T3 | Method 42 加密 | 五, 二-B.D | `method42/encrypt_test.go` | 23 | 40 |
-| T4 | Vault 管理 | 二 | `method42/vault_test.go` | 24 | 32 |
-| T5 | 握手协议 | 十三-B.B | `method42/handshake_test.go` | 8 | 17 |
-| T6 | Key Capsule & HTLC | 十三-B.D | `method42/keycapsule_test.go` | 9 | 18 |
-| T7 | Key Cache | 十一 | `method42/keycache_test.go` | 8 | 12 |
-| T8 | Metanet 节点与构建器 | 四-B | `metanet/metanet_test.go` | 34 | 49 |
-| T9 | 文件系统操作 (14种) | 四-B, 三 | `metanet/fs_test.go` | 46 | 73 |
-| T10 | Metanet 解析器 | 四-B | `metanet/metanet_test.go` | 10 | 19 |
-| T11 | 内容寻址存储 | 七 | `storage/store_test.go` | 22 | 26 |
-| T12 | SPV 客户端 | 七 | `spv/spv_test.go` | 41 | 50 |
-| T13 | DNSLink | 六 | `dnslink/dnslink_test.go` | 4 | 13 |
-| T14 | URI 寻址 | 六 | `addressing/uri_test.go` | 11 | 14 |
-| T15 | Daemon HTTP | 十三-B.A | `daemon/daemon_test.go` | 99 | 111 |
-| T16 | CLI 工具 | 八, 九-B | `cmd/*_test.go` | 139 | 181 |
-| T17 | CLI 通用 | 八 | `cli/common_test.go` | 16 | 22 |
-| T18 | 配置与错误处理 | 十六 | `config/config_test.go` | 33 | 38 |
-| T19 | Shell 交互 | 十, 九-B.C | `shell/shell_test.go` | 21 | 28 |
-| T20 | 集成/端到端 | 全部 | `integration/e2e_test.go` | 7 | 27 |
-| T21 | 属性不变量 | 多处 | (新建) | 0 | 23 |
-| T22 | 安全性 | 五, 十一, 十三-B | (新建) | 0 | 17 |
-| T23 | 会话管理 (Lock/Unlock) | 二十一 | `method42/session_test.go` | 0 | 24 |
-| T24 | 权限管理 (ACL + 群签名) | 二十二 | `acl/acl_test.go` | 0 | 10 |
-| T25 | 收益权/ISO | 十一-f | `revenue/iso_test.go` | 0 | 8 |
-| T26 | 同步与批量发布 (bsync/bput) | 二十三 | `sync/bsync_test.go` | 0 | 6 |
-| T27 | Paymail 集成 | 六, 十六-B | `paymail/paymail_test.go` | 0 | 6 |
-| T28 | Koblitz 加密 | 五-B | `method42/koblitz_test.go` | 0 | 8 |
-| T29 | 内容压缩 | 八-B.D | `metanet/compression_test.go` | 0 | 6 |
-| T30 | CLTV 时锁访问 | 七-B | `method42/cltv_test.go` | 0 | 8 |
-| T31 | Hash Chain Token | 十一-B | `method42/hashchain_test.go` | 0 | 8 |
-| T32 | 目录级 BIP32 访问控制 | 十五-B | `method42/bip32access_test.go` | 0 | 6 |
-| | **合计** | | | **649** | **~1022** |
+| T1 | TLV Schema | 四 | `libbitfs-go/metanet/metanet_test.go` | 121 | 72 |
+| T2 | HD Wallet | 二-B | `libbitfs-go/wallet/wallet_test.go` (+3 supplement files) | 127 | 44 |
+| T3 | Method 42 加密 | 五, 二-B.D | `libbitfs-go/method42/method42_test.go` (+3 files) | 140 | 40 |
+| T4 | Vault 管理 | 二 | `libbitfs-go/vault/*_test.go` (12 files) | 123 | 32 |
+| T5 | 握手协议 | 十三-B.B | 嵌入 `bitfs/internal/daemon/*_test.go` | — | 17 |
+| T6 | Key Capsule & HTLC | 十三-B.D | `libbitfs-go/payment/*_test.go` + `method42/method42_test.go` | 111 | 18 |
+| T7 | Key Cache | 十一 | 无专用文件 | — | 12 |
+| T8 | Metanet 节点与构建器 | 四-B | `libbitfs-go/metanet/metanet_test.go` | 171 | 49 |
+| T9 | 文件系统操作 (14种) | 四-B, 三 | `libbitfs-go/vault/*_test.go` + `metanet/metanet_test.go` | 163 | 73 |
+| T10 | Metanet 解析器 | 四-B | `libbitfs-go/metanet/parser_extended_test.go` (+shared) | 22 | 19 |
+| T11 | 内容寻址存储 | 七 | `libbitfs-go/storage/storage_test.go` (+3 files) | 76 | 26 |
+| T12 | SPV 客户端 | 七 | `libbitfs-go/spv/spv_test.go` + `boltstore_test.go` | 176 | 50 |
+| T13 | DNSLink | 六 | `libbitfs-go/paymail/paymail_test.go` + `dnssec_test.go` | 14 | 13 |
+| T14 | URI 寻址 | 六 | `libbitfs-go/paymail/paymail_test.go` | 15 | 14 |
+| T15 | Daemon HTTP | 十三-B.A | `bitfs/internal/daemon/*_test.go` (10 files) | 213 | 111 |
+| T16 | CLI 工具 | 八, 九-B | `bitfs/cmd/bitfs/*_test.go` (487) + `cmd/b*/*_test.go` (242) | 729 | 181 |
+| T17 | CLI 通用 | 八 | 无专用文件 | 0 | 22 |
+| T18 | 配置与错误处理 | 十六 | `libbitfs-go/config/config_test.go` | 28 | 38 |
+| T19 | Shell 交互 | 十, 九-B.C | `bitfs/cmd/bitfs/cmd_shell*_test.go` (3 files) | 128 | 28 |
+| T20 | 集成/端到端 | 全部 | `bitfs/integration/` (307) + `bitfs/e2e/` (68) | 375 | 27 |
+| T21 | 属性不变量 | 多处 | fuzz tests across packages | 12 | 23 |
+| T22 | 安全性 | 五, 十一, 十三-B | `bitfs/integration/security_test.go` | 25 | 17 |
+| T23 | 会话管理 (Lock/Unlock) | 二十一 | (功能未实现) | 0 | 24 |
+| T24 | 权限管理 (ACL + 群签名) | 二十二 | (功能未实现) | 0 | 10 |
+| T25 | 收益权/ISO | 十一-f | `libbitfs-go/revshare/revshare_test.go` | 71 | 8 |
+| T26 | 同步与批量发布 (bsync/bput) | 二十三 | (功能未实现) | 0 | 6 |
+| T27 | Paymail 集成 | 六, 十六-B | `libbitfs-go/paymail/*_test.go` (5 files) | 89 | 6 |
+| T28 | Koblitz 加密 | 五-B | (功能未实现) | 0 | 8 |
+| T29 | 内容压缩 | 八-B.D | `libbitfs-go/storage/compress_test.go` | 6 | 6 |
+| T30 | CLTV 时锁访问 | 七-B | `libbitfs-go/metanet/cltv_test.go` | 2 | 8 |
+| T31 | Hash Chain Token | 十一-B | (功能未实现) | 0 | 8 |
+| T32 | 目录级 BIP32 访问控制 | 十五-B | (功能未实现) | 0 | 6 |
+| | **合计** | | | **~2700+** | **~1022** |
 
 > **注**: T8 与 T10 共享 `metanet/metanet_test.go`，T8 覆盖节点构建器测试，T10 覆盖路径解析器测试。
 
@@ -62,7 +62,7 @@
 
 ## T1. TLV Schema
 
-**设计参照**: 第四节 | **代码文件**: `libbitfs-go/metanet/metanet_test.go` | **现有/目标**: 61 / 72
+**设计参照**: 第四节 | **代码文件**: `libbitfs-go/metanet/metanet_test.go` | **现有/目标**: 121 / 72
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -76,7 +76,7 @@
 
 ## T2. HD Wallet
 
-**设计参照**: 第二-B节 | **代码文件**: `libbitfs-go/wallet/wallet_test.go` | **现有/目标**: 33 / 44
+**设计参照**: 第二-B节 | **代码文件**: `libbitfs-go/wallet/wallet_test.go` (+3 supplement files) | **现有/目标**: 127 / 44
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -91,8 +91,8 @@
 ## T3. Method 42 加密 ★
 
 **设计参照**: 第五节, 第二-B.D节
-**代码文件**: `libbitfs-go/method42/encrypt_test.go`
-**测试函数数**: 现有 23 / 目标 40
+**代码文件**: `libbitfs-go/method42/method42_test.go` (+coverage_supplement_test.go, fuzz_test.go, rabin_test.go)
+**测试函数数**: 现有 140 / 目标 40
 
 ## T3.1: 三种访问级别
 
@@ -138,7 +138,7 @@
 
 ## T4. Vault 管理
 
-**设计参照**: 第二节 | **代码文件**: `libbitfs-go/method42/vault_test.go` | **现有/目标**: 24 / 32
+**设计参照**: 第二节 | **代码文件**: `libbitfs-go/vault/*_test.go` (12 files) | **现有/目标**: 123 / 32
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -161,7 +161,7 @@
 
 ## T5. 握手协议
 
-**设计参照**: 第十三-B.B节 | **代码文件**: `libbitfs-go/method42/handshake_test.go` | **现有/目标**: 8 / 17
+**设计参照**: 第十三-B.B节 | **代码文件**: 嵌入 `bitfs/internal/daemon/*_test.go`，无专用文件 | **现有/目标**: — / 17
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -175,7 +175,7 @@
 
 ## T6. Key Capsule & HTLC
 
-**设计参照**: 第十三-B.D节 | **代码文件**: `libbitfs-go/method42/keycapsule_test.go` | **现有/目标**: 9 / 18
+**设计参照**: 第十三-B.D节 | **代码文件**: `libbitfs-go/payment/*_test.go` (91) + `method42/method42_test.go` (~20) | **现有/目标**: 111 / 18
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -183,7 +183,7 @@
 | T6.2 Capsule 验证 | SHA256(capsule) = capsule_hash | 2 | +1 |
 | T6.3 密钥恢复 | buyer_mask = ECDH(D_buyer, P_node); file_key = capsule XOR buyer_mask | 2 | +2 |
 | T6.4 HTLC 脚本 | OP_SHA256 preimage check + 双花路径 | 1 | +1 |
-| T6.5 超时路径 | 144 区块后 buyer 可回收资金 | 1 | +2 |
+| T6.5 超时路径 | 72 区块后 buyer 可回收资金 | 1 | +2 |
 | T6.6 htlc_tx 必填验证 | htlc_tx 为必填字段, Seller 必须验证链上存在 | 0 | +2 |
 
 ### T6.6: htlc_tx 必填验证 (新增)
@@ -195,9 +195,9 @@
 
 ---
 
-## T7. Key Cache
+## T7. Key Cache — ⚠ 功能未实现 (设计稿, 测试暂缓)
 
-**设计参照**: 第十一节 | **代码文件**: `libbitfs-go/method42/keycache_test.go` | **现有/目标**: 8 / 12
+**设计参照**: 第十一节 | **代码文件**: 无专用文件 | **现有/目标**: — / 12
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -210,7 +210,7 @@
 
 ## T8. Metanet 节点与构建器
 
-**设计参照**: 第四-B节 | **代码文件**: `libbitfs-go/metanet/metanet_test.go` | **现有/目标**: 34 / 49
+**设计参照**: 第四-B节 | **代码文件**: `libbitfs-go/metanet/metanet_test.go` | **现有/目标**: 171 / 49
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -226,8 +226,8 @@
 ## T9. 文件系统操作 (14 种) ★
 
 **设计参照**: 第四-B节, 第三节
-**代码文件**: `libbitfs-go/metanet/fs_test.go`
-**测试函数数**: 现有 46 / 目标 73
+**代码文件**: `libbitfs-go/vault/*_test.go` + `metanet/metanet_test.go`
+**测试函数数**: 现有 163 / 目标 73
 
 ## T9.1: put (新建文件)
 
@@ -336,7 +336,7 @@
 
 ## T10. Metanet 解析器
 
-**设计参照**: 第四-B节 | **代码文件**: `libbitfs-go/metanet/metanet_test.go` | **现有/目标**: 10 / 19
+**设计参照**: 第四-B节 | **代码文件**: `libbitfs-go/metanet/parser_extended_test.go` (+shared in metanet_test.go) | **现有/目标**: 22 / 19
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -350,7 +350,7 @@
 
 ## T11. 内容寻址存储
 
-**设计参照**: 第七节 | **代码文件**: `libbitfs-go/storage/store_test.go` | **现有/目标**: 22 / 26
+**设计参照**: 第七节 | **代码文件**: `libbitfs-go/storage/storage_test.go` (+3 files) | **现有/目标**: 76 / 26
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -364,7 +364,7 @@
 
 ## T12. SPV 客户端
 
-**设计参照**: 第七节 | **代码文件**: `libbitfs-go/spv/spv_test.go` | **现有/目标**: 41 / 50
+**设计参照**: 第七节 | **代码文件**: `libbitfs-go/spv/spv_test.go` + `boltstore_test.go` | **现有/目标**: 176 / 50
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -379,7 +379,7 @@
 
 ## T13. DNSLink
 
-**设计参照**: 第六节 | **代码文件**: `libbitfs-go/paymail/dnslink_test.go` | **现有/目标**: 4 / 13
+**设计参照**: 第六节 | **代码文件**: `libbitfs-go/paymail/paymail_test.go` + `dnssec_test.go` | **现有/目标**: 14 / 13
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -393,7 +393,7 @@
 
 ## T14. URI 寻址
 
-**设计参照**: 第六节 | **代码文件**: `libbitfs-go/paymail/uri_test.go` | **现有/目标**: 11 / 14
+**设计参照**: 第六节 | **代码文件**: `libbitfs-go/paymail/paymail_test.go` | **现有/目标**: 15 / 14
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -406,8 +406,8 @@
 ## T15. Daemon HTTP ★
 
 **设计参照**: 第十三-B.A节
-**代码文件**: `bitfs/internal/daemon/daemon_test.go`
-**测试函数数**: 现有 99 / 目标 111
+**代码文件**: `bitfs/internal/daemon/*_test.go` (10 files)
+**测试函数数**: 现有 213 / 目标 111
 
 ## T15.1: 健康检查
 
@@ -467,7 +467,7 @@
 
 ## T16. CLI 工具
 
-**设计参照**: 第八节, 第九-B节 | **代码文件**: `bitfs/cmd/b*/*_test.go` | **现有/目标**: 139 / 181
+**设计参照**: 第八节, 第九-B节 | **代码文件**: `bitfs/cmd/bitfs/*_test.go` (487) + `cmd/b*/*_test.go` (242) | **现有/目标**: 729 / 181
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -490,7 +490,7 @@
 
 ## T17. CLI 通用
 
-**设计参照**: 第八节 | **代码文件**: `bitfs/cmd/bitfs/common_test.go` | **现有/目标**: 16 / 22
+**设计参照**: 第八节 | **代码文件**: 无专用文件 | **现有/目标**: 0 / 22
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -503,7 +503,7 @@
 
 ## T18. 配置与错误处理
 
-**设计参照**: 第十六节 | **代码文件**: `libbitfs-go/config/config_test.go` | **现有/目标**: 33 / 38
+**设计参照**: 第十六节 | **代码文件**: `libbitfs-go/config/config_test.go` | **现有/目标**: 28 / 38
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -516,7 +516,7 @@
 
 ## T19. Shell 交互
 
-**设计参照**: 第十节, 第九-B.C节 | **代码文件**: `bitfs/cmd/bitfs/shell_test.go` | **现有/目标**: 21 / 28
+**设计参照**: 第十节, 第九-B.C节 | **代码文件**: `bitfs/cmd/bitfs/cmd_shell_test.go` + `cmd_shell_exec_test.go` + `cmd_shell_repl_test.go` | **现有/目标**: 128 / 28
 
 | 子类别 | 说明 | 现有 | 新增 |
 |--------|------|------|------|
@@ -531,8 +531,8 @@
 ## T20. 集成/端到端 ★
 
 **设计参照**: 全部章节
-**代码文件**: `bitfs/integration/e2e_test.go`
-**测试函数数**: 现有 7 / 目标 27
+**代码文件**: `bitfs/integration/` (20 files, 307 tests) + `bitfs/e2e/` (25 files, 68 tests)
+**测试函数数**: 现有 375 / 目标 27
 
 ## T20.1: 钱包与文件系统 (现有 3, 新增 5)
 
@@ -558,7 +558,7 @@
 |----|---------|---------|------|---------|------|
 | T20.3.1 | 完整购买流程 | seller 有加密文件 | sell → buyer handshake → GET /buy → HTLC → POST /buy → decrypt | buyer 获得明文 | [integration] |
 | T20.3.2 | 密钥缓存复用 | 已购买过 | 再次 GET /data → 用缓存密钥解密 | 无需重复支付 | [integration] |
-| T20.3.3 | HTLC 超时回收 | buyer 未提交 HTLC | 等待 144 块 | buyer 资金回收 | [integration] |
+| T20.3.3 | HTLC 超时回收 | buyer 未提交 HTLC | 等待 72 块 | buyer 资金回收 | [integration] |
 | T20.3.4 | 目录递归定价 | 目录设置 sell | 购买子文件 → 检查价格 | 子文件继承父目录价格 | [integration] |
 | T20.3.5 | 下载计费支付流程 | paid 内容未支付 | GET /data → 402 → POST /pay → GET /data | 支付后正常获取 | [integration] |
 
@@ -584,8 +584,8 @@
 ## T21. 属性不变量 ★
 
 **设计参照**: 多处 (交叉引用见下)
-**代码文件**: (新建) `bitfs/integration/property_test.go`
-**测试函数数**: 现有 0 / 目标 23
+**代码文件**: fuzz tests across packages
+**测试函数数**: 现有 12 / 目标 23
 
 属性不变量测试验证系统的数学和密码学性质，使用随机输入（固定种子）反复验证。
 
@@ -637,8 +637,8 @@
 ## T22. 安全性 ★
 
 **设计参照**: 第五节, 第十一节, 第十三-B节
-**代码文件**: (新建) `bitfs/integration/security_test.go`
-**测试函数数**: 现有 0 / 目标 17
+**代码文件**: `bitfs/integration/security_test.go`
+**测试函数数**: 现有 25 / 目标 17
 
 安全性测试验证系统在对抗性条件下的行为，确保攻击者无法获取未授权数据。
 
@@ -658,7 +658,7 @@
 | T22.2.1 | MITM 握手攻击 | 正常握手进行中 | 修改 HMAC 值 | 双方检测到篡改, 握手终止 | [security] |
 | T22.2.2 | 过期 session | session 超时后 | 使用旧 token 访问 | 返回 session expired, 拒绝服务 | [security] |
 | T22.2.3 | Capsule 篡改 | seller 返回 capsule | 修改 capsule → SHA256 验证 | hash 不匹配, buyer 拒绝接受 | [security] |
-| T22.2.4 | HTLC 超时保护 | buyer 广播 HTLC | seller 不揭示 preimage, 等 144 块 | buyer 通过超时路径回收资金 | [security] |
+| T22.2.4 | HTLC 超时保护 | buyer 广播 HTLC | seller 不揭示 preimage, 等 72 块 | buyer 通过超时路径回收资金 | [security] |
 | T22.2.5 | 费用限制 | 正常交易 | 检查交易费 | 费用在预期范围内, 无费用窃取 | [security] |
 
 ## T22.3: 输入验证
@@ -684,7 +684,7 @@
 ## T23. 会话管理 (Lock/Unlock) ★
 
 **设计参照**: 第二十一节
-**代码文件**: `libbitfs-go/method42/session_test.go`
+**代码文件**: (功能未实现)
 **测试函数数**: 现有 0 / 目标 24
 
 ### T23.1: unlock 命令
@@ -746,7 +746,7 @@
 ## T24. 权限管理 (ACL + 群签名) ★
 
 **设计参照**: 第二十二节
-**代码文件**: `libbitfs-go/acl/acl_test.go`
+**代码文件**: (功能未实现)
 **测试函数数**: 现有 0 / 目标 10
 
 ACL 权限管理测试验证群签名/群加密与 POSIX ACL 风格权限控制的正确性。
@@ -781,8 +781,8 @@ ACL 权限管理测试验证群签名/群加密与 POSIX ACL 风格权限控制�
 ## T25. 收益权/ISO ★
 
 **设计参照**: 第十一-f节
-**代码文件**: `libbitfs-go/revshare/iso_test.go`
-**测试函数数**: 现有 0 / 目标 8
+**代码文件**: `libbitfs-go/revshare/revshare_test.go`
+**测试函数数**: 现有 71 / 目标 8
 
 收益权表与 ISO (Initial Share Offering) 测试验证收益分配、股份管理和 Covenant 脚本正确性。
 
@@ -814,7 +814,7 @@ ACL 权限管理测试验证群签名/群加密与 POSIX ACL 风格权限控制�
 ## T26. 同步与批量发布 (bsync/bput) ★
 
 **设计参照**: 第二十三节
-**代码文件**: `bitfs/internal/sync/bsync_test.go`
+**代码文件**: (功能未实现)
 **测试函数数**: 现有 0 / 目标 6
 
 bsync/bput 同步与上传工具测试, 验证三阶段流水线 (Scan→Diff→Apply) 与文件级同步的正确性。
@@ -840,8 +840,8 @@ bsync/bput 同步与上传工具测试, 验证三阶段流水线 (Scan→Diff→
 ## T27. Paymail 集成 ★
 
 **设计参照**: 第六节, 第十六-B节
-**代码文件**: `libbitfs-go/paymail/paymail_test.go`
-**测试函数数**: 现有 0 / 目标 6
+**代码文件**: `libbitfs-go/paymail/*_test.go` (5 files)
+**测试函数数**: 现有 89 / 目标 6
 
 Paymail (bsvalias) 协议集成测试, 验证身份发现、公钥查询与 BitFS 协议的桥接。
 
@@ -871,7 +871,7 @@ Paymail (bsvalias) 协议集成测试, 验证身份发现、公钥查询与 BitF
 ## T28. Koblitz 加密 ★
 
 **设计参照**: 第五-B节 (Koblitz 加密详细设计)
-**代码文件**: `libbitfs-go/method42/koblitz_test.go`
+**代码文件**: (功能未实现)
 **测试函数数**: 现有 0 / 目标 8
 
 Koblitz 椭圆曲线 (secp256k1 ECC) 对称密钥加密的正确性和安全性测试。
@@ -904,8 +904,8 @@ Koblitz 椭圆曲线 (secp256k1 ECC) 对称密钥加密的正确性和安全性�
 ## T29. 内容压缩 ★
 
 **设计参照**: 第八-B.D节 (数据压缩)
-**代码文件**: `libbitfs-go/metanet/compression_test.go`
-**测试函数数**: 现有 0 / 目标 6
+**代码文件**: `libbitfs-go/storage/compress_test.go`
+**测试函数数**: 现有 6 / 目标 6
 
 内容压缩方案的正确性、往返一致性和 key_hash 计算基准测试。
 
@@ -930,8 +930,8 @@ Koblitz 椭圆曲线 (secp256k1 ECC) 对称密钥加密的正确性和安全性�
 ## T30. CLTV 时锁访问 ★
 
 **设计参照**: 第七-B节 (CLTV 区块高度权限详细设计)
-**代码文件**: `libbitfs-go/method42/cltv_test.go`
-**测试函数数**: 现有 0 / 目标 8
+**代码文件**: `libbitfs-go/metanet/cltv_test.go`
+**测试函数数**: 现有 2 / 目标 8
 
 OP_CHECKLOCKTIMEVERIFY 三种使用模式 (Embargo/Expiry/Subscription) 的访问控制测试。
 
@@ -958,7 +958,7 @@ OP_CHECKLOCKTIMEVERIFY 三种使用模式 (Embargo/Expiry/Subscription) 的访�
 ## T31. Hash Chain Token ★
 
 **设计参照**: 第十一-B节 (Token 系统详细设计)
-**代码文件**: `libbitfs-go/method42/hashchain_test.go`
+**代码文件**: (功能未实现)
 **测试函数数**: 现有 0 / 目标 8
 
 Hash Chain 批量预购令牌的生成、验证和兑换测试。
@@ -991,7 +991,7 @@ Hash Chain 批量预购令牌的生成、验证和兑换测试。
 ## T32. 目录级 BIP32 访问控制 ★
 
 **设计参照**: 第十五-B节 (目录树购买与 BIP32 访问控制详细设计)
-**代码文件**: `libbitfs-go/method42/bip32access_test.go`
+**代码文件**: (功能未实现)
 **测试函数数**: 现有 0 / 目标 6
 
 基于 BIP32 非硬化派生的目录树级购买和密钥推导测试。
@@ -1030,34 +1030,34 @@ Hash Chain 批量预购令牌的生成、验证和兑换测试。
 | 测试类别 | 设计章节 | 代码路径 |
 |----------|---------|---------|
 | T1 TLV Schema | 四 (Metanet 交易格式) | `libbitfs-go/metanet/metanet_test.go` |
-| T2 HD Wallet | 二-B (HD 钱包派生规则详细设计) | `libbitfs-go/wallet/wallet_test.go` |
-| T3 Method 42 加密 | 五 (数据类型与加密模型), 二-B.D (Method 42 加密密钥派生) | `libbitfs-go/method42/encrypt_test.go` |
-| T4 Vault 管理 | 二 (HD 钱包与 Vault) | `libbitfs-go/method42/vault_test.go` |
-| T5 握手协议 | 十三-B.B (Method 42 握手协议) | `libbitfs-go/method42/handshake_test.go` |
-| T6 Key Capsule & HTLC | 十三-B.D (HTLC 购买协议) | `libbitfs-go/method42/keycapsule_test.go` |
-| T7 Key Cache | 十一 (买卖交易) | `libbitfs-go/method42/keycache_test.go` |
+| T2 HD Wallet | 二-B (HD 钱包派生规则详细设计) | `libbitfs-go/wallet/wallet_test.go` (+3 supplement files) |
+| T3 Method 42 加密 | 五 (数据类型与加密模型), 二-B.D (Method 42 加密密钥派生) | `libbitfs-go/method42/method42_test.go` (+coverage_supplement_test.go, fuzz_test.go, rabin_test.go) |
+| T4 Vault 管理 | 二 (HD 钱包与 Vault) | `libbitfs-go/vault/*_test.go` (12 files) |
+| T5 握手协议 | 十三-B.B (Method 42 握手协议) | 嵌入 `bitfs/internal/daemon/*_test.go` |
+| T6 Key Capsule & HTLC | 十三-B.D (HTLC 购买协议) | `libbitfs-go/payment/*_test.go` + `method42/method42_test.go` |
+| T7 Key Cache | 十一 (买卖交易) | 无专用文件 |
 | T8 Metanet 节点与构建器 | 四-B (Metanet 交易结构详细设计) | `libbitfs-go/metanet/metanet_test.go` |
-| T9 文件系统操作 | 四-B (14 种文件系统操作), 三 (Unix 文件系统模型) | `libbitfs-go/metanet/fs_test.go` |
-| T10 Metanet 解析器 | 四-B (Metanet 交易结构详细设计) | `libbitfs-go/metanet/metanet_test.go` |
-| T11 内容寻址存储 | 七 (SPV 模式) | `libbitfs-go/storage/store_test.go` |
-| T12 SPV 客户端 | 七 (SPV 模式) | `libbitfs-go/spv/spv_test.go` |
-| T13 DNSLink | 六 (DNSLink 与发布) | `libbitfs-go/paymail/dnslink_test.go` |
-| T14 URI 寻址 | 六 (DNSLink 与发布) | `libbitfs-go/paymail/uri_test.go` |
-| T15 Daemon HTTP | 十三-B.A (HTTP API 详细规范) | `bitfs/internal/daemon/daemon_test.go` |
-| T16 CLI 工具 | 八 (b* 独立工具), 九-B (CLI 命令详细参考) | `bitfs/cmd/b*/*_test.go` |
-| T17 CLI 通用 | 八 (b* 独立工具) | `bitfs/cmd/bitfs/common_test.go` |
+| T9 文件系统操作 | 四-B (14 种文件系统操作), 三 (Unix 文件系统模型) | `libbitfs-go/vault/*_test.go` + `metanet/metanet_test.go` |
+| T10 Metanet 解析器 | 四-B (Metanet 交易结构详细设计) | `libbitfs-go/metanet/parser_extended_test.go` (+shared) |
+| T11 内容寻址存储 | 七 (SPV 模式) | `libbitfs-go/storage/storage_test.go` (+3 files) |
+| T12 SPV 客户端 | 七 (SPV 模式) | `libbitfs-go/spv/spv_test.go` + `boltstore_test.go` |
+| T13 DNSLink | 六 (DNSLink 与发布) | `libbitfs-go/paymail/paymail_test.go` + `dnssec_test.go` |
+| T14 URI 寻址 | 六 (DNSLink 与发布) | `libbitfs-go/paymail/paymail_test.go` |
+| T15 Daemon HTTP | 十三-B.A (HTTP API 详细规范) | `bitfs/internal/daemon/*_test.go` (10 files) |
+| T16 CLI 工具 | 八 (b* 独立工具), 九-B (CLI 命令详细参考) | `bitfs/cmd/bitfs/*_test.go` (487) + `cmd/b*/*_test.go` (242) |
+| T17 CLI 通用 | 八 (b* 独立工具) | 无专用文件 |
 | T18 配置与错误处理 | 十六 (错误处理) | `libbitfs-go/config/config_test.go` |
-| T19 Shell 交互 | 十 (Shell 交互模式), 九-B.C (Shell 命令参考) | `bitfs/cmd/bitfs/shell_test.go` |
-| T20 集成/端到端 | 全部章节 | `bitfs/integration/e2e_test.go` |
-| T21 属性不变量 | 多处 (见 T21 各条目的设计参照) | `bitfs/integration/property_test.go` |
+| T19 Shell 交互 | 十 (Shell 交互模式), 九-B.C (Shell 命令参考) | `bitfs/cmd/bitfs/cmd_shell_test.go` + `cmd_shell_exec_test.go` + `cmd_shell_repl_test.go` |
+| T20 集成/端到端 | 全部章节 | `bitfs/integration/` (20 files) + `bitfs/e2e/` (25 files) |
+| T21 属性不变量 | 多处 (见 T21 各条目的设计参照) | fuzz tests across packages |
 | T22 安全性 | 五, 十一, 十三-B | `bitfs/integration/security_test.go` |
-| T23 会话管理 (Lock/Unlock) | 二十一 (会话管理) | `libbitfs-go/method42/session_test.go` |
-| T24 权限管理 (ACL + 群签名) | 二十二 (权限管理) | `libbitfs-go/acl/acl_test.go` |
-| T25 收益权/ISO | 十一-f (收益权表与 ISO) | `libbitfs-go/revshare/iso_test.go` |
-| T26 同步与批量发布 (bsync/bput) | 二十三 (bsync/bput) | `bitfs/internal/sync/bsync_test.go` |
-| T27 Paymail 集成 | 六 (DNSLink/Paymail), 十六-B (Paymail 详细设计) | `libbitfs-go/paymail/paymail_test.go` |
-| T28 Koblitz 加密 | 五-B (Koblitz 加密详细设计) | `libbitfs-go/method42/koblitz_test.go` |
-| T29 内容压缩 | 八-B.D (数据压缩) | `libbitfs-go/metanet/compression_test.go` |
-| T30 CLTV 时锁访问 | 七-B (CLTV 区块高度权限) | `libbitfs-go/method42/cltv_test.go` |
-| T31 Hash Chain Token | 十一-B (Token 系统详细设计) | `libbitfs-go/method42/hashchain_test.go` |
-| T32 目录级 BIP32 访问控制 | 十五-B (目录树购买与 BIP32 访问控制) | `libbitfs-go/method42/bip32access_test.go` |
+| T23 会话管理 (Lock/Unlock) | 二十一 (会话管理) | (功能未实现) |
+| T24 权限管理 (ACL + 群签名) | 二十二 (权限管理) | (功能未实现) |
+| T25 收益权/ISO | 十一-f (收益权表与 ISO) | `libbitfs-go/revshare/revshare_test.go` |
+| T26 同步与批量发布 (bsync/bput) | 二十三 (bsync/bput) | (功能未实现) |
+| T27 Paymail 集成 | 六 (DNSLink/Paymail), 十六-B (Paymail 详细设计) | `libbitfs-go/paymail/*_test.go` (5 files) |
+| T28 Koblitz 加密 | 五-B (Koblitz 加密详细设计) | (功能未实现) |
+| T29 内容压缩 | 八-B.D (数据压缩) | `libbitfs-go/storage/compress_test.go` |
+| T30 CLTV 时锁访问 | 七-B (CLTV 区块高度权限) | `libbitfs-go/metanet/cltv_test.go` |
+| T31 Hash Chain Token | 十一-B (Token 系统详细设计) | (功能未实现) |
+| T32 目录级 BIP32 访问控制 | 十五-B (目录树购买与 BIP32 访问控制) | (功能未实现) |

@@ -39,7 +39,7 @@ bun tools/mermaid/cli.ts <dir> [--theme bitfs]          # Mermaid → SVG
 
 ### 独立 Git 仓库
 
-`libbitfs-go/`、`libbitfs-ts/`、`den-explorer/`、`bitfs-app/`、`bitfs-desktop/`、`bitfs-extension/`、`bitfs-explorer/`、`git-remote-bitfs/` 各有自己的 `.git`，被 RabbitHole `.gitignore` 排除。`bitfs/go.mod` 通过 `replace => ../libbitfs-go` 引用共享库。
+`libbitfs-go/`、`libbitfs-ts/`、`den-explorer/`、`bitfs-app/`、`bitfs-desktop/`、`bitfs-extension/`、`bitfs-explorer/`、`git-remote-bitfs/` 各有自己的 `.git`，被 RabbitHole `.gitignore` 排除。`bitfs/go.mod` 通过 `require github.com/bitfsorg/libbitfs-go v0.0.2` 引用共享库，本地开发用 `go.work`（已 gitignore）联编。
 
 ### 任务管理
 
@@ -75,10 +75,10 @@ Module: `github.com/bitfsorg/bitfs`
 
 - `cmd/bitfs/` — 主 CLI（wallet/vault/put/mkdir/rm/mv/cp/link/sell/encrypt/publish/shell/daemon）
 - `cmd/b*/` — 只读工具集（bls/bcat/bget/bmget/bstat/btree），通过 HTTP 连接 daemon
-- `internal/engine/` — 统一业务逻辑层（所有 CLI 命令、shell REPL、daemon 适配器共用）
+- 统一业务逻辑层是 `libbitfs-go/vault` 包（CLI 命令、shell REPL、daemon 适配器共用）；`internal/engine/` 只是 `libbitfs-go/engine` 的薄别名
 - `internal/daemon/` — LFCP HTTP 服务器（内容服务、Metanet 元数据、Method 42 握手、payment 支付）
 - `internal/client/` — b-tools 的 HTTP 客户端
-- `integration/` — 276 个集成测试, `e2e/` — Docker regtest 测试
+- `integration/` — 307 个集成测试, `e2e/` — Docker regtest 测试
 - `dashboard/` — React SPA，embed.go 嵌入 daemon
 
 ### libbitfs-go/ — 共享核心库 (Go)

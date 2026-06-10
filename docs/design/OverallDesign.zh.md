@@ -41,13 +41,13 @@
 </tr>
 <tr style="background:#f7f0ea;">
 <td style="border:1px solid #999; padding:0.5em; font-weight:600;">Layer 3: Metanet Overlay Network</td>
-<td style="border:1px solid #999; padding:0.5em;">CDN 托管、节点激励、支付通道结算、ML 共识排序 (5 分钟 PoW)</td>
+<td style="border:1px solid #999; padding:0.5em;">CDN 托管、节点激励、支付通道结算、Bitcoin 风格 PoW 共识 (10 分钟出块)</td>
 <td style="border:1px solid #999; padding:0.5em;">内容所有者、节点运营商</td>
 <td style="border:1px solid #999; padding:0.5em; text-align:center;">MNT</td>
 </tr>
 </table>
 
-**数据无需跨链**：BSV 主链只存元数据 (Metanet DAG 交易)；内容数据始终在链下流转 (Daemon 或 CDN 节点)。Metanet Overlay Network 管理经济激励与 ON 层共识排序（CSW Multilevel Blockchain，Bitcoin 风格 PoW，5 分钟出块），不承载文件内容。
+**数据无需跨链**：BSV 主链只存元数据 (Metanet DAG 交易)；内容数据始终在链下流转 (Daemon 或 CDN 节点)。Metanet Overlay Network 管理经济激励与 ON 层共识排序（CSW Multilevel Blockchain，Bitcoin 风格 PoW，10 分钟出块），不承载文件内容。
 
 ### 2.1 数据三种存储/获取方式
 
@@ -81,11 +81,11 @@ libbitfs-go/
 ├── method42/     # Method 42 ECDH 加密 (secp256k1 + AES-256-GCM)
 ├── wallet/       # HD 钱包 (BIP39/44, Argon2id 种子加密)
 ├── tx/           # BSV 交易构造 (go-sdk)
-├── metanet/      # Metanet DAG 解析 (inode, dirent, 软/硬链接)
+├── metanet/      # Metanet DAG 解析 (inode, dirent, 软链接)
 ├── spv/          # SPV 轻节点 (本地 tx + Merkle proof)
-├── storage/      # 内容存储抽象 (链下/链上)
+├── storage/      # 内容寻址存储 (SHA256 hash-sharded 本地存储)
 ├── paymail/      # Paymail 身份解析 + bitfs:// URI
-├── payment/      # 下载计费协议 + Token 预购
+├── payment/      # HTTP 402 支付协议 + HTLC 原子交换
 ├── network/      # 区块链服务抽象 (RPC/SPV 客户端)
 ├── config/       # 配置文件解析 (key=value)
 ├── vault/        # Vault 状态管理、交易构建、文件读取操作
@@ -97,10 +97,11 @@ libbitfs-go/
 
 | 二进制 | 面向 | 核心功能 |
 |--------|------|----------|
-| `bitfs` | 文件所有者、访问者、AI Agent | `put/get/ls/cat/rm/mv/cp`、`sell`、`wallet`、`daemon` |
+| `bitfs` | 文件所有者、访问者、AI Agent | `put/get/cat/ls/mget/mput/mkdir/rm/mv/cp/link`、`sell/encrypt`、`wallet/vault/paymail`、`publish/unpublish`、`daemon/shell/verify/status` |
+| `bls/bcat/bget/bmget/bstat/btree` | 访问者 (只读, Visitor) | 通过 LFCP HTTP 访问文件内容，支持 `--buy` 购买付费内容 |
 | `metanet` | CDN 节点运营商 | `init/start/stop`、`status`、`contracts`、`peers`、`mine` |
 
-`bitfs` 用户无需安装 `metanet`；`metanet` 节点内嵌 libbitfs-go 以解密和服务内容。
+`bitfs` 用户无需安装 `metanet`；`metanet` 节点计划未来内嵌 libbitfs-go (当前独立实现)。
 
 ### 3.3 链间职责
 
@@ -152,7 +153,7 @@ design/
 │   ├── 1-ConceptDesign.zh.md       概念设计 (愿景, 架构, 设计决策)
 │   ├── 2-SystemDesign.zh.md        系统设计 (模块, 接口, 数据流)
 │   ├── 3-DetailedDesign.zh.md      详细设计 (算法, 数据结构, 协议)
-│   └── 4-TestDesign.zh.md          测试设计 (~1022 测试用例, 32 categories)
+│   └── 4-TestDesign.zh.md          测试设计 (~2700+ 测试用例, 32 categories)
 └── metanet/                     ← Metanet CDN 网络设计
     ├── 1-ConceptDesign.zh.md       概念设计 (CDN 模型, 经济设计)
     ├── 2-SystemDesign.zh.md        系统设计 (节点, 合约, 支付通道)
@@ -170,7 +171,7 @@ design/
 2. **Agent-first** — CLI 输出结构化 (JSON)，下载计费付费墙即可编程支付接口
 3. **默认加密** — Method 42 (ECDH + BIP32)，所有数据加密存储，密钥由文件路径确定性派生
 4. **SPV 模式** — 本地保存交易 + Merkle proof，从不查询区块链全节点
-5. **Overlay + ML 共识** — Metanet 是 BSV 上的 Overlay Network；ON 层按 CSW Multilevel Blockchain 采用 Bitcoin 风格 PoW（5 分钟出块）排序，区块通过合法 BSV 交易确认
+5. **Overlay + ML 共识** — Metanet 是 BSV 上的 Overlay Network；ON 层按 CSW Multilevel Blockchain 采用 Bitcoin 风格 PoW（10 分钟出块）排序，区块通过合法 BSV 交易确认
 6. **BRC 标准兼容** — 遵循 BSV Association 的 BRC 标准体系
 7. **BSV 官方库** — 唯一 BSV 依赖为 `github.com/bsv-blockchain/go-sdk`
 8. **元数据与内容分离** — 链上只存元数据 (Metanet DAG)，内容独立存储

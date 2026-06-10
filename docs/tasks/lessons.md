@@ -20,7 +20,7 @@
 - **TxID byte ordering**: BSV TxID 显示格式 vs wire 格式是反的，跨语言时容易出错
 - **go-sdk compat/bip32**: 包名是 `compat` 不是 `bip32`，必须别名导入
 - **BSV OP_CLTV**: post-Genesis 把 0xb1 当 OP_NOP2，被 DISCOURAGE_UPGRADABLE_NOPS mempool policy 拒绝 — 用 nLockTime 替代
-- **独立 repo 的 go.mod replace**: `bitfs/go.mod` 用 `replace => ../libbitfs-go`，改了 libbitfs-go 的 API 必须同步改 bitfs
+- **独立 repo 的本地联编**: `bitfs/go.mod` require 远程版本（v0.0.2），本地开发靠 `go.work`（已 gitignore）联编。改了 libbitfs-go 的 API 必须同步改 bitfs，且要用 `GOWORK=off go build` 验证 bitfs 对已发布版本仍可独立编译
 - **libbitfs-ts linking**: bitfs-app 用 `"@bitfs/libbitfs": "file:../../../libbitfs-ts"`，路径层级取决于 worktree 位置
 - **Change UTXO ScriptPubKey**: 构建交易时 change output 必须带 ScriptPubKey，否则后续交易引用时无法签名
 - **`bun test` vs `bun run test`**: `bun test` 用 bun 原生 runner（不认识 vitest API 如 `vi.stubGlobal`），`bun run test` 走 package.json script 调用 vitest。审计时跑错命令会误报测试失败
@@ -45,6 +45,8 @@
 - 对话中的设计决策不要只停留在对话里 — 当场写入设计文档或 memory
 - 设计文档改了实现但没同步文档 — HTLC 从 sCrypt multisig 改为 plain script P2PKH，设计文档和 spec 都没更新。**每次协议/架构变更后，必须同步更新: 设计文档、spec、CLAUDE.md、README**
 - 文档里写 "合并挖矿" 但设计决策是 "独立挖矿" — 设计决策必须立即传播到所有描述性文档（README、CLAUDE.md、白皮书大纲），不能只改设计文档本身
+- **文档修复后必须 grep 全文复验** — 2026-03-26 审计"已完成"的修复留下约 10 处同类残留（`BITFS_HOME`、HTLC "144 块"、`sell --recursive`、`publish [path]`、`wallet info`），全是改了一处漏了别处。规则：每修一类差异，立即 grep `docs/design/` 递归复查同一 pattern，清零后才算完成
+- **链级约束教训必须跨子项目传播** — BitFS HTLC 重构已确认 post-Genesis BSV 拒绝 OP_CLTV/OP_CSV（见上方 gotcha），三个月后 metanet 支付通道照搬 LN Poon-Dryja 设计又用了 OP_CSV（`metanet/internal/payment/funding.go`）。规则：涉及 BSV 脚本的新设计，先过一遍 lessons.md 的 Common Gotchas，链级约束对整个生态生效，不只对踩坑的那个仓库
 
 ## Tool Evolution Log
 
